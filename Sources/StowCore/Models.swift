@@ -191,6 +191,7 @@ public struct AppState: Codable, Equatable, Sendable {
     public var dismissedIDs: [String] = []
     public var pullRequests: [PullRequestSnapshot] = []
     public var boardFrame: WindowFrame?
+    public var boardAlwaysOnTop: Bool = true
     public var githubEnabled: Bool = true
     public var ghExecutablePath: String?
     public var viewerLogin: String?
@@ -201,7 +202,7 @@ public struct AppState: Codable, Equatable, Sendable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, notes, pins, dismissedIDs, pullRequests, boardFrame, githubEnabled
+        case schemaVersion, notes, pins, dismissedIDs, pullRequests, boardFrame, boardAlwaysOnTop, githubEnabled
         case ghExecutablePath, viewerLogin, lastRefreshAt, extensionInstances, appearance, collapsedSections
     }
 
@@ -214,6 +215,7 @@ public struct AppState: Codable, Equatable, Sendable {
         dismissedIDs = try container.decode([String].self, forKey: .dismissedIDs)
         pullRequests = try container.decode([PullRequestSnapshot].self, forKey: .pullRequests)
         boardFrame = try container.decodeIfPresent(WindowFrame.self, forKey: .boardFrame)
+        boardAlwaysOnTop = try container.decodeIfPresent(Bool.self, forKey: .boardAlwaysOnTop) ?? true
         githubEnabled = try container.decode(Bool.self, forKey: .githubEnabled)
         ghExecutablePath = try container.decodeIfPresent(String.self, forKey: .ghExecutablePath)
         viewerLogin = try container.decodeIfPresent(String.self, forKey: .viewerLogin)

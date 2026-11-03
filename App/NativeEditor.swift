@@ -4,6 +4,7 @@ import SwiftUI
 
 struct NativeEditor: NSViewRepresentable {
     @Binding var text: String
+    @Environment(\.isEnabled) private var isEnabled
     var shouldFocus = false
     var focusRequestID: UUID
     var accessibilityID = "note.source"
@@ -15,6 +16,7 @@ struct NativeEditor: NSViewRepresentable {
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
         let editor = NSTextView()
+        editor.isEditable = isEnabled
         editor.isRichText = false
         editor.importsGraphics = false
         editor.allowsUndo = true
@@ -41,6 +43,7 @@ struct NativeEditor: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         guard let editor = scroll.documentView as? NSTextView else { return }
+        editor.isEditable = isEnabled
         context.coordinator.parent = self
         let sourceChanged = editor.string != text
         if sourceChanged {

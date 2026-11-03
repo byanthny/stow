@@ -31,8 +31,6 @@ jobs:
         run: xcodebuild -version
       - name: test modules and hosted app
         run: ./scripts/test.sh
-      - name: build debug
-        run: ./scripts/build.sh Debug
       - name: build universal release
         run: ./scripts/build.sh Release
 

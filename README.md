@@ -1,4 +1,4 @@
-# stow
+# Stow
 
 A small native macOS board for Markdown notes and GitHub pull requests. Requires macOS 14 or later.
 
@@ -6,11 +6,9 @@ Keep notes on the board or detach them into separate windows. Each detached note
 
 GitHub is optional. Notes work without `gh`, an account, or a network connection. Accessories are optional too: the bundled `org.stow.sample` provider is disabled by default.
 
-<img src="docs/images/board.png" width="360" alt="Stow board with synthetic pull requests and notes">
+<img src="docs/images/board.png" width="360" alt="Stow board with pull requests and notes">
 
-*Synthetic demo data; no personal notes or private repositories.*
-
-## appearance
+## Appearance
 
 Choose a light or dark preset, adjust colors and background opacity, and set separate interface and note fonts, sizes, and note line height. Changes apply to the board and open notes. Copy, paste, edit, or share a short plaintext theme config. Import and export use `.conf`; existing JSON themes remain readable. See [appearance and themes](docs/appearance.md).
 
@@ -23,9 +21,7 @@ background-opacity = 0.85
 
 <img src="docs/images/appearance.png" width="440" alt="Stow appearance settings">
 
-*Appearance settings from the synthetic demo session.*
-
-## build
+## Build
 
 Use Xcode 16.4 or later with its command line tools selected. Open the checked-in project:
 
@@ -45,18 +41,25 @@ From the repository root:
 
 The scripts put their output in `build/`. Pass another directory as the second build argument or the first test/package argument, for example `./scripts/package.sh build/local`. Packaging builds a universal Release app for Apple silicon and Intel, signs it ad hoc for local use, and writes `Stow.zip` and its SHA256 checksum. This is a development package; Developer ID distribution and notarization are not configured.
 
-## use
+## Use
 
 For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [installation](docs/install.md).
 
 - Create a note with **Command-N**. Switch between editing and Markdown preview from the note controls.
 - Paste a canonical `https://github.com/example/project/pull/42` URL outside the editor to pin a pull request. Text following one URL becomes an attached note. Other or ambiguous text stays intact as a note.
+- Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note from its actions menu. Use **Command-0** or the Dock icon to reopen the board.
 - Click **Needs you**, **Waiting**, or **Notes** to collapse or expand that section. Stow remembers the choice; creating a note expands Notes again.
 - Enable or disable GitHub in Settings. Install [GitHub CLI](https://cli.github.com/) and authenticate outside Stow with `gh auth login --hostname github.com`. Stow uses that existing login; it does not extract or save a token. Use **Choose gh…** if automatic discovery fails.
 - Click a pull request to load details. Stow reads GitHub state; it does not merge, review, or modify pull requests.
 
-## development
+## Notes and Backups
+
+Notes are live UTF-8 Markdown files in a managed folder. Use **Open notes folder** in Settings or **Show Markdown file** on a note to edit them in another app. Stow reloads external changes and preserves both versions when it detects conflicting edits. Keep managed UUID filenames unchanged.
+
+Import or export ordinary `.md` copies, or use **Save backup…** for notes and the full local setup. Restore validates the backup and keeps the previous files before replacing the setup. Full backups contain private note and cached PR data; theme configs share appearance separately. See [notes, configs, and backups](docs/portability.md).
+
+## Development
 
 The Swift package tests the core, GitHub transport, and accessory contract independently of the app. `scripts/test.sh` also runs the hosted app tests using local ad-hoc signing and an isolated test host. The app uses AppKit windows, SwiftUI views, and a native text editor.
 
@@ -64,4 +67,4 @@ Read [architecture](docs/architecture.md), [appearance](docs/appearance.md), [ac
 
 See the [roadmap](docs/roadmap.md) for the ordered release, public-site, and extension queue.
 
-No project license has been selected. Third-party dependencies retain their own licenses.
+No project license has been selected. Third-party dependencies retain their own licenses; [their notices](App/ThirdPartyNotices.txt) are included in the app bundle.

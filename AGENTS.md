@@ -3,13 +3,13 @@
 ## scope and conventions
 
 - Target macOS 14 or later and Swift 6. Keep the native app small and the package modules testable without launching it.
-- Use short, direct prose and lowercase documentation headings. Use conventional commit subjects such as `feat(notes): restore detached windows`.
+- Use short, direct prose. README headings use title case; other documentation keeps lowercase headings. Use conventional commit subjects such as `feat(notes): restore detached windows`.
 - Preserve the existing Git identity, signing setup, configuration, and hooks. Build and test commands must not modify them.
 - Keep `project.yml` and the checked-in Xcode project in sync when changing app targets or dependencies. Preserve pinned package resolution.
 
 ## invariants
 
-- Notes have one canonical persisted representation. Closing a window must not delete a note. Flush the final edit before quitting and preserve data when saving fails.
+- Managed UTF-8 `<UUID>.md` files are the canonical note sources; `state.json` holds metadata without duplicating note bodies. Preserve both versions of detected external-edit conflicts. Closing a window must not delete a note. Flush the final edit before quitting and preserve data when saving fails.
 - Preserve corrupt, unreadable, or newer saved state. Only the explicit recovery action may move it to a backup before creating replacement state.
 - Unknown, missing, partial, or stale GitHub data must never imply readiness. Keep the last good cached card on incomplete refreshes. Account changes must not relabel another account’s cache.
 - Invoke `gh` directly with arguments and structured input. Never read its token, use a shell for API requests, or log private response bodies.

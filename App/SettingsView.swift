@@ -61,6 +61,8 @@ struct SettingsView: View {
                     }
                 }
                 Divider()
+                DataTransferView(store: store)
+                Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local data").font(.stow(size: 14, weight: .semibold))
                     Text("Notes, cached pull requests, and settings are stored on this Mac. No analytics or sync.")
@@ -77,6 +79,7 @@ struct SettingsView: View {
             .foregroundStyle(Color.stowText)
             .font(.stow())
             .preferredColorScheme(ThemeController.shared.colorScheme)
+            .disabled(store.isRestoringBackup)
     }
 
     private func chooseGH() {

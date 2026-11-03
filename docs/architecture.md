@@ -4,7 +4,7 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 
 | component | responsibility |
 | --- | --- |
-| `StowCore` | persisted models, atomic state storage, paste parsing, attention classification, and cache reconciliation |
+| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, and cache reconciliation |
 | `StowGitHub` | GitHub CLI process transport, GraphQL decoding and pagination, refresh coordination, and lazy details |
 | `StowExtensionSDK` | plain versioned request, descriptor, configuration, and snapshot values plus `AccessoryProvider` |
 | `StowExtensions` | provider registry, validation, timeout, cancellation, cache, and adapters |
@@ -13,9 +13,15 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 
 ## state and windows
 
-`AppStore` owns the in-memory `AppState`. Views reference notes by stable ID. A detached window edits the same note as the board. Note text, links, detached state, window frames, pins, dismissals, settings, cached pull requests, and accessory configuration are persisted together through the `StateRepository` actor.
+`AppStore` owns the in-memory `AppState`. Board and detached windows reference one note by stable ID. A managed `<UUID>.md` file is the canonical Markdown source. The live `state.json` envelope uses disk schema version 2: `metadata` holds an `AppState` with empty note bodies, and `notesDirectoryName` names the validated managed notes directory. It retains links, frames, detached state, pins, dismissals, settings, cached PRs, and accessory configuration.
 
-Edits schedule a debounced save. Quit requests a final flush and keeps the app open if the user declines to discard unsaved changes. Writes create a private temporary file before atomically replacing the state file. Unsupported or damaged state blocks writes until explicit backup recovery. See [privacy and recovery](privacy.md).
+`StateRepository` serializes persistence and uses coordinated file access with private temporary files and atomic replacement. The app serializes its persistence chain and debounces edits. An FSEvents watcher debounces external changes into a merge that compares disk sources with baselines and locally dirty notes. Detected conflicts preserve both versions as separate notes; clean external deletions remove notes while unsaved edits are preserved. Coordination cannot eliminate every race with an uncooperative editor.
+
+Quit performs a final merged save before closing the writer. Source versions adopted by the repository but not yet acknowledged by the UI remain protected through subsequent saves and quit, so a stale UI snapshot cannot silently overwrite them. A failed flush lets the user keep the app open. Unsupported or damaged state blocks ordinary writes until repair or explicit backup recovery.
+
+The first successful save of legacy JSON storage backs up the old index and migrates its note bodies to Markdown. Full restore writes all replacement sources into a new private `notes-<UUID>` folder, retains the previous folder and raw index, and atomically publishes the new index pointer. The host also saves a complete pre-restore backup. Watchers and file-reveal actions follow the current resolved directory; external editors must reopen files after restore.
+
+The `.stowbackup` codec uses backup format version 1 and encodes a complete in-memory `AppState` snapshot, including note bodies, for explicit transfer and restore. That envelope is separate from the metadata-only live disk index. The host synchronizes live edits before note exports or backup snapshots and refuses the transfer if synchronization fails. Markdown import validates all selected files before adding new note identities; exports are independent copies. See [portability](portability.md) and [privacy and recovery](privacy.md).
 
 ## github reads
 

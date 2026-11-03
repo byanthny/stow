@@ -31,6 +31,9 @@ struct NoteView: View {
                             store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
                         ) { store.toggleSample(noteID: noteID) }
                         Divider()
+                        Button("Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) }
+                        Button("Export Markdown…") { DataTransferActions.exportNote(note, store: store) }
+                        Divider()
                         Button("Delete note", role: .destructive) { store.deleteNote(noteID) }
                     } label: {
                         Image(systemName: "ellipsis").frame(width: 18, height: 20)
@@ -70,6 +73,7 @@ struct NoteView: View {
             .background(Color.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
             .overlay { if !detached { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) } }
             .preferredColorScheme(ThemeController.shared.colorScheme)
+            .disabled(store.isRestoringBackup)
         }
     }
 }

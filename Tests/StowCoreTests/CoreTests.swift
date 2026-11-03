@@ -159,7 +159,9 @@ final class StateRepositoryTests: XCTestCase {
         XCTAssertEqual(result, state("last edit"))
         let json = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(json.contains("2023-11-14T22:13:20Z"))
-        XCTAssertEqual(json.components(separatedBy: "last edit").count, 2)
+        XCTAssertFalse(json.contains("last edit"), "The index must not duplicate Markdown source")
+        let sourceURL = await repository.noteFileURL(id: result.notes[0].id)
+        XCTAssertEqual(try Data(contentsOf: sourceURL), Data("last edit".utf8))
     }
 
     func testSaveAndCloseKeepsFinalSnapshotWhenOlderQueuedWriteArrivesLater() async throws {
@@ -234,7 +236,8 @@ final class StateRepositoryTests: XCTestCase {
             XCTFail("Expected nonfinite JSON encode failure")
         } catch { XCTAssertEqual(error as? StateError, .unwritable) }
         XCTAssertEqual(try Data(contentsOf: url), original)
-        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["state.json"])
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(atPath: root.path).sorted(), ["notes", "state.json"])
     }
 
     func testCorruptStatePreservedAndExplicitBackupAllowsRecovery() async throws {

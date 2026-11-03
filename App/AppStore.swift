@@ -24,6 +24,12 @@ final class AppStore {
     var onDelete: ((UUID) -> Void)?
     var onShowBoard: (() -> Void)?
     var onAppearanceChange: (() -> Void)?
+    var onBoardLevelChange: (() -> Void)?
+    var onRestoreWindows: (() -> Void)?
+    var notesDirectory: URL
+    var noteFileMessage: String?
+    var isRestoringBackup = false
+    var conflictNoteIDs: Set<UUID> = []
     let stateURL: URL
     let isDemo: Bool
     let sampleID = "org.stow.sample"
@@ -37,6 +43,13 @@ final class AppStore {
     @ObservationIgnored private var accessoryRuns: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var accessoryTokens: [UUID: UUID] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
+    @ObservationIgnored private var persistenceTask: Task<Bool, Never>?
+    @ObservationIgnored private var notesPresenter: NotesFolderPresenter?
+    @ObservationIgnored private var notesWatcher: NotesFolderWatcher?
+    @ObservationIgnored private var changeRevision: UInt64 = 0
+    @ObservationIgnored private var persistedRevision: UInt64 = 0
+    @ObservationIgnored private var deletedNoteIDs: Set<UUID> = []
+    @ObservationIgnored private var isStopped = false
     @ObservationIgnored private var refreshTimer: Task<Void, Never>?
     @ObservationIgnored private var accessoryTask: Task<Void, Never>?
     @ObservationIgnored private var sessionGeneration = 0
@@ -46,6 +59,7 @@ final class AppStore {
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
     ) {
         self.stateURL = stateURL
+        self.notesDirectory = stateURL.deletingLastPathComponent().appendingPathComponent("notes", isDirectory: true)
         self.isDemo = isDemo
         self.githubOverride = githubClient
         self.accessoryHost = AccessoryHost(providers: accessoryProviders)
@@ -66,6 +80,10 @@ final class AppStore {
         }
         ThemeController.shared.apply(state.appearance)
         isLoaded = true
+        if !storageNeedsRecovery {
+            _ = await persist()
+            await watchNotesFolder()
+        }
         configureGitHub()
         refreshTimer = Task { [weak self] in
             while !Task.isCancelled {
@@ -90,6 +108,12 @@ final class AppStore {
         onAppearanceChange?()
         changed()
         return true
+    }
+
+    func toggleBoardAlwaysOnTop() {
+        state.boardAlwaysOnTop.toggle()
+        onBoardLevelChange?()
+        changed()
     }
 
     func toggleSection(_ section: String) {
@@ -148,7 +172,7 @@ final class AppStore {
     }
 
     func refresh() async {
-        guard isLoaded, state.githubEnabled, !isDemo, let coordinator else { return }
+        guard isLoaded, !isRestoringBackup, state.githubEnabled, !isDemo, let coordinator else { return }
         let generation = sessionGeneration
         isRefreshing = true
         defer { if generation == sessionGeneration { isRefreshing = false } }
@@ -283,6 +307,11 @@ final class AppStore {
     }
 
     func stop() {
+        isStopped = true
+        notesWatcher?.stop()
+        notesWatcher = nil
+        if let notesPresenter { NSFileCoordinator.removeFilePresenter(notesPresenter) }
+        notesPresenter = nil
         cancelDetails()
         for task in accessoryRuns.values { task.cancel() }
         accessoryRuns.removeAll()
@@ -317,6 +346,7 @@ final class AppStore {
     }
 
     func deleteNote(_ id: UUID) {
+        deletedNoteIDs.insert(id)
         state.notes.removeAll { $0.id == id }
         let removed = state.extensionInstances.filter { $0.noteID == id }
         state.extensionInstances.removeAll { $0.noteID == id }
@@ -379,8 +409,9 @@ final class AppStore {
     }
 
     func refreshAccessories() async {
+        guard !isRestoringBackup else { return }
         for id in state.extensionInstances.map(\.id) {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !isRestoringBackup else { return }
             guard let instance = state.extensionInstances.first(where: { $0.id == id && $0.isEnabled }) else {
                 continue
             }
@@ -414,31 +445,137 @@ final class AppStore {
         }
     }
 
+    func importMarkdown(_ sources: [String]) {
+        guard !isRestoringBackup, !sources.isEmpty else { return }
+        let imported = sources.map { Note(markdown: $0) }
+        state.notes.insert(contentsOf: imported, at: 0)
+        if let first = imported.first { requestFocus(first.id) }
+        changed()
+    }
+
+    private func watchNotesFolder() async {
+        notesWatcher?.stop()
+        notesWatcher = nil
+        if let notesPresenter { NSFileCoordinator.removeFilePresenter(notesPresenter) }
+        notesDirectory = await repository.notesDirectory
+        let presenter = NotesFolderPresenter(directory: notesDirectory) { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, !isStopped, !isTerminating, !isRestoringBackup else { return }
+                changed()
+            }
+        }
+        notesPresenter = presenter
+        NSFileCoordinator.addFilePresenter(presenter)
+        do {
+            notesWatcher = try NotesFolderWatcher(directory: notesDirectory) { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, !isStopped, !isTerminating, !isRestoringBackup else { return }
+                    changed()
+                }
+            }
+        } catch {
+            noteFileMessage = "Automatic file watching is unavailable. Return to Stow to reload external edits."
+        }
+    }
+
     func changed() {
-        guard isLoaded, !storageNeedsRecovery else { return }
+        guard isLoaded, !isStopped, !isTerminating, !isRestoringBackup else { return }
+        changeRevision &+= 1
+        guard !storageNeedsRecovery else { return }
         saveTask?.cancel()
-        let snapshot = state
-        saveTask = Task {
+        saveTask = Task { [weak self] in
             do {
                 try await Task.sleep(for: .milliseconds(300))
                 try Task.checkCancellation()
-                try await repository.save(snapshot)
-                saveError = nil
-            } catch is CancellationError {} catch {
-                saveError = "Changes are in memory. Saving failed; check available disk space and file permissions."
+                _ = await self?.persist()
+            } catch {}
+        }
+    }
+
+    /// A single task owns snapshot → disk merge → UI merge before the next snapshot is taken.
+    /// Cancelling a debounce never cancels a write that has already started.
+    private func persist(allowDuringRestore: Bool = false) async -> Bool {
+        guard !storageNeedsRecovery, !isRestoringBackup || allowDuringRestore else { return false }
+        if let active = persistenceTask {
+            let saved = await active.value
+            if saved, persistedRevision != changeRevision { return await persist() }
+            return saved
+        }
+        let task = Task { @MainActor [weak self] () -> Bool in
+            guard let self else { return false }
+            defer { persistenceTask = nil }
+            repeat {
+                let revision = changeRevision
+                let snapshot = state
+                let deletions = deletedNoteIDs
+                do {
+                    let result = try await repository.saveMerging(snapshot, deletedNoteIDs: deletions)
+                    mergeLiveResult(result, snapshot: snapshot)
+                    deletedNoteIDs.subtract(deletions)
+                    persistedRevision = revision
+                    saveError = nil
+                } catch {
+                    saveError =
+                        "Changes are in memory. Saving failed; check the notes folder, available space, and file permissions."
+                    return false
+                }
+            } while persistedRevision != changeRevision
+            return true
+        }
+        persistenceTask = task
+        return await task.value
+    }
+
+    private func mergeLiveResult(_ result: LiveSaveResult, snapshot: AppState) {
+        var previous: [UUID: Note] = [:]
+        for note in snapshot.notes { previous[note.id] = note }
+        for id in result.externallyDeletedIDs {
+            guard let index = state.notes.firstIndex(where: { $0.id == id }), let original = previous[id] else {
+                continue
             }
+            if state.notes[index].markdown == original.markdown {
+                state.notes.remove(at: index)
+                state.extensionInstances.removeAll { $0.noteID == id }
+                onDelete?(id)
+                changeRevision &+= 1
+            } else {
+                noteFileMessage = "An external deletion conflicted with unsaved text. Your text has been kept."
+            }
+        }
+        for incoming in result.state.notes {
+            if let index = state.notes.firstIndex(where: { $0.id == incoming.id }) {
+                guard let original = previous[incoming.id] else { continue }
+                if state.notes[index].markdown == original.markdown {
+                    state.notes[index].markdown = incoming.markdown
+                    if incoming.markdown != original.markdown { state.notes[index].updatedAt = incoming.updatedAt }
+                } else if incoming.markdown != original.markdown, incoming.markdown != state.notes[index].markdown {
+                    let preserved = Note(markdown: incoming.markdown, pullRequest: incoming.pullRequest)
+                    state.notes.append(preserved)
+                    conflictNoteIDs.insert(preserved.id)
+                    changeRevision &+= 1
+                    noteFileMessage =
+                        "An external edit conflicted with unsaved text. Both versions have been kept as notes."
+                }
+            } else if previous[incoming.id] == nil, !deletedNoteIDs.contains(incoming.id) {
+                state.notes.append(incoming)
+            }
+        }
+        conflictNoteIDs.formUnion(result.conflictNoteIDs)
+        if !result.conflictNoteIDs.isEmpty {
+            noteFileMessage = "An external edit conflicted with unsaved text. Both versions have been kept as notes."
         }
     }
 
     func terminationSave() -> Task<Bool, Never> {
         saveTask?.cancel()
         let snapshot = state
+        let deletions = deletedNoteIDs
         let writer = repository
-        let blocked = storageNeedsRecovery
+        let blocked = storageNeedsRecovery || isRestoringBackup
         return Task.detached {
             guard !blocked else { return false }
             do {
-                try await writer.saveAndClose(snapshot)
+                try await writer.saveAndClose(snapshot, deletedNoteIDs: deletions)
                 return true
             } catch { return false }
         }
@@ -446,15 +583,15 @@ final class AppStore {
 
     func flush() async -> Bool {
         saveTask?.cancel()
-        guard !storageNeedsRecovery else { return false }
-        do {
-            try await repository.save(state)
-            saveError = nil
-            return true
-        } catch {
-            saveError = "Saving failed. Keep Stow open to preserve unsaved changes."
-            return false
+        return await persist()
+    }
+
+    /// Transfers reconcile live files before taking a single in-memory snapshot.
+    func portableSnapshot() async throws -> AppState {
+        guard !isRestoringBackup, await flush(), !isRestoringBackup else {
+            throw DataTransferFileError.cannotSynchronize
         }
+        return state
     }
 
     func recoverState() async {
@@ -462,7 +599,65 @@ final class AppStore {
             try await repository.recoverByBackingUp()
             storageNeedsRecovery = false
             _ = await flush()
-        } catch { saveError = "Recovery could not create a backup. The original file is unchanged." }
+            await watchNotesFolder()
+        } catch { saveError = "Recovery could not create a backup. The original files are unchanged." }
+    }
+
+    func restoreBackup(_ replacement: AppState) async -> Bool {
+        guard !isRestoringBackup, !isTerminating, (try? StowBackup.encode(replacement)) != nil else { return false }
+        isRestoringBackup = true
+        sessionGeneration += 1
+        cancelDetails()
+        if let previous = coordinator { await previous.cancel() }
+        coordinator = nil
+        githubClient = nil
+        isRefreshing = false
+        for task in accessoryRuns.values { task.cancel() }
+        accessoryRuns.removeAll()
+        accessoryTokens.removeAll()
+        defer {
+            isRestoringBackup = false
+            configureGitHub()
+        }
+        saveTask?.cancel()
+        if let active = persistenceTask { _ = await active.value }
+        if !storageNeedsRecovery, !(await persist(allowDuringRestore: true)) { return false }
+        // Preserve the current in-memory version as well as the repository's original files.
+        do {
+            let folder = stateURL.deletingLastPathComponent()
+            try FileManager.default.createDirectory(
+                at: folder, withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            let backup = folder.appendingPathComponent("pre-restore-\(UUID().uuidString).stowbackup")
+            try DataTransferFiles.writePrivateAtomically(StowBackup.encode(state), to: backup)
+            var restored = replacement
+            for index in restored.pullRequests.indices {
+                restored.pullRequests[index].isStale = true
+                restored.pullRequests[index].readinessIsComplete = false
+            }
+            let result = try await repository.restore(restored)
+            sessionGeneration += 1
+            cancelDetails()
+            for task in accessoryRuns.values { task.cancel() }
+            accessoryRuns.removeAll()
+            accessoryTokens.removeAll()
+            accessoryResults.removeAll()
+            state = result.state
+            deletedNoteIDs.removeAll()
+            conflictNoteIDs.removeAll()
+            noteFileMessage = nil
+            storageNeedsRecovery = false
+            saveError = nil
+            changeRevision &+= 1
+            persistedRevision = changeRevision
+            ThemeController.shared.apply(state.appearance)
+            await watchNotesFolder()
+            onRestoreWindows?()
+            return true
+        } catch {
+            saveError = "The backup could not be restored. Your previous files and in-memory notes have been kept."
+            return false
+        }
     }
 
     static func openLink(_ url: URL) {

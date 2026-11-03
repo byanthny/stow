@@ -19,6 +19,12 @@ struct BoardView: View {
                         Task { await store.refresh() }
                     }
                 }
+                QuietIconButton(
+                    symbol: store.state.boardAlwaysOnTop ? "pin.fill" : "pin",
+                    label: store.state.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top"
+                ) { store.toggleBoardAlwaysOnTop() }
+                .accessibilityValue(store.state.boardAlwaysOnTop ? "Pinned" : "Unpinned")
+                .accessibilityIdentifier("board.alwaysOnTop")
                 QuietIconButton(symbol: "plus", label: "New note") { store.addNote() }
                 QuietIconButton(symbol: "slider.horizontal.3", label: "Settings") { showSettings() }
             }.padding(.horizontal, 15).padding(.vertical, 8)
@@ -37,6 +43,10 @@ struct BoardView: View {
                                     }
                                 }.buttonStyle(.link).font(.stow(size: 11))
                             }.foregroundStyle(Color.stowAmber)
+                        }
+                        if let message = store.noteFileMessage {
+                            Label(message, systemImage: "doc.on.doc")
+                                .font(.stow(size: 11)).foregroundStyle(Color.stowAmber)
                         }
                         if store.state.githubEnabled {
                             prSection("Needs you", section: .needsYou)
@@ -101,6 +111,7 @@ struct BoardView: View {
         .foregroundStyle(Color.stowText).background(Color.stowBackground)
         .preferredColorScheme(ThemeController.shared.colorScheme)
         .frame(minWidth: 320, minHeight: 320)
+        .disabled(store.isRestoringBackup)
     }
 
     private func prSection(_ title: String, section: AttentionSection) -> some View {

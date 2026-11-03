@@ -83,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.onDelete = { [weak self] id in self?.noteWindows.removeValue(forKey: id)?.orderOut(nil) }
         store.onShowBoard = { [weak self] in self?.showBoard() }
         store.onAppearanceChange = { [weak self] in self?.applyWindowAppearance() }
+        store.onBoardLevelChange = { [weak self] in self?.applyBoardLevel() }
+        store.onRestoreWindows = { [weak self] in self?.restoreWindows() }
         installMenus()
         await store.start()
         isRestoring = true
@@ -96,7 +98,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidBecomeActive(_ notification: Notification) {
         guard store?.isLoaded == true else { return }
-        Task { await store.refresh() }
+        Task {
+            _ = await store.flush()
+            await store.refresh()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -139,6 +144,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return .terminateLater
     }
 
+    private func restoreWindows() {
+        isRestoring = true
+        for panel in noteWindows.values {
+            panel.delegate = nil
+            panel.close()
+        }
+        noteWindows.removeAll()
+        board.delegate = nil
+        board.close()
+        createBoard()
+        for note in store.state.notes where note.isDetached { showNote(note.id) }
+        applyWindowAppearance()
+        isRestoring = false
+        showBoard()
+    }
+
     private func createBoard() {
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let frame = restoredFrame(
@@ -146,6 +167,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             fallback: NSRect(x: visible.maxX - 404, y: visible.maxY - 744, width: 380, height: 700),
             minimum: NSSize(width: 320, height: 320))
         board = makePanel(frame: frame, title: "Stow")
+        applyBoardLevel()
         board.minSize = NSSize(width: 320, height: 348)
         board.contentView = NSHostingView(
             rootView: BoardView(store: store, showSettings: { [weak self] in self?.showSettings() }))
@@ -169,6 +191,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.delegate = self
         panel.onPaste = { [weak self] text in self?.store.pasteOutsideEditor(text) }
         return panel
+    }
+
+    private func applyBoardLevel() {
+        board?.level = store.state.boardAlwaysOnTop ? .floating : .normal
     }
 
     private func applyWindowAppearance() {

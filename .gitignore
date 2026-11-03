@@ -18,3 +18,5 @@ xcuserdata/
 state.json
 state.json.*
 .local/
+*.stowbackup
+Stow-notes-*/

@@ -14,6 +14,8 @@ output=$(cd "$output" && pwd)
 "$repository/scripts/build.sh" Release "$output"
 app="$output/DerivedData/Release/Build/Products/Release/Stow.app"
 xcrun lipo "$app/Contents/MacOS/Stow" -verify_arch arm64 x86_64
+# Remove debug maps containing absolute build-machine paths before signing.
+xcrun strip -S "$app/Contents/MacOS/Stow"
 /usr/bin/codesign --force --sign - --options runtime "$app"
 /usr/bin/codesign --verify --deep --strict "$app"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$app" "$output/Stow.zip"
