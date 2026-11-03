@@ -13,6 +13,7 @@
 		3522BC83D67633EA0C9FE636 /* PRCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A0A36E778F7188CF52838D /* PRCard.swift */; };
 		4BC2F3540AB6C7EB457A3A08 /* StowExtensionSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 23FEB436DD4D679FCE9F5F06 /* StowExtensionSDK */; };
 		4F2CB3CEB19D67B2697FB4BB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6648BF0294A445DFDF63BC88 /* SettingsView.swift */; };
+		539FD22A5C14EAFD1E4E0D9D /* ThemeConfigIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */; };
 		56BE1A684F9D58C9329C1B1C /* DemoContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B984318AC22D6CC4F5676B9 /* DemoContent.swift */; };
 		56C55A5ECD2DA09E60C8EB60 /* StowGitHub in Frameworks */ = {isa = PBXBuildFile; productRef = 2E2DDEEF4A72C935B2EE1927 /* StowGitHub */; };
 		5B81B5EF686EE5C467896E7C /* StowSampleExtension in Frameworks */ = {isa = PBXBuildFile; productRef = A264A05198370049BFD1BF4B /* StowSampleExtension */; };
@@ -49,6 +50,7 @@
 		15A0A36E778F7188CF52838D /* PRCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PRCard.swift; sourceTree = "<group>"; };
 		201C19CDEAD22A1FC05D10B0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		27F306819D552810FCC1926D /* AppearanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceView.swift; sourceTree = "<group>"; };
+		2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeConfigIntegrationTests.swift; sourceTree = "<group>"; };
 		2B984318AC22D6CC4F5676B9 /* DemoContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoContent.swift; sourceTree = "<group>"; };
 		30BC108E0F506343370A4087 /* Windows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Windows.swift; sourceTree = "<group>"; };
 		5ED6C264979A01D79F5855BF /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
@@ -105,6 +107,7 @@
 				B0F40371A05002BD9C2656E9 /* AppIntegrationTests.swift */,
 				F08AE2886F6946894A224AA8 /* AppStoreCancellationTests.swift */,
 				8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */,
+				2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */,
 			);
 			path = AppTests;
 			sourceTree = "<group>";
@@ -258,6 +261,7 @@
 				69D5ABCA4F5CB4908E399E55 /* AppStoreCancellationTests.swift in Sources */,
 				6EDEAAB26AA350808FA1FA61 /* AppearanceIntegrationTests.swift in Sources */,
 				F42711049E90261D511B21A1 /* SectionsAndAppearanceTests.swift in Sources */,
+				539FD22A5C14EAFD1E4E0D9D /* ThemeConfigIntegrationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

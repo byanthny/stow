@@ -2,7 +2,9 @@ name: checks
 
 on:
   push:
+    branches: [main]
   pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,6 +16,8 @@ concurrency:
 
 jobs:
   build:
+    needs: secrets
+    if: needs.secrets.outputs.native == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -33,6 +37,8 @@ jobs:
         run: ./scripts/build.sh Release
 
   secrets:
+    outputs:
+      native: ${{ steps.changes.outputs.native }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -41,6 +47,31 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: detect native changes
+        id: changes
+        env:
+          STOW_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          STOW_EVENT: ${{ github.event_name }}
+        shell: python
+        run: |
+          import os
+          import re
+          import subprocess
+
+          native = True
+          base = os.environ.get("STOW_BASE_SHA", "")
+          if os.environ["STOW_EVENT"] != "workflow_dispatch" and re.fullmatch(r"[0-9a-f]{40}", base):
+              try:
+                  paths = subprocess.check_output(
+                      ["git", "diff", "--no-renames", "--name-only", "-z", base, "HEAD"]
+                  ).decode().split("\0")
+                  prefixes = ("App/", "AppTests/", "Sources/", "Tests/", "scripts/", "Stow.xcodeproj/", ".github/")
+                  files = {"Package.swift", "Package.resolved", "project.yml", ".swift-format", ".gitignore"}
+                  native = any(path.startswith(prefixes) or path in files for path in paths if path)
+              except subprocess.CalledProcessError:
+                  pass  # Unknown history runs native checks conservatively.
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"native={str(native).lower()}\n")
       - name: install verified gitleaks
         shell: bash
         run: |

@@ -1,4 +1,5 @@
 import AppKit
+import Observation
 import StowCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -6,6 +7,9 @@ import UniformTypeIdentifiers
 struct AppearanceView: View {
     @Bindable var store: AppStore
     @State private var importError: String?
+    @State private var showingConfig = false
+    @State private var configDraft = ThemeConfigDraft()
+    @State private var copiedConfig = false
     private var settings: AppearanceSettings { store.state.appearance }
 
     var body: some View {
@@ -71,15 +75,40 @@ struct AppearanceView: View {
                     colorPicker("Ready", \.green)
                 }.padding(.top, 8)
             }.font(.stow(size: 12))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Button("Copy config") { copyConfig() }.accessibilityIdentifier("appearance.copyConfig")
+                    Button("Edit config…") {
+                        configDraft.begin(settings)
+                        showingConfig = true
+                    }.accessibilityIdentifier("appearance.editConfig")
+                    if copiedConfig {
+                        Text("Copied").foregroundStyle(Color.stowMuted).accessibilityIdentifier("appearance.copied")
+                    }
+                }
+                Text("Small key = value configs are easy to paste and share in messages.")
+                    .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+            }.font(.stow(size: 11))
             HStack(spacing: 10) {
-                Button("Import theme…") { importTheme() }.accessibilityIdentifier("appearance.import")
-                Button("Export theme…") { exportTheme() }.accessibilityIdentifier("appearance.export")
+                Button("Import…") { importTheme() }.accessibilityIdentifier("appearance.import")
+                Button("Export…") { exportTheme() }.accessibilityIdentifier("appearance.export")
                 Spacer()
                 Button("Reset") { store.applyAppearance(.default) }.help("Restore all default appearance settings")
             }.font(.stow(size: 11))
-            Text("Themes are small JSON files containing only colors, fonts, sizes, and opacity.")
+            Text("Import and export .conf text files. Existing JSON themes can still be imported.")
                 .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
         }
+        .sheet(isPresented: $showingConfig) {
+            ThemeConfigEditor(draft: configDraft) {
+                if configDraft.apply(to: store) {
+                    showingConfig = false
+                    copiedConfig = false
+                }
+            } cancel: {
+                showingConfig = false
+            }
+        }
+        .onChange(of: settings) { _, _ in copiedConfig = false }
         .alert("Theme error", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } }))
         {
             Button("OK") { importError = nil }
@@ -134,14 +163,13 @@ struct AppearanceView: View {
     private func importTheme() {
         let panel = NSOpenPanel()
         panel.title = "Import Stow theme"
-        panel.allowedContentTypes = [.json]
+        panel.allowedContentTypes = [Self.configContentType, .plainText, .json]
+        panel.allowsOtherFileTypes = true
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-            guard size <= 1_048_576 else { throw AppearanceError.invalidValue("file size (maximum 1 MB)") }
-            let imported = try AppearanceSettings.decodeTheme(Data(contentsOf: url))
+            let imported = try ThemeConfigTransfer.decode(ThemeConfigTransfer.read(url))
             store.applyAppearance(imported)
         } catch {
             importError = "Your current appearance has been kept. \(error.localizedDescription)"
@@ -151,11 +179,150 @@ struct AppearanceView: View {
     private func exportTheme() {
         let panel = NSSavePanel()
         panel.title = "Export Stow theme"
-        panel.allowedContentTypes = [.json]
-        panel.nameFieldStringValue = "stow-theme.json"
+        panel.allowedContentTypes = [Self.configContentType]
+        panel.allowsOtherFileTypes = true
+        panel.nameFieldStringValue = "stow-theme.conf"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do { try settings.encodedTheme().write(to: url, options: .atomic) } catch {
+        do { try settings.encodedConfig().write(to: url, atomically: true, encoding: .utf8) } catch {
             importError = "The theme could not be saved. \(error.localizedDescription)"
+        }
+    }
+
+    private static var configContentType: UTType {
+        UTType(filenameExtension: "conf", conformingTo: .plainText) ?? .plainText
+    }
+
+    private func copyConfig() {
+        do {
+            let source = try settings.encodedConfig()
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            guard pasteboard.setString(source, forType: .string) else {
+                importError = "The config could not be copied. Try again."
+                return
+            }
+            copiedConfig = true
+        } catch {
+            importError = "The config could not be copied. \(error.localizedDescription)"
+        }
+    }
+}
+
+/// One size-limited import path for pasted configs and local files, including legacy JSON.
+enum ThemeConfigTransfer {
+    static let maximumBytes = 1_048_576
+
+    static func decode(_ data: Data) throws -> AppearanceSettings {
+        guard data.count <= maximumBytes else {
+            throw AppearanceError.invalidValue("config size (maximum 1 MB)")
+        }
+        guard let source = String(data: data, encoding: .utf8) else {
+            throw AppearanceError.invalidValue("text encoding; use UTF-8")
+        }
+        if source.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+            return try AppearanceSettings.decodeTheme(data)
+        }
+        return try AppearanceSettings.decodeConfig(source)
+    }
+
+    static func read(_ url: URL) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        // Read at most one byte beyond the limit, even if a file grows after the panel opens.
+        let data = try handle.read(upToCount: maximumBytes + 1) ?? Data()
+        guard data.count <= maximumBytes else {
+            throw AppearanceError.invalidValue("file size (maximum 1 MB)")
+        }
+        return data
+    }
+}
+
+@MainActor @Observable
+final class ThemeConfigDraft {
+    var source = ""
+    private(set) var error: String?
+
+    func begin(_ settings: AppearanceSettings) {
+        do {
+            source = try settings.encodedConfig()
+            error = nil
+        } catch {
+            source = ""
+            self.error = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    func apply(to store: AppStore) -> Bool {
+        do {
+            let settings = try ThemeConfigTransfer.decode(Data(source.utf8))
+            guard store.applyAppearance(settings) else {
+                throw AppearanceError.invalidValue("appearance settings")
+            }
+            error = nil
+            return true
+        } catch {
+            self.error = "Your current appearance has been kept. \(error.localizedDescription)"
+            return false
+        }
+    }
+}
+
+private struct ThemeConfigEditor: View {
+    @Bindable var draft: ThemeConfigDraft
+    var apply: () -> Void
+    var cancel: () -> Void
+    @FocusState private var sourceFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Theme config").font(.stow(size: 16, weight: .semibold))
+            Text("Paste a config from a message, edit the values, then apply. Cancel keeps your current appearance.")
+                .font(.stow(size: 11)).foregroundStyle(Color.stowMuted)
+            TextEditor(text: $draft.source)
+                .font(.system(size: 12, design: .monospaced))
+                .disableAutocorrection(true)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 8))
+                .focused($sourceFocused)
+                .accessibilityLabel("Theme config source")
+                .accessibilityIdentifier("appearance.config.source")
+            if let error = draft.error {
+                Text(error).font(.stow(size: 11)).foregroundStyle(Color.stowRed)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("appearance.config.error")
+            }
+            HStack {
+                Text("UTF-8 text · maximum 1 MB").font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+                Spacer()
+                Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
+                Button("Apply", action: apply).keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("appearance.config.apply")
+            }
+        }
+        .padding(20)
+        .frame(
+            minWidth: 520, idealWidth: 640, maxWidth: .infinity,
+            minHeight: 420, idealHeight: 560, maxHeight: .infinity
+        )
+        .background(Color.stowBackground)
+        .background(ResizableThemeSheet())
+        .foregroundStyle(Color.stowText)
+        .preferredColorScheme(ThemeController.shared.colorScheme)
+        .onAppear { sourceFocused = true }
+    }
+}
+
+private struct ResizableThemeSheet: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { SizingView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class SizingView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.styleMask.insert(.resizable)
+            window?.contentMinSize = NSSize(width: 520, height: 420)
         }
     }
 }

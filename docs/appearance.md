@@ -1,36 +1,57 @@
 # appearance
 
-Open **Stow → Settings → Appearance** to pick Stow, Graphite, or Paper, adjust background opacity, and choose separate interface and note fonts. Font menus search installed font names. Sizes are in points. Note fonts also apply to Markdown previews; code keeps its monospaced styling. Changes apply immediately to the board and detached notes and are saved locally.
+Open **Stow → Settings → Appearance** to choose a preset, colors, background opacity, and separate interface and note fonts. Font menus search installed font names; sizes are in points. Note fonts also apply to Markdown previews, while code keeps its monospaced styling. Changes apply to the board and open notes and are saved locally.
 
-Presets change the palette and light/dark controls while keeping your font and opacity choices. **Reset** restores every default. **Colors** exposes the palette, including attention, failure, and ready status colors; status labels and symbols still carry meaning independently of color.
+Opacity affects background fills, never text or controls. Overlapping backgrounds can look more opaque than the selected value. macOS **Accessibility → Display → Reduce transparency** keeps backgrounds solid without changing the saved preference. Stow uses native window transparency without blur.
 
-Opacity affects background fills, never text or controls. Overlapping card and window backgrounds can appear more opaque than the selected value. macOS **Accessibility → Display → Reduce transparency** keeps backgrounds solid without changing your saved preference. This is plain native window transparency, without a blur engine.
+## copy and edit a config
 
-# share a theme
+Themes use short `key = value` plaintext configs. Start with [graphite.conf](themes/graphite.conf):
 
-**Export theme…** saves a JSON file. **Import theme…** validates the entire file before applying it; an invalid or unsupported theme leaves your current appearance unchanged. The file contains appearance values only, with no notes, pull requests, account information, or app paths. Themes cannot load code, fonts, plugins, or remote resources.
+```ini
+preset = graphite
+font-family = Menlo
+font-size = 14
+background-opacity = 0.85
+```
 
-Start with [graphite.json](themes/graphite.json), or export your current settings and edit the values. Import the file again to apply changes; Stow does not watch external theme files. Themes are self-contained: required fields must be present. The two font-name fields are optional; omitting one uses the system font. Extra JSON keys are ignored for forward-compatible metadata, while unsupported schema versions are rejected.
+**Copy config** copies the current appearance as text. **Edit config…** opens a native sheet where you can paste or edit a config and apply it. **Export…** saves a `.conf` file; **Import…** reads one. Import or apply the text again after editing an exported file; Stow does not watch it.
 
-| field | accepted value |
+Each config starts from its named preset, then applies the supplied overrides. Without `preset`, the base is `stow`. Omitted settings reset to that base's defaults, rather than keeping values from the previously active theme. A short config is enough; it need not list the entire palette.
+
+Blank lines and full-line comments beginning with `#` are allowed. A `#` inside a color value is part of the hex color, not a comment:
+
+```ini
+# a small variation on the light preset
+preset = paper
+name = Paper notes
+note = #FFF9E8
+```
+
+## settings
+
+| key | accepted value |
 | --- | --- |
-| `schemaVersion` | `1` |
+| `preset` | `stow`, `graphite`, or `paper`; default `stow` |
 | `name` | 1–80 characters, no control characters |
-| `colorScheme` | `dark` or `light` |
-| `colors` | required `background`, `surface`, `note`, `text`, `muted`, `amber`, `red`, `green` values as `#RRGGBB` |
-| `interfaceFontName`, `editorFontName` | installed font name, or omitted/null for system; maximum 200 characters |
-| `interfaceFontSize` | 10–22 points |
-| `editorFontSize` | 10–32 points |
-| `editorLineHeight` | 1–2 times the font’s line height |
-| `backgroundOpacity` | 0.2–1, where 1 is solid |
+| `color-scheme` | `dark` or `light` |
+| `background`, `surface`, `note`, `text`, `muted`, `amber`, `red`, `green` | `#RRGGBB` |
+| `font-family`, `ui-font-family` | installed note or interface font name, or `system`; maximum 200 characters |
+| `font-size` | note size, 10–32 points |
+| `ui-font-size` | interface size, 10–22 points |
+| `line-height` | 1–2 times the note font's line height |
+| `background-opacity` | 0.2–1, where 1 is solid |
 
-All numbers must be finite. Imported files are limited to 1 MB. A font missing on the current Mac falls back to the system font while retaining its saved name, so the theme stays portable. Stow does not install fonts.
+All numbers must be finite. Files are limited to 1 MB. A font missing on the current Mac falls back to the system font while retaining its saved name. Themes do not install fonts or load code, plugins, or remote resources. Exported configs contain appearance settings only, with no notes, pull requests, account information, or app paths.
 
-# manual checks
+Invalid or unsupported input keeps the current appearance unchanged. **Reset** restores all defaults. Existing JSON themes remain importable; [graphite.json](themes/graphite.json) is retained as a legacy example. New sharing and exports use plaintext configs.
 
-- Open the board, a detached note, and Settings. Change presets, colors, fonts, sizes, line height, and opacity; verify all open windows update and text stays opaque.
-- Select text in a Markdown source editor, change appearance, and verify the selection and source remain intact. Type text, change the font, and undo typing. Preview the same note and check headings, lists, links, and monospaced code.
-- Search for and choose an installed font. Import a theme naming an unavailable font and verify readable fallback.
-- Export, reset, and reimport; verify the exported appearance is restored. Import malformed JSON, a missing required field, an invalid color, an out-of-range number, and a newer schema; verify the current theme is kept.
-- Toggle macOS Reduce transparency. Verify solid backgrounds while it is enabled and restoration of the saved opacity when disabled.
-- Quit and relaunch with a custom theme; verify appearance persists alongside unchanged notes and board layout.
+## manual checks
+
+- Change presets, colors, fonts, sizes, line height, and opacity with the board, a detached note, and Settings open. Check that all update and text stays opaque.
+- Select source text, change appearance, and verify selection and source remain intact. Type, change fonts, and undo typing. Check preview headings, lists, links, and code.
+- Copy the config, reset, and apply it in the editor. Export and import a `.conf`; verify the appearance returns. Import the legacy JSON example too.
+- Apply the short Graphite example after a heavily customized theme. Verify omitted settings return to Graphite defaults. Apply a config without `preset` and verify Stow defaults form its base.
+- Test full-line comments and hex colors. Try malformed input, an invalid color, and an out-of-range number; verify the current appearance stays unchanged.
+- Import an unavailable font and verify readable fallback. Toggle Reduce transparency and verify solid backgrounds, then restoration of saved opacity.
+- Quit and relaunch with a custom theme; verify it persists alongside unchanged notes and board layout.

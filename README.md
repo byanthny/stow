@@ -12,7 +12,14 @@ GitHub is optional. Notes work without `gh`, an account, or a network connection
 
 ## appearance
 
-Choose a light or dark preset, adjust colors and background opacity, and set separate interface and note fonts, sizes, and note line height. Changes apply to the board and open notes. Export or import a small shareable JSON theme containing appearance settings only. See [appearance and themes](docs/appearance.md).
+Choose a light or dark preset, adjust colors and background opacity, and set separate interface and note fonts, sizes, and note line height. Changes apply to the board and open notes. Copy, paste, edit, or share a short plaintext theme config. Import and export use `.conf`; existing JSON themes remain readable. See [appearance and themes](docs/appearance.md).
+
+```ini
+preset = graphite
+font-family = Menlo
+font-size = 14
+background-opacity = 0.85
+```
 
 <img src="docs/images/appearance.png" width="440" alt="Stow appearance settings">
 
@@ -54,5 +61,7 @@ For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [
 The Swift package tests the core, GitHub transport, and accessory contract independently of the app. `scripts/test.sh` also runs the hosted app tests using local ad-hoc signing and an isolated test host. The app uses AppKit windows, SwiftUI views, and a native text editor.
 
 Read [architecture](docs/architecture.md), [appearance](docs/appearance.md), [accessory providers](docs/providers.md), [privacy and recovery](docs/privacy.md), and the [verification checklist](docs/verification.md). Feature acceptance, macOS 14 behavior, and performance claims require recorded validation; see that checklist for current evidence.
+
+See the [roadmap](docs/roadmap.md) for the ordered release, public-site, and extension queue.
 
 No project license has been selected. Third-party dependencies retain their own licenses.
