@@ -1,0 +1,17 @@
+{
+  "data": {
+    "viewer": {
+      "id": "viewer-synthetic", "login": "synthetic-viewer",
+      "pullRequests": {
+        "nodes": [{
+          "id": "synthetic-pr-1", "number": 1, "title": "Synthetic fixture", "url": "https://github.com/example/fixture/pull/1",
+          "state": "OPEN", "isDraft": false, "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN", "reviewDecision": null,
+          "author": {"login": "synthetic-viewer"}, "repository": {"name": "fixture", "owner": {"login": "example"}},
+          "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-02T00:00:00Z", "statusCheckRollup": null,
+          "reviewRequests": {"nodes": [], "pageInfo": {"hasNextPage": false, "endCursor": null}}
+        }],
+        "pageInfo": {"hasNextPage": false, "endCursor": null}
+      }
+    }
+  }
+}

@@ -1,0 +1,66 @@
+name: checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - name: check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: verify toolchain
+        run: xcodebuild -version
+      - name: test modules and hosted app
+        run: ./scripts/test.sh
+      - name: build debug
+        run: ./scripts/build.sh Debug
+      - name: build universal release
+        run: ./scripts/build.sh Release
+
+  secrets:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: check out full history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: install verified gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=gitleaks_8.30.1_linux_x64.tar.gz
+          directory=$(mktemp -d)
+          trap 'rm -rf "$directory"' EXIT
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/$archive" \
+            --output "$directory/$archive"
+          # SHA256 from the official v8.30.1 release asset.
+          printf '%s  %s\n' \
+            '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' \
+            "$directory/$archive" | sha256sum --check --strict
+          tar -xzf "$directory/$archive" -C "$directory" gitleaks
+          mkdir -p "$RUNNER_TEMP/stow-tools"
+          install -m 0755 "$directory/gitleaks" "$RUNNER_TEMP/stow-tools/gitleaks"
+          test "$("$RUNNER_TEMP/stow-tools/gitleaks" version)" = '8.30.1'
+          printf '%s\n' "$RUNNER_TEMP/stow-tools" >> "$GITHUB_PATH"
+      - name: scan history
+        run: gitleaks git --redact --no-banner --log-opts='--all' .
+      - name: scan working tree
+        run: gitleaks dir --redact --no-banner .

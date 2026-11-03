@@ -1,0 +1,73 @@
+name: Stow
+options:
+  bundleIdPrefix: com.byanthny
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.4"
+  createIntermediateGroups: true
+packages:
+  StowModules:
+    path: .
+  MarkdownUI:
+    url: https://github.com/gonzalezreal/swift-markdown-ui
+    exactVersion: 2.4.1
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: "-"
+    ENABLE_APP_SANDBOX: NO
+    ENABLE_HARDENED_RUNTIME: YES
+    GENERATE_INFOPLIST_FILE: NO
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    COMBINE_HIDPI_IMAGES: YES
+    SWIFT_EMIT_LOC_STRINGS: NO
+targets:
+  Stow:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+    dependencies:
+      - package: StowModules
+        product: StowCore
+      - package: StowModules
+        product: StowGitHub
+      - package: StowModules
+        product: StowExtensionSDK
+      - package: StowModules
+        product: StowExtensions
+      - package: StowModules
+        product: StowSampleExtension
+      - package: MarkdownUI
+        product: MarkdownUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.byanthny.stow
+        INFOPLIST_FILE: App/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  StowAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: AppTests
+    dependencies:
+      - target: Stow
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.byanthny.stow.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Stow.app/Contents/MacOS/Stow"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  Stow:
+    build:
+      targets:
+        Stow: all
+        StowAppTests: [test]
+    test:
+      targets:
+        - StowAppTests
+      gatherCoverageData: false
