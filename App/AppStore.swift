@@ -460,8 +460,8 @@ final class AppStore {
         notesDirectory = await repository.notesDirectory
         let presenter = NotesFolderPresenter(directory: notesDirectory) { [weak self] in
             Task { @MainActor [weak self] in
-                guard let self, !isStopped, !isTerminating, !isRestoringBackup else { return }
-                changed()
+                guard let self, !self.isStopped, !self.isTerminating, !self.isRestoringBackup else { return }
+                self.changed()
             }
         }
         notesPresenter = presenter
@@ -469,8 +469,8 @@ final class AppStore {
         do {
             notesWatcher = try NotesFolderWatcher(directory: notesDirectory) { [weak self] in
                 Task { @MainActor [weak self] in
-                    guard let self, !isStopped, !isTerminating, !isRestoringBackup else { return }
-                    changed()
+                    guard let self, !self.isStopped, !self.isTerminating, !self.isRestoringBackup else { return }
+                    self.changed()
                 }
             }
         } catch {
