@@ -13,7 +13,9 @@ struct BoardView: View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "tray").font(theme.font(size: 16, weight: .medium)).foregroundStyle(.stowMuted)
-                Text("Stow").font(theme.font(size: 14, weight: .semibold))
+                if store.state.boardLayout.showsTitle {
+                    Text("Stow").font(theme.font(size: 14, weight: .semibold))
+                }
                 Spacer()
                 if store.isRefreshing {
                     ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 20)
@@ -47,7 +49,7 @@ struct BoardView: View {
                                 .padding(.horizontal, 14).padding(.bottom, 14)
                         }
                         AccessoryViews(store: store)
-                    }.padding(.bottom, 14)
+                    }.accessibilityElement(children: .contain).accessibilityLabel("Board contents").padding(.bottom, 14)
                 }
                 .onChange(of: store.focusRequestID) { _, _ in
                     guard let id = store.focusNoteID else { return }
@@ -60,7 +62,11 @@ struct BoardView: View {
                 }
             }
             HStack(spacing: 5) {
-                Circle().fill(store.githubMessage == nil ? AnyShapeStyle(StowColor.stowGreen.opacity(0.75)) : AnyShapeStyle(.stowAmber))
+                Circle()
+                    .fill(
+                        store.githubMessage == nil
+                            ? AnyShapeStyle(StowColor(role: .green).opacity(0.75)) : AnyShapeStyle(.stowAmber)
+                    )
                     .frame(width: 4, height: 4)
                 if !store.state.githubEnabled {
                     Text("Notes only")
@@ -146,8 +152,10 @@ struct BoardView: View {
                 Group {
                     if note.isDetached {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
+                    } else if store.isNoteExpanded(note.id) {
+                        NoteView(store: store, noteID: note.id) { store.toggleNoteExpanded(note.id) }
                     } else {
-                        NoteView(store: store, noteID: note.id)
+                        CollapsedNoteRow(store: store, note: note)
                     }
                 }.id(note.id)
             }

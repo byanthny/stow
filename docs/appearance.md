@@ -1,10 +1,10 @@
-# appearance
+# Appearance
 
 Open **Stow → Settings → Appearance** to choose a preset, colors, background opacity, and separate interface and note fonts. Font menus search installed font names; sizes are in points. Note fonts also apply to Markdown previews, while code keeps its monospaced styling. Changes apply to the board and open notes and are saved locally.
 
 Opacity affects background fills, never text or controls. Overlapping backgrounds can look more opaque than the selected value. macOS **Accessibility → Display → Reduce transparency** keeps backgrounds solid without changing the saved preference. Stow uses native window transparency without blur.
 
-## copy and edit a config
+## Copy and edit a config
 
 Themes use short `key = value` plaintext configs. Start with [graphite.conf](themes/graphite.conf):
 
@@ -28,7 +28,7 @@ name = Paper notes
 note = #FFF9E8
 ```
 
-## settings
+## Settings
 
 | key | accepted value |
 | --- | --- |
@@ -46,7 +46,7 @@ All numbers must be finite. Files are limited to 1 MB. A font missing on the cur
 
 Invalid or unsupported input keeps the current appearance unchanged. **Reset** restores all defaults. Existing JSON themes remain importable; [graphite.json](themes/graphite.json) is retained as a legacy example. New sharing and exports use plaintext configs.
 
-## manual checks
+## Manual checks
 
 - Change presets, colors, fonts, sizes, line height, and opacity with the board, a detached note, and Settings open. Check that all update and text stays opaque.
 - Select source text, change appearance, and verify selection and source remain intact. Type, change fonts, and undo typing. Check preview headings, lists, links, and code.

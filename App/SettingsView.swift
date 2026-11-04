@@ -15,7 +15,7 @@ struct SettingsView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
                     Text("GitHub").font(theme.font(size: 14, weight: .semibold))
-                    Toggle(
+                    SettingsToggle(
                         "Show pull requests",
                         isOn: Binding(get: { store.state.githubEnabled }, set: { store.setGitHubEnabled($0) }))
                     Text("Uses your existing gh login. Notes work independently.").font(theme.font(size: 11))
@@ -35,7 +35,7 @@ struct SettingsView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Accessories").font(theme.font(size: 14, weight: .semibold))
-                    Toggle(
+                    SettingsToggle(
                         "Sample board accessory",
                         isOn: Binding(get: { store.sampleEnabled() }, set: { _ in store.toggleSample() }))
                     Text("A small bundled example. Note accessories can be enabled from each note’s actions menu.")
@@ -115,6 +115,9 @@ private struct BoardSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Board").font(theme.font(size: 14, weight: .semibold))
+            SettingsToggle(
+                "Show board title",
+                isOn: Binding(get: { layout.showsTitle }, set: { store.setShowsBoardTitle($0) }))
             Text("Section order").font(theme.font(size: 11)).foregroundStyle(.secondary)
             ForEach(Array(layout.order.enumerated()), id: \.element) { index, section in
                 HStack(spacing: 6) {
@@ -132,25 +135,59 @@ private struct BoardSettingsView: View {
                     }.disabled(index == layout.order.count - 1).accessibilityLabel("Move \(section.title) down")
                 }
             }
-            Picker(
-                "Pull requests before Show more",
-                selection: Binding(get: { layout.visiblePullRequests }, set: { store.setVisiblePullRequests($0) })
-            ) {
-                ForEach([3, 5, 10], id: \.self) { count in Text(verbatim: "\(count)").tag(count) }
-                Text("All").tag(0)
-                if ![0, 3, 5, 10].contains(layout.visiblePullRequests) {
-                    Text(verbatim: "\(layout.visiblePullRequests)").tag(layout.visiblePullRequests)
-                }
+            HStack {
+                Text("Pull requests before Show more")
+                Spacer()
+                Picker(
+                    "Pull requests before Show more",
+                    selection: Binding(get: { layout.visiblePullRequests }, set: { store.setVisiblePullRequests($0) })
+                ) {
+                    ForEach([3, 5, 10], id: \.self) { count in Text(verbatim: "\(count)").tag(count) }
+                    Text("All").tag(0)
+                    if ![0, 3, 5, 10].contains(layout.visiblePullRequests) {
+                        Text(verbatim: "\(layout.visiblePullRequests)").tag(layout.visiblePullRequests)
+                    }
+                }.pickerStyle(.segmented).labelsHidden().fixedSize()
             }.font(theme.font(size: 12))
-            Toggle(
+            SettingsToggle(
                 "Let Notes collapse",
                 isOn: Binding(get: { layout.notesCanCollapse }, set: { store.setNotesCanCollapse($0) }))
+            SettingsToggle(
+                "Notes start collapsed",
+                isOn: Binding(get: { layout.notesStartCollapsed }, set: { store.setNotesStartCollapsed($0) }))
+            SettingsToggle(
+                "Open one note at a time",
+                isOn: Binding(get: { layout.oneNoteOpenAtATime }, set: { store.setOneNoteOpenAtATime($0) }))
             HStack {
-                Text("Defaults: Needs you, Notes, Waiting; 3 pull requests per section; Notes always open.")
-                    .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "Defaults: title shown; Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time."
+                )
+                .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Reset") { store.resetBoardLayout() }.disabled(layout == BoardLayout())
             }
         }
+    }
+}
+
+/// A setting's label on the left with its checkbox on the right, in line with the other Settings controls.
+private struct SettingsToggle: View {
+    let title: String
+    @Binding var isOn: Bool
+
+    init(_ title: String, isOn: Binding<Bool>) {
+        self.title = title
+        self._isOn = isOn
+    }
+
+    var body: some View {
+        HStack {
+            // The checkbox carries the label for VoiceOver; the visible text is a click target only.
+            Text(title).accessibilityHidden(true)
+            Spacer()
+            Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.checkbox)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { isOn.toggle() }
     }
 }

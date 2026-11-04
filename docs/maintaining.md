@@ -1,8 +1,8 @@
-# maintaining
+# Maintaining
 
 Notes for the repository owner. Each command below changes a GitHub setting; review it before running it.
 
-## repository settings
+## Repository settings
 
 These keep outside contributions safe once the repository is public: private vulnerability reports for [SECURITY.md](../SECURITY.md), Dependabot alerts, GitHub-owned actions only, a read-only workflow token, and approval before any outside contributor's workflow runs on macOS runners.
 
@@ -55,7 +55,7 @@ gh api -X POST "repos/$repo/rulesets" --input - <<'JSON'
 JSON
 ```
 
-## going public
+## Going public
 
 Check the roadmap's public-development items first, then change visibility. Secret scanning and push protection are free for public repositories, so turn them on right after:
 
@@ -68,6 +68,10 @@ JSON
 
 Publish no binaries until Developer ID signing and notarization are in place; see the [roadmap](roadmap.md).
 
-## acceptance runs
+## Acceptance runs
 
 Add the `acceptance` label to a pull request, or run the `acceptance` workflow by hand once it is on `main`, to build a universal Debug app and run its synthetic smoke checks on an Intel runner. Record results in [verification](verification.md).
+
+## Accessibility audit
+
+Before a release, and after UI changes, run `./scripts/accessibility.sh` on a Mac. It runs Xcode's accessibility audit against the Debug app with synthetic state, and CI doesn't run it. macOS may ask an administrator to approve Automation Mode, including again after the Mac sleeps, and the test moves the pointer for about half a minute. Record results in [verification](verification.md).

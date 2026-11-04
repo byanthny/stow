@@ -1,6 +1,6 @@
 # Stow
 
-A small native macOS board for Markdown notes and GitHub pull requests. Requires macOS 14 or later; hands-on testing so far covers macOS 26 on Apple silicon (see [verification](docs/verification.md)).
+A small native macOS board for Markdown notes and GitHub pull requests. Requires macOS 14 or later; hands-on testing so far covers macOS 26 on Apple silicon, and automated smoke checks pass on Intel with macOS 15 (see [verification](docs/verification.md)).
 
 Keep notes on the board or detach them into separate windows. Each detached note has its own always-on-top setting. Closing a note window keeps the note; deleting it is explicit. The board groups pull requests into “Needs you” and “Waiting” using observed GitHub state, and keeps cached cards when a refresh is incomplete.
 
@@ -49,7 +49,7 @@ For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [
 - Paste a canonical `https://github.com/example/project/pull/42` URL outside the editor to pin a pull request. Text following one URL becomes an attached note. Other or ambiguous text stays intact as a note.
 - Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note from its actions menu. Use **Command-0** or the Dock icon to reopen the board.
-- The board shows **Needs you**, **Notes**, then **Waiting**. Section titles stay visible while you scroll, and each pull request section shows three cards before **Show more**. Click **Needs you** or **Waiting** to collapse it; Stow remembers the choice. Change the order, the card count, and whether Notes can collapse in Settings → **Board**.
+- The board shows **Needs you**, **Notes**, then **Waiting**. Section titles stay visible while you scroll, and each pull request section shows three cards before **Show more**. Click **Needs you** or **Waiting** to collapse it; Stow remembers the choice. Notes show as one-line rows: click one to open it, opening another closes it, and the pop-out button gives a note its own window. Change the order, the card count, how notes open, and whether the header shows the title in Settings → **Board**.
 - On first launch, Stow asks before using GitHub; change it later in Settings. Install [GitHub CLI](https://cli.github.com/) and authenticate outside Stow with `gh auth login --hostname github.com`. Stow uses that existing login; it does not extract or save a token. Use **Choose gh…** if automatic discovery fails.
 - Click a pull request to load details. Stow reads GitHub state; it does not merge, review, or modify pull requests.
 
@@ -61,7 +61,7 @@ Import or export ordinary `.md` copies, or use **Save backup…** for notes and 
 
 ## Development
 
-The Swift package tests the core, GitHub transport, and accessory contract independently of the app. `scripts/test.sh` also runs the hosted app tests using local ad-hoc signing and an isolated test host. The app uses AppKit windows, SwiftUI views, and a native text editor.
+The Swift package tests the core, GitHub transport, and accessory contract independently of the app. `scripts/test.sh` also runs the hosted app tests using local ad-hoc signing and an isolated test host. `scripts/accessibility.sh` runs Xcode's accessibility audit against the Debug app through UI automation. The app uses AppKit windows, SwiftUI views, and a native text editor.
 
 Read [architecture](docs/architecture.md), [appearance](docs/appearance.md), [accessory providers](docs/providers.md), [privacy and recovery](docs/privacy.md), and the [verification checklist](docs/verification.md). Feature acceptance, macOS 14 behavior, and performance claims require recorded validation; see that checklist for current evidence.
 

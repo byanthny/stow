@@ -1,4 +1,4 @@
-# architecture
+# Architecture
 
 Stow separates local state, GitHub reads, portable accessories, and the macOS interface.
 
@@ -11,7 +11,7 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 | `StowSampleExtension` | optional synthetic provider with no network or host-state dependency |
 | `App` | AppKit lifecycle and panels, SwiftUI rendering, native text editing, and observable orchestration |
 
-## state and windows
+## State and windows
 
 `AppStore` owns the in-memory `AppState`. Board and detached windows reference one note by stable ID. A managed `<UUID>.md` file is the canonical Markdown source. The live `state.json` envelope uses disk schema version 2: `metadata` holds an `AppState` with empty note bodies, and `notesDirectoryName` names the validated managed notes directory. It retains links, frames, detached state, pins, dismissals, settings, board layout preferences, cached PRs, and accessory configuration.
 
@@ -23,7 +23,7 @@ The first successful save of legacy JSON storage backs up the old index and migr
 
 The `.stowbackup` codec uses backup format version 1 and encodes a complete in-memory `AppState` snapshot, including note bodies, for explicit transfer and restore. Machine-local settings, the `gh` location and the GitHub switch, are written as defaults and keep this Mac's values on restore; restored accessories start disabled. `GHClient` launches only an absolute path named `gh` that resolves to a regular executable other users cannot write. That envelope is separate from the metadata-only live disk index. The host synchronizes live edits before note exports or backup snapshots and refuses the transfer if synchronization fails. Markdown import validates all selected files before adding new note identities; exports are independent copies. See [portability](portability.md) and [privacy and recovery](privacy.md).
 
-## github reads
+## GitHub reads
 
 `GHProcessTransport` starts `gh api` directly for `github.com`, supplies JSON over standard input, and drains process output with bounded buffers. It reuses the CLI’s existing authentication and sanitizes user-facing errors. Stow does not have a token store.
 
@@ -31,7 +31,7 @@ The `.stowbackup` codec uses backup format version 1 and encodes a complete in-m
 
 Classification distinguishes observed facts from incomplete readiness. Conflicts, requested changes, failing checks, direct review requests, and complete merge readiness can need attention. Draft and terminal states override readiness. Unknown checks, mergeability, review data, or incomplete pagination cannot establish “Ready to merge.” “Behind base branch” is informational. Pins preserve watched cards; dismissals hide cards without deleting notes. Terminal unpinned cards expire 24 hours after first observation.
 
-## dependency direction
+## Dependency direction
 
 The SDK depends only on Foundation. Core may store SDK configuration values, but providers receive only their explicit request. The host owns placement and rendering. The app links the modules; module tests do not depend on the app or MarkdownUI.
 

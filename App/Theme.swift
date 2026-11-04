@@ -20,21 +20,28 @@ struct StowTheme: Equatable, Sendable {
         return .system(size: adjustedSize, weight: weight)
     }
 
+    /// The AppKit counterpart of `font(size:weight:)`, for AppKit controls inside SwiftUI views.
+    func nsFont(size: CGFloat = 13) -> NSFont {
+        let adjustedSize = max(8, size + settings.interfaceFontSize - 13)
+        return settings.interfaceFontName.flatMap { NSFont(name: $0, size: adjustedSize) }
+            ?? .systemFont(ofSize: adjustedSize)
+    }
+
     func color(_ role: StowColor.Role) -> Color {
         let colors = settings.colors
         switch role {
-        case .background: return Color.stowHex(colors.background).opacity(effectiveBackgroundOpacity)
-        case .surface: return Color.stowHex(colors.surface).opacity(effectiveBackgroundOpacity)
-        case .note: return Color.stowHex(colors.note).opacity(effectiveBackgroundOpacity)
-        case .text: return Color.stowHex(colors.text)
-        case .muted: return Color.stowHex(colors.muted)
-        case .amber: return Color.stowHex(colors.amber)
-        case .red: return Color.stowHex(colors.red)
-        case .green: return Color.stowHex(colors.green)
+        case .background: return Color(stowHex: colors.background).opacity(effectiveBackgroundOpacity)
+        case .surface: return Color(stowHex: colors.surface).opacity(effectiveBackgroundOpacity)
+        case .note: return Color(stowHex: colors.note).opacity(effectiveBackgroundOpacity)
+        case .text: return Color(stowHex: colors.text)
+        case .muted: return Color(stowHex: colors.muted)
+        case .amber: return Color(stowHex: colors.amber)
+        case .red: return Color(stowHex: colors.red)
+        case .green: return Color(stowHex: colors.green)
         }
     }
 
-    var textNSColor: NSColor { NSColor(Color.stowHex(settings.colors.text)) }
+    var textNSColor: NSColor { NSColor(Color(stowHex: settings.colors.text)) }
     var appKitAppearance: NSAppearance? { NSAppearance(named: isDark ? .darkAqua : .aqua) }
 }
 
@@ -100,9 +107,10 @@ extension View {
 }
 
 extension Color {
-    static func stowHex(_ value: String) -> Color {
+    /// A `#RRGGBB` theme value as an opaque sRGB color.
+    init(stowHex value: String) {
         let rgb = UInt32(value.dropFirst(), radix: 16) ?? 0
-        return Color(
+        self.init(
             .sRGB, red: Double((rgb >> 16) & 255) / 255,
             green: Double((rgb >> 8) & 255) / 255, blue: Double(rgb & 255) / 255, opacity: 1)
     }

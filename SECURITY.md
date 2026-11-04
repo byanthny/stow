@@ -1,6 +1,6 @@
-# security policy
+# Security policy
 
-## reporting a vulnerability
+## Reporting a vulnerability
 
 Report suspected vulnerabilities privately with **Report a vulnerability** on this repository's Security tab. Do not open a public issue or pull request for them.
 
@@ -8,11 +8,11 @@ Include the Stow commit or version, your macOS version and hardware, steps to re
 
 Stow has one maintainer, so reports are handled on a best-effort basis. There is no bug bounty.
 
-## supported versions
+## Supported versions
 
 Stow is pre-1.0. Security fixes land on `main`, and on the latest release once releases exist.
 
-## scope and trust model
+## Scope and trust model
 
 Stow is a local app. It has no server, account system, analytics, or token store.
 
@@ -24,6 +24,6 @@ In scope: anything that lets untrusted input run code, open unexpected programs 
 
 Out of scope: attacks that already require running code as your macOS user, physical access, or a modified build. Report vulnerabilities in `gh`, macOS, or dependencies to their maintainers, and here too if Stow's use of them makes the problem worse.
 
-## builds
+## Builds
 
 Packages from `./scripts/package.sh` are signed ad hoc for your own Mac. No signed and notarized public builds exist yet, so do not run Stow builds from other people.

@@ -73,7 +73,7 @@ struct NativeEditor: NSViewRepresentable {
         let font =
             appearance.editorFontName.flatMap { NSFont(name: $0, size: appearance.editorFontSize) }
             ?? .systemFont(ofSize: appearance.editorFontSize)
-        let textColor = NSColor(Color.stowHex(appearance.colors.text))
+        let textColor = NSColor(Color(stowHex: appearance.colors.text))
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineHeightMultiple = appearance.editorLineHeight
         editor.font = font

@@ -18,14 +18,16 @@ struct AppearanceView: View {
             HStack {
                 Text("Appearance").font(theme.font(size: 14, weight: .semibold))
                 Spacer()
-                Menu {
-                    Button("Stow · dark") { preset(.default) }
-                    Button("Graphite · dark") { preset(.graphite) }
-                    Button("Paper · light") { preset(.paper) }
-                } label: {
-                    Text(settings.name)
-                }
-                .fixedSize().accessibilityLabel("Theme preset")
+                PullDownMenu(
+                    title: settings.name,
+                    sections: [
+                        [
+                            .init(title: "Stow · dark") { preset(.default) },
+                            .init(title: "Graphite · dark") { preset(.graphite) },
+                            .init(title: "Paper · light") { preset(.paper) },
+                        ]
+                    ], label: "Theme preset", font: theme.nsFont()
+                ).fixedSize()
             }
             Text("Make Stow feel at home. Changes apply to the board and every open note.")
                 .font(theme.font(size: 11)).foregroundStyle(.stowMuted)
@@ -140,7 +142,7 @@ struct AppearanceView: View {
             label,
             selection: Binding(
                 get: {
-                    Color.stowHex(settings.colors[keyPath: keyPath])
+                    Color(stowHex: settings.colors[keyPath: keyPath])
                 },
                 set: { color in
                     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }

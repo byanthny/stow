@@ -85,6 +85,44 @@ final class AppStoreCancellationTests: XCTestCase {
         XCTAssertFalse(accepting.offersGitHubSetup)
     }
 
+    func testBoardNotesStartCollapsedOpenOneAtATimeAndOpenWhenFocused() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var initial = AppState()
+        initial.githubEnabled = false
+        initial.notes = [Note(markdown: "# First"), Note(markdown: "Second"), Note(markdown: "Third")]
+        try await StateRepository(url: stateURL(directory)).save(initial)
+        let store = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
+        await store.start()
+        store.stop()
+        defer { store.stop() }
+        let ids = store.state.notes.map(\.id)
+        XCTAssertTrue(store.expandedNoteIDs.isEmpty, "Board notes start as one-line rows")
+        store.toggleNoteExpanded(ids[0])
+        store.toggleNoteExpanded(ids[1])
+        XCTAssertEqual(store.expandedNoteIDs, [ids[1]], "Opening a note closes the open one")
+        store.setOneNoteOpenAtATime(false)
+        store.toggleNoteExpanded(ids[2])
+        XCTAssertEqual(store.expandedNoteIDs, [ids[1], ids[2]])
+        store.setOneNoteOpenAtATime(true)
+        XCTAssertEqual(store.expandedNoteIDs, [ids[2]], "The most recently opened note stays open")
+        let created = store.addNote("New thought")
+        XCTAssertEqual(store.expandedNoteIDs, [created], "A new note opens ready to type")
+        store.requestFocus(ids[0])
+        XCTAssertTrue(store.isNoteExpanded(ids[0]))
+        store.deleteNote(ids[0])
+        XCTAssertFalse(store.isNoteExpanded(ids[0]))
+
+        store.setNotesStartCollapsed(false)
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
+        let relaunched = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
+        await relaunched.start()
+        relaunched.stop()
+        defer { relaunched.stop() }
+        XCTAssertEqual(relaunched.expandedNoteIDs.count, 1, "Expanded start still opens one note at a time")
+    }
+
     func testDisablingQueuedAccessoryPreventsItsProviderFromStarting() async throws {
         try await checkQueuedAccessoryRemoval(deleteOwner: false)
     }

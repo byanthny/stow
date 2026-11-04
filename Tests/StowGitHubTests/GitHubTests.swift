@@ -388,43 +388,79 @@ struct GitHubTests {
         #expect(unavailable.title == pinned.displayName)
     }
 
-    @Test func coordinatorFollowsUpWhenPinsChangeDuringFlight() async throws {
-        let client = DelayedClient()
+    @Test(.timeLimit(.minutes(1))) func coordinatorFollowsUpWhenPinsChangeDuringFlight() async throws {
+        let client = GatedClient()
         let coordinator = RefreshCoordinator(client: client)
         let first = Task { try await coordinator.refresh(pins: [], previous: []) }
-        try await Task.sleep(for: .milliseconds(10))
+        try await client.waitUntilCalled()
         let pin = PullRequestReference(owner: "example", repository: "new-pin", number: 10)
-        let second = Task { try await coordinator.refresh(pins: [pin], previous: []) }
+        let second = await coordinator.startRefresh(pins: [pin])
+        await coordinator.settle()
+        await client.open()
         _ = try await first.value
         _ = try await second.value
         #expect(await client.count == 2)
         #expect(await client.receivedPins == [[], [pin]])
     }
 
-    @Test func coalescesOverlappingRefreshesAndSupportsCancellation() async throws {
-        let client = DelayedClient()
+    @Test(.timeLimit(.minutes(1))) func coalescesOverlappingRefreshes() async throws {
+        let client = GatedClient()
         let coordinator = RefreshCoordinator(client: client)
-        async let a = coordinator.refresh(pins: [], previous: [])
-        async let b = coordinator.refresh(pins: [], previous: [])
-        let (first, second) = try await (a, b)
+        let firstTask = Task { try await coordinator.refresh(pins: [], previous: []) }
+        try await client.waitUntilCalled()
+        let secondTask = await coordinator.startRefresh(pins: [])
+        await coordinator.settle()
+        await client.open()
+        let first = try await firstTask.value
+        let second = try await secondTask.value
         #expect(first.viewerLogin == second.viewerLogin)
         #expect(await client.count == 1)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func cancelStopsAnInFlightRefresh() async throws {
+        let client = GatedClient()
+        let coordinator = RefreshCoordinator(client: client)
         let task = Task { try await coordinator.refresh(pins: [], previous: []) }
-        try await Task.sleep(for: .milliseconds(10))
+        // Only the coordinator's flight calls the client, so the flight exists once the client is called.
+        try await client.waitUntilCalled()
         await coordinator.cancel()
+        // A refresh that cancel() missed would wait on the gate forever; opening it makes that fail instead of hang.
+        await client.open()
         await #expect(throws: CancellationError.self) { try await task.value }
     }
 }
 
-private actor DelayedClient: GitHubClient {
+extension RefreshCoordinator {
+    /// Starts a refresh from the coordinator's own isolation, so it's queued here ahead of any later call.
+    fileprivate func startRefresh(pins: [PullRequestReference]) -> Task<GitHubRefreshResult, any Error> {
+        Task { try await refresh(pins: pins, previous: []) }
+    }
+
+    /// Returns after the jobs queued before it: the coordinator runs equal-priority jobs in the order they're queued,
+    /// so a refresh from `startRefresh` has joined the flight by then.
+    fileprivate func settle() {}
+}
+
+/// Holds each refresh until the test opens the gate or the refresh is cancelled. A fixed delay let a slow runner
+/// finish a refresh before the test could overlap or cancel it.
+private actor GatedClient: GitHubClient {
     private(set) var count = 0
     private(set) var receivedPins: [[PullRequestReference]] = []
+    private var isOpen = false
+
+    func open() { isOpen = true }
+
+    func waitUntilCalled() async throws {
+        while count == 0 { try await Task.sleep(for: .milliseconds(1)) }
+    }
+
     func refresh(pins: [PullRequestReference], previous: [PullRequestSnapshot], expectedViewerLogin: String?)
         async throws -> GitHubRefreshResult
     {
         count += 1
         receivedPins.append(pins)
-        try await Task.sleep(for: .milliseconds(70))
+        while !isOpen { try await Task.sleep(for: .milliseconds(1)) }
+        try Task.checkCancellation()
         return .init(viewerLogin: "synthetic-viewer", snapshots: [])
     }
     func details(for reference: PullRequestReference) async throws -> PullRequestDetails { .init() }

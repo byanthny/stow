@@ -19,6 +19,12 @@ public struct BoardLayout: Codable, Equatable, Sendable {
     /// Pull requests shown in each section before "Show more"; 0 shows every card.
     public var visiblePullRequests: Int
     public var notesCanCollapse: Bool
+    /// Board notes show as one-line rows until opened.
+    public var notesStartCollapsed: Bool
+    /// Opening a board note closes the one that was open.
+    public var oneNoteOpenAtATime: Bool
+    /// The board header shows its title beside the icon; the icon always stays.
+    public var showsTitle: Bool
     public var groupByOwner = false
     public var ownerOrder: OwnerOrder = .alphabetical
     public var alwaysShowOwnerControl = false
@@ -26,15 +32,19 @@ public struct BoardLayout: Codable, Equatable, Sendable {
 
     public init(
         order: [Section] = defaultOrder, visiblePullRequests: Int = defaultVisiblePullRequests,
-        notesCanCollapse: Bool = false
+        notesCanCollapse: Bool = false, notesStartCollapsed: Bool = true, oneNoteOpenAtATime: Bool = true,
+        showsTitle: Bool = true
     ) {
         self.order = Self.normalized(order)
         self.visiblePullRequests = visiblePullRequests
         self.notesCanCollapse = notesCanCollapse
+        self.notesStartCollapsed = notesStartCollapsed
+        self.oneNoteOpenAtATime = oneNoteOpenAtATime
+        self.showsTitle = showsTitle
     }
 
     private enum CodingKeys: String, CodingKey {
-        case order, visiblePullRequests, notesCanCollapse
+        case order, visiblePullRequests, notesCanCollapse, notesStartCollapsed, oneNoteOpenAtATime, showsTitle
         case groupByOwner, ownerOrder, alwaysShowOwnerControl, hidesNotesForHiddenOwners
     }
 
@@ -50,6 +60,9 @@ public struct BoardLayout: Codable, Equatable, Sendable {
                 forKey: .visiblePullRequests, in: container, debugDescription: "Pull request count out of range")
         }
         notesCanCollapse = try container.decodeIfPresent(Bool.self, forKey: .notesCanCollapse) ?? false
+        notesStartCollapsed = try container.decodeIfPresent(Bool.self, forKey: .notesStartCollapsed) ?? true
+        oneNoteOpenAtATime = try container.decodeIfPresent(Bool.self, forKey: .oneNoteOpenAtATime) ?? true
+        showsTitle = try container.decodeIfPresent(Bool.self, forKey: .showsTitle) ?? true
         groupByOwner = try container.decodeIfPresent(Bool.self, forKey: .groupByOwner) ?? false
         // A name from a newer version falls back to the default rather than rejecting the whole state.
         let ownerOrderName = try container.decodeIfPresent(String.self, forKey: .ownerOrder)

@@ -6,12 +6,21 @@ struct NoteView: View {
     let noteID: UUID
     @Environment(\.stowTheme) private var theme
     var detached = false
+    /// Board notes can fold back into a one-line row.
+    var onCollapse: (() -> Void)?
     @State private var isPreview = false
 
     var body: some View {
         if let note = store.note(noteID) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
+                    if let onCollapse {
+                        Button(action: onCollapse) {
+                            Image(systemName: "chevron.down").font(theme.font(size: 8, weight: .semibold))
+                                .frame(width: 9)
+                        }.buttonStyle(.plain).foregroundStyle(.stowMuted)
+                            .accessibilityLabel("Collapse note").help("Collapse note")
+                    }
                     Label(detached ? "Note" : "Markdown", systemImage: "note.text")
                         .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
                     Spacer(minLength: 0)
@@ -27,20 +36,10 @@ struct NoteView: View {
                             store.detachNote(noteID)
                         }
                     }
-                    Menu {
-                        Button(
-                            store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
-                        ) { store.toggleSample(noteID: noteID) }
-                        Divider()
-                        Button("Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) }
-                        Button("Export Markdown…") { DataTransferActions.exportNote(note, store: store) }
-                        Divider()
-                        Button("Delete note", role: .destructive) { store.deleteNote(noteID) }
-                    } label: {
-                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
-                    }
-                    .menuStyle(.borderlessButton).fixedSize().help("Note actions")
-                    .accessibilityIdentifier("note.actions")
+                    PullDownMenu(
+                        symbol: "ellipsis", sections: actions(for: note), label: "Note actions",
+                        identifier: "note.actions", tint: theme.color(.muted)
+                    ).fixedSize()
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
 
@@ -77,6 +76,18 @@ struct NoteView: View {
             .disabled(store.isRestoringBackup)
         }
     }
+
+    private func actions(for note: Note) -> [[PullDownMenu.Item]] {
+        let sample = store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
+        return [
+            [.init(title: sample) { store.toggleSample(noteID: noteID) }],
+            [
+                .init(title: "Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) },
+                .init(title: "Export Markdown…") { DataTransferActions.exportNote(note, store: store) },
+            ],
+            [.init(title: "Delete note") { store.deleteNote(noteID) }],
+        ]
+    }
 }
 
 struct DetachedNoteLauncher: View {
@@ -93,5 +104,49 @@ struct DetachedNoteLauncher: View {
                 Text("Open").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
             }.padding(12).background(.stowSurface, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityLabel("Open detached note")
+    }
+}
+
+/// A board note folded into one line: open it inline, or pop it out into its own window.
+struct CollapsedNoteRow: View {
+    @Bindable var store: AppStore
+    let note: Note
+    @Environment(\.stowTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                store.toggleNoteExpanded(note.id)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "chevron.right").font(theme.font(size: 8, weight: .semibold)).frame(width: 9)
+                        .foregroundStyle(.stowMuted)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(verbatim: note.boardTitle).font(theme.font(size: 12, weight: .medium)).lineLimit(1)
+                        HStack(spacing: 6) {
+                            if let reference = note.pullRequest { Text(verbatim: reference.displayName) }
+                            Text("Edited \(note.updatedAt, style: .relative) ago")
+                        }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }.contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(note.boardTitle).accessibilityHint("Opens the note")
+            QuietIconButton(symbol: "arrow.up.right.square", label: "Detach note") { store.detachNote(note.id) }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(.stowNote, in: RoundedRectangle(cornerRadius: 9))
+        .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) }
+    }
+}
+
+extension Note {
+    /// The first non-empty line without Markdown heading marks, for one-line rows.
+    var boardTitle: String {
+        let line = markdown.split(whereSeparator: \.isNewline)
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+            .map { $0.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.trimmingCharacters(in: .whitespaces) }
+        return line.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled note"
     }
 }

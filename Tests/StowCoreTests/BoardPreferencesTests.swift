@@ -68,6 +68,14 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertEqual(layout.order, [.needsYou, .notes, .waiting])
         XCTAssertEqual(layout.visiblePullRequests, 3)
         XCTAssertFalse(layout.notesCanCollapse)
+        XCTAssertTrue(layout.notesStartCollapsed)
+        XCTAssertTrue(layout.oneNoteOpenAtATime)
+        XCTAssertTrue(layout.showsTitle)
+        XCTAssertFalse(layout.groupByOwner)
+        XCTAssertEqual(layout.ownerOrder, .alphabetical)
+        XCTAssertFalse(layout.alwaysShowOwnerControl)
+        XCTAssertFalse(layout.hidesNotesForHiddenOwners)
+        XCTAssertEqual(layout, BoardLayout(), "A missing layout decodes to the layout Reset restores")
     }
 
     func testBoardLayoutKeepsEachKnownSectionOnceInSavedOrder() throws {
@@ -115,7 +123,12 @@ final class BoardPreferencesTests: XCTestCase {
         let url = try directory().appendingPathComponent("state.json")
         var original = fixture()
         original.boardLayout = BoardLayout(
-            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true)
+            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true,
+            notesStartCollapsed: false, oneNoteOpenAtATime: false, showsTitle: false)
+        original.boardLayout.groupByOwner = true
+        original.boardLayout.ownerOrder = .mostCards
+        original.boardLayout.alwaysShowOwnerControl = true
+        original.boardLayout.hidesNotesForHiddenOwners = true
         try await StateRepository(url: url).save(original)
         let loaded = try await StateRepository(url: url).load()
         XCTAssertEqual(loaded.boardLayout, original.boardLayout)

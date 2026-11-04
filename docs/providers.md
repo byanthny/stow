@@ -1,8 +1,8 @@
-# accessory providers
+# Accessory providers
 
 Accessories provide small display values for `boardAccessory` and `noteAccessory` slots. They are optional and independent of notes or GitHub. The bundled provider, `org.stow.sample`, is disabled until enabled from Settings or a note’s actions menu.
 
-## contract
+## Contract
 
 Implement `AccessoryProvider` from `StowExtensionSDK`:
 
@@ -30,7 +30,7 @@ A descriptor supplies a unique stable ID, name, supported slots, and API version
 
 The host validates registration and snapshot bounds. Primary text must be nonempty after trimming and at most 512 UTF-8 bytes. Secondary text is limited to 2,048 bytes; a system-image name to 128 bytes. Descriptor IDs and names have bounds too. Treat configuration as versioned input and validate it before use.
 
-## host behavior
+## Host behavior
 
 `AccessoryHost` rejects disabled, missing, duplicate, invalid, unsupported-version, or unsupported-slot registrations before calling a provider. It cancels replaced work, caller cancellation, disabled instances, and work beyond the configured timeout. Results use a per-module, per-instance cache. Failures may retain the last matching snapshot with a cached marker; cancelled and disabled work cannot publish a late value.
 
@@ -38,7 +38,7 @@ Providers must honor cooperative cancellation and avoid unbounded work. A timeou
 
 Unavailable providers retain their saved instance configuration. Disabling or removing an accessory must leave notes and the rest of the board usable.
 
-## portability and trust
+## Portability and trust
 
 `InProcessAdapter` delegates directly. `JSONRoundTripAdapter` encodes and decodes requests and snapshots around a call to the same provider. Tests cover the same sample through both adapters. This demonstrates a portable data contract; it is not process isolation.
 
