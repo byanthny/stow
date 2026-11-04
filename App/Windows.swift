@@ -167,9 +167,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Opens the profiles of the data folder, the folder holding `stateURL`. Returns false when no profile could
     /// open because other processes hold their locks. Tests pass a catalog whose Trash is their own.
     @discardableResult
-    func prepare(stateURL: URL, isDemo: Bool, catalog: ProfileCatalog? = nil) async -> Bool {
+    func prepare(
+        stateURL: URL, isDemo: Bool, catalog: ProfileCatalog? = nil,
+        updateFetch: @escaping UpdateMonitor.Fetch = UpdateMonitor.github
+    ) async -> Bool {
         let manager = ProfileManager(
-            dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo, catalog: catalog)
+            dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo, catalog: catalog,
+            updateFetch: updateFetch)
         self.manager = manager
         manager.onProfilesChange = { [weak self] in self?.rebuildProfilesMenu() }
         installMenus()
@@ -344,6 +348,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task { await store.refresh() }
     }
     @objc func showSettings() { manager?.activeSession?.showSettings() }
+    /// Asks GitHub now, with Settings → Updates on or off, and says what it found.
+    @objc func checkForUpdates() {
+        guard let updates = manager?.updates else { return }
+        Task { await updates.checkAndReport() }
+    }
 
     private func installMenus() {
         profileTitled = []
@@ -352,6 +361,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         app.addItem(
             withTitle: "About Stow", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: "")
+        item("Check for updates…", #selector(checkForUpdates), "", in: app)
         app.addItem(.separator())
         item("Settings…", #selector(showSettings), ",", in: app, names: "for")
         app.addItem(.separator())

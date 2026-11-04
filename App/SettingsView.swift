@@ -72,6 +72,8 @@ struct SettingsView: View {
                 Divider()
                 DataTransferView(store: store)
                 Divider()
+                UpdateSettingsView(profile: profile)
+                Divider()
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Local data").font(theme.font(size: 14, weight: .semibold))
                     Text("Notes, cached pull requests, and settings are stored on this Mac. No analytics or sync.")
@@ -206,6 +208,43 @@ private struct BoardSettingsView: View {
                     isOn: Binding(
                         get: { store.state.hideKeepsAlwaysOnTopNotes }, set: { store.setHideKeepsAlwaysOnTopNotes($0) }
                     ))
+            }
+        }
+    }
+}
+
+/// Settings → Updates, which applies to every profile. Off until the person turns it on.
+private struct UpdateSettingsView: View {
+    let profile: ProfileHandle
+    @Environment(\.stowTheme) private var theme
+    @State private var problem: String?
+
+    var body: some View {
+        let explanation = "Asks GitHub once a day whether a newer Stow is out. Nothing is downloaded."
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Updates").font(theme.font(size: 14, weight: .semibold))
+            SettingsToggle(
+                "Check for updates", identifier: "updates.checksForUpdates",
+                isOn: Binding(
+                    get: { profile.manager?.updates.settings.checksForUpdates ?? false },
+                    set: { checks in setChecksForUpdates(checks) }))
+            Text((profile.manager?.profiles.count ?? 1) > 1 ? explanation + " Applies to every profile." : explanation)
+                .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if let problem {
+                Text(problem).font(theme.font(size: 11)).foregroundStyle(.stowRed)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func setChecksForUpdates(_ checks: Bool) {
+        guard let updates = profile.manager?.updates else { return }
+        problem = nil
+        Task {
+            do {
+                try await updates.setChecksForUpdates(checks)
+            } catch {
+                problem = profileProblem(error, name: "Stow")
             }
         }
     }

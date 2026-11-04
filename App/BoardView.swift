@@ -119,7 +119,26 @@ struct BoardView: View {
                 Label(message, systemImage: "doc.on.doc")
                     .font(theme.font(size: 11)).foregroundStyle(.stowAmber)
             }
+            if let release = profile.manager?.updates.notice { updateNotice(release) }
         }
+    }
+
+    /// A quiet line offering a newer release, until it is dismissed or this Mac runs that release.
+    private func updateNotice(_ release: StowRelease) -> some View {
+        let title = "Stow \(release.version) is available"
+        let viewLabel = "View the Stow \(release.version) release"
+        return HStack(spacing: 6) {
+            Label(title, systemImage: "arrow.down.circle").font(theme.font(size: 11)).lineLimit(1)
+            Spacer(minLength: 4)
+            Button("View") { AppStore.openLink(release.page) }
+                .buttonStyle(.link).font(theme.font(size: 11))
+                .accessibilityLabel(viewLabel)
+            QuietIconButton(symbol: "xmark", label: "Dismiss update notice", scale: .small) {
+                profile.manager?.updates.dismissNotice()
+            }
+        }
+        .foregroundStyle(.stowMuted)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("updates.notice")
     }
 
     private func accountMismatchBanner(actual: String) -> some View {
