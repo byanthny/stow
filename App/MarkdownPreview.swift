@@ -11,7 +11,29 @@ struct MarkdownPreview: View {
         let fontFamily = markdownFontFamily
         let textColor = theme.color(.text)
         let imageProvider = OfflineBlockImages(font: theme.font(size: 11), foregroundColor: theme.color(.muted))
+        let codeBackground = textColor.opacity(0.08)
         Markdown(source)
+            // Code styles sit inside the theme so they replace its own. A custom editor font may have no
+            // fixed-width face, so code always uses the system's.
+            .markdownTextStyle(\.code) {
+                FontFamily(.system(.monospaced))
+                FontSize(.em(0.94))
+                BackgroundColor(codeBackground)
+            }
+            .markdownBlockStyle(\.codeBlock) { configuration in
+                ScrollView(.horizontal) {
+                    configuration.label
+                        .fixedSize(horizontal: false, vertical: true)
+                        .relativeLineSpacing(.em(0.15))
+                        .markdownTextStyle {
+                            FontFamily(.system(.monospaced))
+                            FontSize(.em(0.94))
+                        }
+                        .padding(10)
+                }
+                .background(codeBackground, in: RoundedRectangle(cornerRadius: 6))
+                .markdownMargin(top: .zero, bottom: .em(1))
+            }
             .markdownTheme(.basic)
             .markdownTextStyle {
                 FontSize(fontSize)
