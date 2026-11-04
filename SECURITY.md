@@ -19,8 +19,9 @@ Stow is a local app. It has no server, account system, analytics, or token store
 - Notes, the metadata index, cached pull requests, and backups are plaintext files readable by your macOS user. See [privacy and recovery](docs/privacy.md).
 - GitHub access is opt-in and reuses your local GitHub CLI login. Stow launches `gh` directly and never reads, stores, or logs its token.
 - The app is not sandboxed because it launches `gh`. Bundled accessories are trusted in-process code; the accessory SDK is not a permission boundary.
+- Stow runs the chosen `gh` executable as you. It refuses a `gh` that group or other users can write to, but whoever can change that executable or its folders can still run code as you: for example, another administrator who owns Homebrew on a shared Mac.
 
-In scope: anything that lets untrusted input run code, open unexpected programs or URLs, read or write outside Stow's folders, leak private data, or silently lose data. Untrusted input includes GitHub pull request data, files you import or restore (`.stowbackup`, Markdown, theme configs), pasted text, and files changed in the notes folder.
+In scope: anything that lets untrusted input run code, open unexpected programs or URLs, read or write outside Stow's folders, leak private data, or silently lose data. Untrusted input includes GitHub pull request data, files you import or restore (`.stowbackup`, Markdown, theme configs), pasted text, files changed in the notes folder, and profile data that can be copied in: profile folders, their `identity.json` files, and the `profiles.json` index.
 
 Out of scope: attacks that already require running code as your macOS user, physical access, or a modified build. Report vulnerabilities in `gh`, macOS, or dependencies to their maintainers, and here too if Stow's use of them makes the problem worse.
 

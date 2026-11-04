@@ -140,7 +140,7 @@ All of this section is an *(owner request)*.
 
 ## Deleting a profile
 
-- Settings → Profiles → **Delete profile…** closes the profile if needed, asks for confirmation naming it, and moves its folder to the Trash so it remains recoverable. Stow never deletes profile data outright.
+- Settings → Profiles → **Delete…** asks first: "Delete <name>?", with **Move to Trash** and **Cancel**. Move to Trash closes the profile if needed and moves its folder to the Trash so it remains recoverable. Stow never deletes profile data outright.
 - The profile kept in the data folder is first moved into `profiles/<its-id>/`, undoing the move if any step fails, and then trashed, so Finder's Put Back returns it to a place Stow looks *(call)*. Stow records the move so a move interrupted by a crash is finished or undone at the next launch. An older build then starts with empty data, which this design accepts; anything it writes there shows up in Stow as another profile.
 - Stow refuses while another process holds the profile's lock. The last remaining profile cannot be deleted *(call)*.
 
