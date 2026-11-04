@@ -99,7 +99,8 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         try await StateRepository(url: stateURL(directory)).save(initial)
         let store = AppStore(stateURL: stateURL(directory), isDemo: true)
         await store.start()
-        store.stop()
+        // Pausing quiets background timers and keeps the store saving, which a stopped store no longer does.
+        store.isPaused = true
         return store
     }
 }

@@ -34,7 +34,8 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         let before = try XCTUnwrap(app.store.state.notes.first)
         let external = "# External text while restore is active\n"
         app.store.isRestoringBackup = true
-        defer { app.store.isRestoringBackup = false }
+        // The session has stopped by the time this runs, and a stopped profile is no longer the active one.
+        defer { app.store?.isRestoringBackup = false }
         try Data(external.utf8).write(to: noteFile(before.id, store: app.store))
         let blocked = await app.store.flush()
         XCTAssertFalse(blocked)

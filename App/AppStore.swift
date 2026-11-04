@@ -27,6 +27,17 @@ final class AppStore {
     var focusNoteID: UUID?
     var focusRequestID = UUID()
     var isTerminating = false
+    /// Set while the profile is hidden. GitHub refreshes, the refresh timer, and accessories do nothing while
+    /// paused, and resuming refreshes both.
+    var isPaused = false {
+        didSet {
+            guard oldValue, !isPaused else { return }
+            Task {
+                await refresh()
+                await refreshAccessories()
+            }
+        }
+    }
     var onDetach: ((UUID) -> Void)?
     var onDelete: ((UUID) -> Void)?
     var onShowBoard: (() -> Void)?
@@ -39,6 +50,8 @@ final class AppStore {
     var conflictNoteIDs: Set<UUID> = []
     let stateURL: URL
     let isDemo: Bool
+    /// A profile this Mac has not seen before, which opens with GitHub and accessories off.
+    let isArrival: Bool
     let sampleID = "org.stow.sample"
     @ObservationIgnored private let repository: StateRepository
     @ObservationIgnored private let accessoryHost: AccessoryHost
@@ -51,6 +64,7 @@ final class AppStore {
     @ObservationIgnored private var accessoryTokens: [UUID: UUID] = [:]
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var persistenceTask: Task<Bool, Never>?
+    @ObservationIgnored private var restoreTask: Task<Bool, Never>?
     @ObservationIgnored private var notesPresenter: NotesFolderPresenter?
     @ObservationIgnored private var notesWatcher: NotesFolderWatcher?
     @ObservationIgnored private var changeRevision: UInt64 = 0
@@ -63,11 +77,12 @@ final class AppStore {
 
     init(
         stateURL: URL, isDemo: Bool = false, githubClient: (any GitHubClient)? = nil,
-        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
+        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()], arrival: Bool = false
     ) {
         self.stateURL = stateURL
         self.notesDirectory = stateURL.deletingLastPathComponent().appendingPathComponent("notes", isDirectory: true)
         self.isDemo = isDemo
+        self.isArrival = arrival
         self.githubOverride = githubClient
         self.accessoryHost = AccessoryHost(providers: accessoryProviders)
         repository = StateRepository(url: stateURL)
@@ -85,6 +100,8 @@ final class AppStore {
             storageNeedsRecovery = true
             saveError = "Saved data could not be opened. Your original file has been preserved."
         }
+        // Whatever its saved state says, a profile not seen before must not turn GitHub or accessories on here.
+        if isArrival { state = state.preparedForArrival() }
         if isDemo && state.notes.isEmpty && !storageNeedsRecovery {
             state = DemoContent.state()
         }
@@ -103,6 +120,8 @@ final class AppStore {
             await watchNotesFolder()
         }
         configureGitHub()
+        // A store stopped while it loaded starts no timers.
+        guard !isStopped else { return }
         refreshTimer = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(120))
@@ -183,7 +202,7 @@ final class AppStore {
         coordinator = nil
         githubClient = nil
         isRefreshing = false
-        guard state.githubEnabled, !isDemo else { return }
+        guard state.githubEnabled, !isDemo, !isStopped else { return }
         if let githubOverride {
             githubClient = githubOverride
             coordinator = RefreshCoordinator(client: githubOverride)
@@ -220,7 +239,8 @@ final class AppStore {
     }
 
     func refresh() async {
-        guard isLoaded, !isRestoringBackup, state.githubEnabled, !isDemo, let coordinator else { return }
+        guard isLoaded, !isRestoringBackup, !isPaused, !isStopped, state.githubEnabled, !isDemo, let coordinator
+        else { return }
         let generation = sessionGeneration
         isRefreshing = true
         defer { if generation == sessionGeneration { isRefreshing = false } }
@@ -385,8 +405,13 @@ final class AppStore {
         focusRequestID = UUID()
     }
 
+    /// Stops for good: timers, watchers, refreshes, and accessories end, and nothing is saved afterwards, because
+    /// the profile may release its lock next. To quiet background work and resume later, pause instead.
     func stop() {
         isStopped = true
+        // A refresh or detail request still running is discarded when it returns.
+        sessionGeneration += 1
+        isRefreshing = false
         notesWatcher?.stop()
         notesWatcher = nil
         if let notesPresenter { NSFileCoordinator.removeFilePresenter(notesPresenter) }
@@ -489,9 +514,9 @@ final class AppStore {
     }
 
     func refreshAccessories() async {
-        guard !isRestoringBackup else { return }
+        guard !isRestoringBackup, !isPaused else { return }
         for id in state.extensionInstances.map(\.id) {
-            guard !Task.isCancelled, !isRestoringBackup else { return }
+            guard !Task.isCancelled, !isRestoringBackup, !isPaused else { return }
             guard let instance = state.extensionInstances.first(where: { $0.id == id && $0.isEnabled }) else {
                 continue
             }
@@ -538,6 +563,8 @@ final class AppStore {
         notesWatcher = nil
         if let notesPresenter { NSFileCoordinator.removeFilePresenter(notesPresenter) }
         notesDirectory = await repository.notesDirectory
+        // A store stopped meanwhile watches nothing.
+        guard !isStopped else { return }
         let presenter = NotesFolderPresenter(directory: notesDirectory) { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, !self.isStopped, !self.isTerminating, !self.isRestoringBackup else { return }
@@ -575,7 +602,10 @@ final class AppStore {
     /// A single task owns snapshot → disk merge → UI merge before the next snapshot is taken.
     /// Cancelling a debounce never cancels a write that has already started.
     private func persist(allowDuringRestore: Bool = false) async -> Bool {
-        guard !storageNeedsRecovery, !isRestoringBackup || allowDuringRestore else { return false }
+        // Nothing is saved before the profile loads, or once it stops and may have released its lock.
+        guard isLoaded, !isStopped, !storageNeedsRecovery, !isRestoringBackup || allowDuringRestore else {
+            return false
+        }
         if let active = persistenceTask {
             let saved = await active.value
             if saved, persistedRevision != changeRevision { return await persist() }
@@ -585,6 +615,8 @@ final class AppStore {
             guard let self else { return false }
             defer { persistenceTask = nil }
             repeat {
+                // A store stopped between writes leaves the rest to its final save.
+                guard !isStopped else { return false }
                 let revision = changeRevision
                 let snapshot = state
                 let deletions = deletedNoteIDs
@@ -651,7 +683,7 @@ final class AppStore {
         let snapshot = state
         let deletions = deletedNoteIDs
         let writer = repository
-        let blocked = storageNeedsRecovery || isRestoringBackup
+        let blocked = storageNeedsRecovery || isRestoringBackup || isStopped
         return Task.detached {
             guard !blocked else { return false }
             do {
@@ -666,6 +698,18 @@ final class AppStore {
         return await persist()
     }
 
+    /// The last write of a closing profile, after `stop()`. Waits for a restore or save still running, writes the
+    /// final state, and closes the writer, so nothing writes once the profile releases its lock.
+    func saveAndClose() async -> Bool {
+        if let restoreTask { _ = await restoreTask.value }
+        if let persistenceTask { _ = await persistenceTask.value }
+        guard isStopped, isLoaded, !storageNeedsRecovery, !isRestoringBackup else { return false }
+        do {
+            try await repository.saveAndClose(state, deletedNoteIDs: deletedNoteIDs)
+            return true
+        } catch { return false }
+    }
+
     /// Transfers reconcile live files before taking a single in-memory snapshot.
     func portableSnapshot() async throws -> AppState {
         guard !isRestoringBackup, await flush(), !isRestoringBackup else {
@@ -675,6 +719,7 @@ final class AppStore {
     }
 
     func recoverState() async {
+        guard !isStopped else { return }
         do {
             try await repository.recoverByBackingUp()
             storageNeedsRecovery = false
@@ -683,8 +728,19 @@ final class AppStore {
         } catch { saveError = "Recovery could not create a backup. The original files are unchanged." }
     }
 
+    /// Replaces the profile's notes and settings with a backup. A closing profile waits for it to finish.
     func restoreBackup(_ replacement: AppState) async -> Bool {
-        guard !isRestoringBackup, !isTerminating, (try? StowBackup.encode(replacement)) != nil else { return false }
+        guard restoreTask == nil else { return false }
+        let restore = Task { await replaceState(with: replacement) }
+        restoreTask = restore
+        defer { restoreTask = nil }
+        return await restore.value
+    }
+
+    private func replaceState(with replacement: AppState) async -> Bool {
+        guard !isRestoringBackup, !isTerminating, !isStopped, (try? StowBackup.encode(replacement)) != nil else {
+            return false
+        }
         isRestoringBackup = true
         sessionGeneration += 1
         cancelDetails()
@@ -702,6 +758,8 @@ final class AppStore {
         saveTask?.cancel()
         if let active = persistenceTask { _ = await active.value }
         if !storageNeedsRecovery, !(await persist(allowDuringRestore: true)) { return false }
+        // A profile stopped while this waited writes nothing more.
+        guard !isStopped else { return false }
         // Preserve the current in-memory version as well as the repository's original files.
         do {
             let folder = stateURL.deletingLastPathComponent()
