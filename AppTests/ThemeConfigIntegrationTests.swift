@@ -48,7 +48,7 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         await restored.start()
         defer { restored.stop() }
         XCTAssertEqual(restored.state.appearance, corrected)
-        XCTAssertEqual(store.theme.settings, corrected)
+        XCTAssertEqual(restored.theme.settings, corrected)
         XCTAssertEqual(restored.state.notes, beforeNotes)
     }
 
