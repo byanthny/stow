@@ -52,7 +52,17 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Evidence
 
-Current counts, at `62c227d`: `./scripts/test.sh` runs 305 tests. The package suite in `Tests/` has 147 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 111 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+Current counts, at 0.2.0: `./scripts/test.sh` runs 322 tests. The package suite in `Tests/` has 160 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 115 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Release 0.2.0 validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
+
+- `./scripts/test.sh` passed: 160 XCTest and 47 Swift Testing cases in the package, and 115 hosted cases. New coverage includes code ranges in Markdown, fixed-width code in the editor (with typing undo kept), removing a note's pull request link, saved owners with older logins, a newer profile list, and opening a profile when the folders can't be read.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED.
+- `./scripts/accessibility.sh` passed its three audits, of the board, a detached note, and Settings, with no issues.
+- The Debug smoke test against a new synthetic folder exited 0 and wrote 14 checks, all true. Its board and settings captures replace the README images, and were inspected before inclusion.
+- `./scripts/package.sh` built a universal (arm64 and x86_64) Release ZIP of 0.2.0, build 2. Its ad-hoc signature, with the hardened runtime, and its SHA256 both verified. The ZIP stayed local.
+- On 2026-11-04 GitHub's hosted macOS runners took no jobs for several hours ("not acquired by Runner"). PRs #6 and #7 were merged on the local results above.
+- Not run: the profile manual checks above, keyboard navigation, VoiceOver, and an external display. How code looks in notes and the delete confirmation were not checked by hand.
 
 Local validation on macOS 26.5 (Apple silicon), using Xcode 26.6:
 
