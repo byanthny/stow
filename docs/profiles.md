@@ -18,6 +18,7 @@ Settled on 2026-11-03:
 - Profiles run side by side in one Stow app. Each profile is a group of windows that can be hidden, shown, closed, and opened on its own. Separate app copies per profile were rejected: they appear as identical Dock, app-switcher, and menu-bar entries, and they would have to coordinate the shared profile list across processes.
 - Every layout choice is a setting with a default, not a fixed rule. Nothing turns on unless the user turns it on.
 - The owner accepted the calls proposed during the design conversation.
+- Later the same day the owner asked for switching that works like browser workspaces. Additions are marked *(owner request)*: a profile icon, keyboard switching, switching that hides the profile you leave unless you turn that off, and no animation that delays a switch.
 
 ## goals
 
@@ -47,6 +48,7 @@ These count as failures even if everything else works:
 ## profiles
 
 - Each profile has a stable random ID, a name, and a color. Names are one line, not empty after trimming, and unique ignoring case, so menus and window labels stay distinguishable *(call)*. Any color is allowed, and each new profile gets a distinct default *(call)*. The color always appears beside the name and is never the only cue.
+- A profile can also have an optional icon: an SF Symbol or a single emoji, chosen in Settings → Profiles *(owner request)*. With no icon, only the color and name show.
 - A new profile starts empty: no notes, GitHub off with the usual first-use offer, accessories off, and the default theme and layout *(call)*. Nothing is copied from another profile.
 - Profiles are listed in creation order and can be reordered in Settings → Profiles *(call)*.
 - There is no limit on the number of profiles. Closed profiles cost nothing; each open profile runs its own refreshes.
@@ -55,7 +57,7 @@ These count as failures even if everything else works:
 
 - The existing data folder, `~/Library/Application Support/Stow/`, stays where it is and becomes the first profile, named "Main" *(call)*. Its files are not moved, so an older build still opens it, and both builds honor its existing `.stow.lock`.
 - Each additional profile lives in `profiles/<profile-id>/` inside the data folder, with the same layout as today: `state.json`, a managed notes folder, `.stow.lock`, and retained backups. Profile IDs are UUIDs. Stow ignores anything in `profiles/` that is not a real folder (not a link) named by a UUID and owned by the current user, and the index never stores a path.
-- Each profile folder holds a small identity file with the profile's ID, name, and color *(call)*. The name travels with the profile, so a folder put back from the Trash keeps it. A profile without an identity file is called "Main" in the data folder and "Unnamed profile" elsewhere.
+- Each profile folder holds a small identity file with the profile's ID, name, color, and optional icon *(call)*. The name travels with the profile, so a folder put back from the Trash keeps it. A profile without an identity file is called "Main" in the data folder and "Unnamed profile" elsewhere.
 - Stow finds profiles by looking for profile data in the data folder and in `profiles/`. The index never decides which profiles exist *(call)*.
 - A small `profiles.json` index in the data folder holds only the profile order, which profiles were open or hidden at quit, the most recently active profile, the profile IDs Stow has already seen, and app-wide display settings. It holds no notes, cards, or account data. Stow creates it only when it first has something to record, such as a second profile *(call)*.
 - A profile folder Stow has not seen before, such as one put back from the Trash or copied in, opens the first time with GitHub and accessories off and its saved `gh` location cleared, as after a restore *(call)*. The profile kept in the data folder is exempt, so the upgrade keeps its settings.
@@ -79,10 +81,10 @@ These count as failures even if everything else works:
 ## showing the profile
 
 - With one profile, Stow looks exactly as it does today. Profile names appear once a second profile exists, or always if the user turns on Settings → Profiles → **Always show profile name** *(call)*.
-- The board header shows the profile's color and name in place of "Stow". It opens the profile menu: show or open other profiles, hide or close this one, **New profile…**, and profile settings.
+- The board header shows the profile's color, icon if any *(owner request)*, and name in place of "Stow". It opens the profile menu: switch to or open other profiles, hide or close this one, **New profile…**, and profile settings.
 - Detached notes show the profile color as a thin accent and the profile name in the title area *(call)*.
 - Window titles include the profile name, such as "Work", "Work note", and "Work settings", so the Window menu, Mission Control, and VoiceOver can tell windows apart.
-- The Dock menu lists every profile with its state, shows or opens the chosen one, and offers **New profile…**. With one profile, the Dock and File menus offer only **New profile…** *(call)*.
+- The Dock menu lists every profile with its state, switches to the chosen one, and offers **New profile…**. With one profile, the Dock and File menus offer only **New profile…** *(call)*.
 - New note, Refresh GitHub, Settings…, and Show board act on the profile of the key window, or the most recently active profile when no Stow window is key. With more than one profile, their menu titles name it, as in "New note in Work" *(call)*.
 
 ## hide, show, and close
@@ -93,6 +95,15 @@ These count as failures even if everything else works:
 - **Close** a profile flushes it, closes its windows, stops its refreshes, accessories, and watchers, and releases its lock. Its data stays on disk. Closing the last open profile leaves Stow running without windows; clicking the Dock icon reopens the most recently active profile.
 - Closing a board window only closes that window, as today.
 - Opening a profile that is already open brings its windows forward.
+
+## switching
+
+All of this section is an *(owner request)*.
+
+- **Switch to** a profile opens it if needed and brings its windows forward. It then hides the profile you switched away from, unless that profile's **Hide when switching away** setting is off. The setting is on by default.
+- Keyboard shortcuts work only while Stow is the active app, never as system-wide hotkeys. ⌃⌥1 through ⌃⌥9 switch to the profile in that position of the profile order, and ⌃⌥] and ⌃⌥[ switch to the next and previous profile, wrapping around *(call: keys)*. They appear in a Profiles menu that lists every profile.
+- The profile menu, the Dock menu, and the Profiles menu all switch the same way.
+- A switch happens at once, with no animation that delays it, and respects Reduce Motion.
 
 ## github in each profile
 
@@ -134,7 +145,7 @@ These count as failures even if everything else works:
 ## security, privacy, and cost
 
 - Profiles organize work; they are not a security boundary. Every profile lives in the same macOS account, and anything with access to that account can read every profile's files.
-- Identity files and the index are untrusted input, because folders can be copied in. Both have size limits. IDs must be UUIDs, and an identity file's ID must match its folder. Colors must be valid. Names lose control and bidirectional-override characters, so one profile cannot impersonate another in window titles.
+- Identity files and the index are untrusted input, because folders can be copied in. Both have size limits. IDs must be UUIDs, and an identity file's ID must match its folder. Colors must be valid. Names lose control and bidirectional-override characters, so one profile cannot impersonate another in window titles. An icon must be a valid SF Symbol name or a single emoji, otherwise it is dropped without rejecting the profile.
 - `.stow-app.lock` and every profile lock follow `StateLock`'s rules: links are never followed, permissions are owner-only, and launched processes do not inherit the lock.
 - No URL scheme or other inter-process interface is added. Profile requests from the Dock menu stay inside the running process.
 - A profile's backup includes cached cards from every owner its account can see, unless it keeps only its selected owners on disk. Restoring a Work backup on another Mac can otherwise carry personal pull-request titles there.
@@ -170,7 +181,7 @@ Each step leaves the app working and ships on its own. The [implementation plan]
 ## acceptance
 
 - Synthetic tests cover the index (absent, created, corrupt, newer, reset), profile discovery (a put-back folder, a vanished folder, a duplicate name, a link or foreign-owned folder ignored, a hostile name sanitized, a profile not seen before opening with GitHub and accessories off and no `gh` location), isolation of two profiles' notes, cards, themes, and layouts, one lock per profile, a second process, a killed writer releasing its lock, rapid hide, show, close, and open, quit with several profiles where one cannot save, owner filters preserving classification and warnings, keeping only selected owners on disk, the account-mismatch flow, a shared rate-limit backoff, the upgrade from today's data, an older build opening the first profile, and deletion to the Trash, including an interrupted move of the first profile.
-- Manual checks in [verification](verification.md) cover several profiles on screen, hide and show with always-on-top notes, the Dock and Window menus, VoiceOver labels, and window restoration. Record observed results; automated tests do not prove the user flow.
+- Manual checks in [verification](verification.md) cover several profiles on screen, hide and show with always-on-top notes, switching with the keyboard and with the setting on and off, the Dock and Window menus, VoiceOver labels, and window restoration. Record observed results; automated tests do not prove the user flow.
 
 ## left to the builder
 

@@ -355,6 +355,8 @@ extension StateRepository { public func reopen() }                   // writable
 - Produces:
   - `ProfileManager.open(_ id: UUID) async`, which brings windows forward if the profile is already open;
   - `ProfileManager.hide(_ id: UUID)` and `ProfileManager.show(_ id: UUID)`;
+  - `ProfileManager.switchTo(_ id: UUID) async` *(owner request)*: opens the target if needed and brings its windows forward, then hides the profile it left when that profile's `AppState.hidesWhenSwitchingAway` is true;
+  - `AppState.hidesWhenSwitchingAway: Bool`, decoded with `decodeIfPresent` and default `true`, travelling in backups like the other preferences *(owner request)*;
   - `ProfileManager.close(_ id: UUID) async -> Bool`;
   - `AppStore.isPaused: Bool`, under which refresh, timers, and accessories do nothing; setting it to false refreshes;
   - `AppStore.init(…, arrival: Bool = false)`, which applies `preparedForArrival()` after loading and saves.
@@ -369,6 +371,9 @@ extension StateRepository { public func reopen() }                   // writable
   - `testRefreshFinishingAfterCloseWritesNothing` *(review focus 1)*: a delayed client is mid-refresh when the profile closes; after it completes, `state.json` bytes are unchanged and the other profile is untouched.
   - `testExternalEditWhileHiddenIsKept` *(review focus 2)*: rewrite the note file while the profile is hidden; after show and flush, the note has the new text and there are no conflict copies.
   - `testArrivalProfileOpensWithGitHubAndAccessoriesOff`: GitHub is off, the `gh` location is nil, accessories are disabled, and `seenIDs` gains the ID.
+  - `testSwitchShowsTargetAndHidesSourceByDefault` *(owner request)*: right after `switchTo(B)` returns, B's board is visible and key and A's windows are ordered out (not miniaturized).
+  - `testSwitchKeepsSourceWhenSettingIsOff` *(owner request)*: with A's `hidesWhenSwitchingAway` false, A's windows stay visible.
+  - `testSwitchOpensAClosedProfile` *(owner request)*.
 - [ ] **Step 2: Run hosted `ProfileTests`.** Expected: the new tests fail.
 - [ ] **Step 3: Implement the lifecycle.**
   - Hide uses `orderOut`, never `miniaturize`.
@@ -376,6 +381,8 @@ extension StateRepository { public func reopen() }                   // writable
   - Close flushes; on failure it asks "Keep open" or "Close without saving". Then it stops the store, closes the windows, calls `saveAndClose`, and releases the lock.
   - When names show, titles are "<name>", "<name> note", and "<name> settings".
   - After opening an arrival, call `catalog.markSeen`.
+  - A switch orders windows in and out at once, without animation that delays it, and respects Reduce Motion *(owner request)*.
+  - When a session's window becomes key, that profile becomes `lastActiveID`.
 - [ ] **Step 4: Run hosted `ProfileTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(app): hide, show, and close profiles`.
 
@@ -405,12 +412,16 @@ extension StateRepository { public func reopen() }                   // writable
 
 **Interfaces:**
 - Produces: `AppDelegate.applicationDockMenu(_:)`, a File menu **New profile…** item, and menu titles refreshed through `NSMenuDelegate.menuNeedsUpdate(_:)`.
+- Produces *(owner request)*: a Profiles menu listing every profile in order. Items 1 through 9 carry ⌃⌥1 through ⌃⌥9, and **Next profile** (⌃⌥]) and **Previous profile** (⌃⌥[) wrap around. All of them call `ProfileManager.switchTo(_:)`. These are menu key equivalents, so they work only while Stow is active.
 
 - [ ] **Step 1: Write the failing tests:**
   - `testNewNoteGoesToKeyWindowProfile`;
   - `testMenuTitlesNameProfileOnlyWithSeveralProfiles`: titles read "New note in Work" with two profiles and "New note" with one;
   - `testDockMenuListsProfilesWithState`: a visible profile is `.on`, a hidden one `.mixed`, a closed one `.off`; with one profile the menu has only "New profile…";
   - `testDockReopenShowsMostRecentProfile`.
+  - `testProfilesMenuShortcutsFollowOrder` *(owner request)*: with three profiles, the items carry ⌃⌥1, ⌃⌥2, and ⌃⌥3 in profile order; after reordering, the shortcuts follow the new order.
+  - `testNextAndPreviousProfileWrap` *(owner request)*: from the last profile, Next switches to the first; from the first, Previous switches to the last.
+  - `testDockMenuSwitches` *(owner request)*: choosing a profile in the Dock menu calls the same switch, so the source hides by default.
 - [ ] **Step 2: Run hosted `ProfileTests`.** Expected: the new tests fail.
 - [ ] **Step 3: Implement the menus.** New note, Refresh GitHub, Settings…, and Show board act on `activeSession`. `applicationShouldHandleReopen` shows or opens the most recently active profile.
 - [ ] **Step 4: Run hosted `ProfileTests`.** Expected: pass.
@@ -423,6 +434,13 @@ extension StateRepository { public func reopen() }                   // writable
 **Interfaces:**
 - Consumes: task 4 changes and task 5 `trash`.
 - Produces: `ProfileManager.createProfile(name:color:)`, `rename(_:to:)`, `setColor(_:to:)`, `move(_:by:)`, `delete(_:)`, `resetIndex()`, and `setAlwaysShowProfileName(_:)`. Each is `async throws` and forwards to the catalog.
+- Produces *(owner request)*: profile icons in core and app.
+  - `ProfileIcon: Codable, Equatable, Sendable` has `case symbol(String)` and `case emoji(String)`.
+  - `ProfileIdentity.icon: ProfileIcon?` and `ProfileEntry.icon: ProfileIcon?`.
+  - `ProfileIcon.validated(_:) -> ProfileIcon?`. A symbol name is 1–64 ASCII letters, digits, and dots. An emoji is exactly one `Character` of at most 32 UTF-8 bytes with at least one scalar whose `properties.isEmoji` is true.
+  - An invalid icon in an identity file decodes as nil without rejecting the identity.
+  - `ProfileCatalog.setIcon(_ id: UUID, to icon: ProfileIcon?) throws`, with the same refusal rule as `setColor` when the identity file is unreadable, and `ProfileManager.setIcon(_:to:) async throws`.
+  - The app also checks that a symbol exists (`NSImage(systemSymbolName:accessibilityDescription:)`) before showing it, and shows nothing otherwise.
 
 - [ ] **Step 1: Write the failing tests:**
   - `testNewProfileStartsEmptyWithGitHubOffer`: `offersGitHubSetup` is true, `githubEnabled` false, there are no notes, and the appearance is `.default`;
@@ -430,12 +448,19 @@ extension StateRepository { public func reopen() }                   // writable
   - `testDeleteClosesAndMovesProfileToTrash`, using an injected catalog with a fake trash;
   - `testNamesAppearOnlyWithTwoProfilesOrSetting`;
   - `testRestoreReplacesOnlyItsProfile`: restoring in B leaves A's files byte-identical.
+  - Core, in `Tests/StowCoreTests/ProfileTests.swift` and `ProfileCatalogTests.swift` *(owner request)*:
+    - `testIconValidation`: `.symbol("star.fill")` and `.emoji("😀")` are valid; `.symbol("star fill")`, `.symbol("")`, a 65-character symbol name, `.emoji("😀😀")`, and `.emoji("a")` are invalid.
+    - `testInvalidIconDecodesAsNil`.
+    - `testSetIconPersistsAndClears`.
+  - Hosted *(owner request)*: `testBoardHeaderShowsIconWhenSet`, where the header's accessibility label includes the profile name whether or not an icon is set.
 - [ ] **Step 2: Run hosted `ProfileTests`.** Expected: the new tests fail.
 - [ ] **Step 3: Build the UI.**
   - Settings → Profiles lists each profile with a name field, a color well, up and down buttons, and **Delete…**. It also offers **New profile…** (name and color, with empty and duplicate errors), **Always show profile name**, and **Reset profile list**, shown only while the index needs a reset.
   - A new profile's color defaults to the first color in a small built-in palette that no other profile uses.
   - When names show, the board header becomes a color dot and name menu: show or open others, Hide, Close, New profile…, and Profile settings.
   - Detached notes show the accent and name.
+  - Settings → Profiles adds an icon picker per profile *(owner request)*: None, a short list of common SF Symbols, a text field for any symbol name, and an emoji field. It also adds the **Hide when switching away** toggle (task 9's `hidesWhenSwitchingAway`) to each profile's Settings.
+  - The board header shows color, icon, and name. The icon is decorative for VoiceOver, and the name carries the label.
   - The delete confirmation names the profile.
 - [ ] **Step 4: Regenerate the project with XcodeGen** (package reference `stow`). Run `./scripts/test.sh`. Expected: pass.
 - [ ] **Step 5: Commit** `feat(app): create, rename, and delete profiles`.
