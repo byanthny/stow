@@ -12,6 +12,22 @@ public struct AttentionClassification: Equatable, Sendable {
         self.section = section
         self.reason = reason
     }
+
+    /// How the status reads at a glance, close to GitHub's colors.
+    public var tone: AttentionTone {
+        switch reason {
+        case "Ready to merge": .success
+        case "Checks failing", "Resolve conflicts", "Changes requested", "Closed": .failure
+        case "Review requested", "Review required", "Waiting for review", "Checks pending", "Behind base branch":
+            .pending
+        default: .neutral  // Draft, Watching, Merged, Unavailable, Readiness unknown.
+        }
+    }
+}
+
+/// A status color: green success, red failure, amber pending, and muted for everything else.
+public enum AttentionTone: String, Equatable, Sendable {
+    case success, failure, pending, neutral
 }
 
 /// Classifies only observed facts. Unknown or incomplete readiness never means ready.
@@ -39,8 +55,9 @@ public func classify(_ snapshot: PullRequestSnapshot, isPinned: Bool = false) ->
     {
         return needs("Ready to merge")
     }
-    if snapshot.mergeStateStatus == "BEHIND" { return waiting("Behind base branch") }
+    // Being behind the base branch matters only once nothing else is pending.
     if snapshot.checksState == "PENDING" || snapshot.checksState == "EXPECTED" { return waiting("Checks pending") }
     if snapshot.reviewDecision == "REVIEW_REQUIRED" { return waiting("Review required") }
+    if snapshot.mergeStateStatus == "BEHIND" { return waiting("Behind base branch") }
     return waiting("Readiness unknown")
 }

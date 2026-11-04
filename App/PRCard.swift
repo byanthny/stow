@@ -9,10 +9,12 @@ struct PRCard: View {
     private var classification: AttentionClassification { classify(pr, isPinned: pinned) }
     private var expanded: Bool { store.expandedPRs.contains(pr.id) }
     private var tone: StowColor {
-        if classification.section == .waiting { return .stowMuted }
-        if pr.checksState == "FAILURE" || pr.mergeable == "CONFLICTING" { return .stowRed }
-        if classification.reason == "Ready to merge" { return .stowGreen }
-        return .stowAmber
+        switch classification.tone {
+        case .success: .stowGreen
+        case .failure: .stowRed
+        case .pending: .stowAmber
+        case .neutral: .stowMuted
+        }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {

@@ -92,6 +92,32 @@ final class AttentionTests: XCTestCase {
         snapshot.checksState = "FAILURE"
         XCTAssertEqual(classify(snapshot).reason, "Checks failing")
     }
+
+    func testReviewAndChecksOutrankBeingBehind() {
+        var snapshot = ready()
+        snapshot.mergeStateStatus = "BEHIND"
+        snapshot.reviewDecision = "REVIEW_REQUIRED"
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Review required"))
+        snapshot.checksState = "PENDING"
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Checks pending"))
+    }
+
+    func testStatusTonesFollowGitHubColors() {
+        let tones: [(String, AttentionTone)] = [
+            ("Ready to merge", .success), ("Checks failing", .failure), ("Resolve conflicts", .failure),
+            ("Changes requested", .failure), ("Closed", .failure), ("Review requested", .pending),
+            ("Review required", .pending), ("Waiting for review", .pending), ("Checks pending", .pending),
+            ("Behind base branch", .pending), ("Draft", .neutral), ("Watching", .neutral), ("Merged", .neutral),
+            ("Unavailable", .neutral), ("Readiness unknown", .neutral),
+        ]
+        for (reason, tone) in tones {
+            XCTAssertEqual(AttentionClassification(section: .waiting, reason: reason).tone, tone, reason)
+        }
+        XCTAssertEqual(classify(ready()).tone, .success)
+        var draft = ready()
+        draft.isDraft = true
+        XCTAssertEqual(classify(draft).tone, .neutral)
+    }
 }
 
 @MainActor
