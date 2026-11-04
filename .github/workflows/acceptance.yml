@@ -1,0 +1,90 @@
+name: acceptance
+
+# Manual runtime evidence on hardware the maintainer may not have. Hosted tests in `checks` cover logic;
+# this launches the real app with synthetic state on another architecture and checks its smoke workflow.
+# Run it manually, or add the `acceptance` label to a pull request (labels need triage access).
+on:
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Unrelated labels start skipped runs; keep them from cancelling a real acceptance run.
+  group: acceptance-${{ github.ref }}-${{ github.event.label.name || 'manual' }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'acceptance'
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+    steps:
+      - name: check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: build universal debug app
+        env:
+          STOW_ARCHS: arm64 x86_64
+        run: ./scripts/build.sh Debug
+      - name: archive app
+        run: >-
+          /usr/bin/ditto -c -k --keepParent
+          build/DerivedData/Debug/Build/Products/Debug/Stow.app "$RUNNER_TEMP/Stow-debug.zip"
+      - name: keep app for smoke runs
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stow-debug
+          path: ${{ runner.temp }}/Stow-debug.zip
+          retention-days: 1
+          if-no-files-found: error
+
+  smoke:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 runners were retired on 2026-11-02; x86_64 runners remain until macos-15 retires.
+        runner: [macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - name: fetch app
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: stow-debug
+          path: ${{ runner.temp }}/artifact
+      - name: run smoke checks with synthetic state
+        shell: bash
+        run: |
+          set -euo pipefail
+          sw_vers
+          uname -m
+          cd "$RUNNER_TEMP"
+          /usr/bin/ditto -x -k artifact/Stow-debug.zip app
+          /usr/bin/lipo -archs app/Stow.app/Contents/MacOS/Stow
+          state="$RUNNER_TEMP/smoke-state"
+          app/Stow.app/Contents/MacOS/Stow --stow-testing-state "$state" --stow-demo --stow-smoke-test &
+          pid=$!
+          for _ in $(seq 1 120); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid"
+            echo "smoke run did not finish within 120 seconds" >&2
+            exit 1
+          fi
+          wait "$pid"
+          python3 -I - "$state/smoke-results.json" <<'PY'
+          import json, sys
+          checks = json.load(open(sys.argv[1]))
+          failed = sorted(name for name, passed in checks.items() if passed is not True)
+          print(f"{len(checks)} smoke checks; failed: {', '.join(failed) or 'none'}")
+          sys.exit(1 if failed or not checks else 0)
+          PY

@@ -1,0 +1,38 @@
+# Architecture
+
+Stow separates local state, GitHub reads, portable accessories, and the macOS interface.
+
+| component | responsibility |
+| --- | --- |
+| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, and cache reconciliation |
+| `StowGitHub` | GitHub CLI process transport, GraphQL decoding and pagination, refresh coordination, and lazy details |
+| `StowExtensionSDK` | plain versioned request, descriptor, configuration, and snapshot values plus `AccessoryProvider` |
+| `StowExtensions` | provider registry, validation, timeout, cancellation, cache, and adapters |
+| `StowSampleExtension` | optional synthetic provider with no network or host-state dependency |
+| `App` | AppKit lifecycle and panels, SwiftUI rendering, native text editing, and observable orchestration |
+
+## State and windows
+
+`AppStore` owns the in-memory `AppState`. Board and detached windows reference one note by stable ID. A managed `<UUID>.md` file is the canonical Markdown source. The live `state.json` envelope uses disk schema version 2: `metadata` holds an `AppState` with empty note bodies, and `notesDirectoryName` names the validated managed notes directory. It retains links, frames, detached state, pins, dismissals, settings, board layout preferences, cached PRs, and accessory configuration.
+
+`StateLock` holds an exclusive lock on a private file beside the index for the process lifetime, so only one process writes a state folder; the kernel releases it on exit or crash, and a second launch activates the running copy instead. `StateRepository` serializes persistence and uses coordinated file access with private temporary files and atomic replacement. The app serializes its persistence chain and debounces edits. An FSEvents watcher debounces external changes into a merge that compares disk sources with baselines and locally dirty notes. Detected conflicts preserve both versions as separate notes; clean external deletions remove notes while unsaved edits are preserved. Coordination cannot eliminate every race with an uncooperative editor.
+
+Quit performs a final merged save before closing the writer. Source versions adopted by the repository but not yet acknowledged by the UI remain protected through subsequent saves and quit, so a stale UI snapshot cannot silently overwrite them. A failed flush lets the user keep the app open. Unsupported or damaged state blocks ordinary writes until repair or explicit backup recovery.
+
+The first successful save of legacy JSON storage backs up the old index and migrates its note bodies to Markdown. Full restore writes all replacement sources into a new private `notes-<UUID>` folder, retains the previous folder and raw index, and atomically publishes the new index pointer. The host also saves a complete pre-restore backup. Watchers and file-reveal actions follow the current resolved directory; external editors must reopen files after restore.
+
+The `.stowbackup` codec uses backup format version 1 and encodes a complete in-memory `AppState` snapshot, including note bodies, for explicit transfer and restore. Machine-local settings, the `gh` location and the GitHub switch, are written as defaults and keep this Mac's values on restore; restored accessories start disabled. `GHClient` launches only an absolute path named `gh` that resolves to a regular executable other users cannot write. That envelope is separate from the metadata-only live disk index. The host synchronizes live edits before note exports or backup snapshots and refuses the transfer if synchronization fails. Markdown import validates all selected files before adding new note identities; exports are independent copies. See [portability](portability.md) and [privacy and recovery](privacy.md).
+
+## GitHub reads
+
+`GHProcessTransport` starts `gh api` directly for `github.com`, supplies JSON over standard input, and drains process output with bounded buffers. It reuses the CLI’s existing authentication and sanitizes user-facing errors. Stow does not have a token store.
+
+`GHClient` discovers the authenticated viewer, fetches authored and directly requested pull requests, resolves pins, paginates connections, and loads details on demand. Details fetch at most three pages per connection and keep at most 100 checks and 100 reviews, preferring checks that need attention, so a very large pull request cannot bloat the saved index. A new installation leaves GitHub off until the user opts in. `RefreshCoordinator` coalesces overlapping refreshes. The app refreshes on activation and periodically while GitHub is enabled.
+
+Classification distinguishes observed facts from incomplete readiness. Conflicts, requested changes, failing checks, direct review requests, and complete merge readiness can need attention. Draft and terminal states override readiness. Unknown checks, mergeability, review data, or incomplete pagination cannot establish “Ready to merge.” “Behind base branch” is informational. Pins preserve watched cards; dismissals hide cards without deleting notes. Terminal unpinned cards expire 24 hours after first observation.
+
+## Dependency direction
+
+The SDK depends only on Foundation. Core may store SDK configuration values, but providers receive only their explicit request. The host owns placement and rendering. The app links the modules; module tests do not depend on the app or MarkdownUI.
+
+The JSON adapter exercises a serialization boundary in-process. It does not launch an executable, isolate code, or promise a stable binary ABI. A later host may carry the same values over a process transport without introducing macOS view types into the contract.
