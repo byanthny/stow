@@ -99,6 +99,7 @@ struct BoardView: View {
     @ViewBuilder private var banners: some View {
         VStack(alignment: .leading, spacing: 12) {
             if store.offersGitHubSetup { githubSetup }
+            if let actual = store.accountMismatch { accountMismatchBanner(actual: actual) }
             if let error = store.saveError {
                 VStack(alignment: .leading, spacing: 6) {
                     Label(error, systemImage: "exclamationmark.triangle").font(theme.font(size: 11))
@@ -116,6 +117,18 @@ struct BoardView: View {
                     .font(theme.font(size: 11)).foregroundStyle(.stowAmber)
             }
         }
+    }
+
+    private func accountMismatchBanner(actual: String) -> some View {
+        let message = "GitHub is signed in as \(actual). This profile uses \(store.state.viewerLogin ?? "another account")."
+        return VStack(alignment: .leading, spacing: 6) {
+            Label(message, systemImage: "person.crop.circle.badge.exclamationmark").font(theme.font(size: 11))
+            Button("Use \(actual) here") { Task { await store.useCurrentAccount() } }
+                .buttonStyle(.link).font(theme.font(size: 11))
+                .accessibilityLabel("Use \(actual) here for this profile")
+                .accessibilityIdentifier("github.useCurrentAccount")
+        }.foregroundStyle(.stowAmber)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("github.accountMismatch")
     }
 
     @ViewBuilder private func boardSection(_ section: BoardLayout.Section) -> some View {

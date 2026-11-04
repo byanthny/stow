@@ -15,6 +15,9 @@ final class AppStore {
     var isRefreshing = false
     var saveError: String?
     var githubMessage: String?
+    /// The login `gh` answers as while it differs from the one this profile uses. Cleared when `gh` answers as the
+    /// profile's login again, or when the user chooses to use the current account here.
+    var accountMismatch: String?
     /// A new installation asks once before using an existing GitHub CLI login.
     var offersGitHubSetup = false
     var storageNeedsRecovery = false
@@ -205,6 +208,7 @@ final class AppStore {
     func configureGitHub() {
         sessionGeneration += 1
         cancelDetails()
+        accountMismatch = nil
         if let previous = coordinator { Task { await previous.cancel() } }
         coordinator = nil
         githubClient = nil
@@ -255,14 +259,14 @@ final class AppStore {
             let result = try await coordinator.refresh(
                 pins: state.pins, previous: state.pullRequests, expectedViewerLogin: state.viewerLogin)
             guard generation == sessionGeneration, state.githubEnabled else { return }
-            if let previousLogin = state.viewerLogin, previousLogin != result.viewerLogin {
-                // Cached PRs belong to the authenticated account; personal notes never do.
-                state.pullRequests = []
-                state.dismissedIDs = []
-                expandedPRs = []
-                cancelDetails()
-                sessionGeneration += 1
+            if let expected = state.viewerLogin,
+                expected.caseInsensitiveCompare(result.viewerLogin) != .orderedSame
+            {
+                // Defense for injected clients: another account's result is never applied.
+                markAccountMismatch(actual: result.viewerLogin)
+                return
             }
+            accountMismatch = nil
             state.viewerLogin = result.viewerLogin
             state.pullRequests = reconcileSnapshots(
                 previous: state.pullRequests, incoming: result.snapshots,
@@ -273,14 +277,44 @@ final class AppStore {
                 result.warning
                 ?? (result.isComplete ? nil : "Some GitHub data is incomplete. Cached cards are retained.")
             changed()
+        } catch GitHubError.accountMismatch(let actual) {
+            guard generation == sessionGeneration else { return }
+            markAccountMismatch(actual: actual)
         } catch {
             guard generation == sessionGeneration else { return }
-            for index in state.pullRequests.indices {
-                state.pullRequests[index].isStale = true
-                state.pullRequests[index].readinessIsComplete = false
-            }
+            markCardsStale()
             githubMessage = error.localizedDescription
         }
+    }
+
+    private func markCardsStale() {
+        for index in state.pullRequests.indices {
+            state.pullRequests[index].isStale = true
+            state.pullRequests[index].readinessIsComplete = false
+        }
+    }
+
+    /// Pauses GitHub for this profile: cached cards stay, marked stale, and no details are fetched.
+    private func markAccountMismatch(actual: String) {
+        accountMismatch = actual
+        markCardsStale()
+        githubMessage = nil
+        cancelDetails()
+    }
+
+    /// Adopts the account `gh` answers as. Cached pull requests belong to the old account and go; pins and notes stay.
+    func useCurrentAccount() async {
+        guard let actual = accountMismatch else { return }
+        accountMismatch = nil
+        state.viewerLogin = actual
+        state.pullRequests = []
+        state.dismissedIDs = []
+        expandedPRs = []
+        cancelDetails()
+        sessionGeneration += 1
+        isRefreshing = false
+        changed()
+        await refresh()
     }
 
     func toggleDetails(_ reference: PullRequestReference) {
@@ -292,7 +326,7 @@ final class AppStore {
             return
         }
         expandedPRs.insert(reference.id)
-        guard !isDemo, state.githubEnabled, let githubClient,
+        guard !isDemo, state.githubEnabled, accountMismatch == nil, let githubClient,
             !loadingDetails.contains(reference.id)
         else { return }
         loadingDetails.insert(reference.id)

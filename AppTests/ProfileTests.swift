@@ -133,6 +133,101 @@ final class ProfileTests: XCTestCase {
             main.store.notesDirectory.standardizedFileURL, work.store.notesDirectory.standardizedFileURL)
     }
 
+    // MARK: Account mismatch
+
+    func testMismatchPausesAndKeepsCachedCards() async throws {
+        let (manager, session, client) = try await startMismatchProfile()
+        defer { stop(manager) }
+        let store = session.store
+        await client.set(login: "other-account")
+        await store.refresh()
+        XCTAssertEqual(store.accountMismatch, "other-account")
+        XCTAssertEqual(store.state.viewerLogin, "old-account")
+        XCTAssertEqual(store.state.pullRequests.map(\.title), ["Synthetic cached card"])
+        XCTAssertTrue(store.state.pullRequests.allSatisfy { $0.isStale && !$0.readinessIsComplete })
+        XCTAssertEqual(store.state.dismissedIDs, ["dismissed"])
+        // Refreshes keep checking while mismatched.
+        await store.refresh()
+        let refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 2)
+        XCTAssertEqual(store.state.pullRequests.map(\.title), ["Synthetic cached card"])
+    }
+
+    func testResultWithAnotherLoginIsNeverApplied() async throws {
+        // An injected client that does not throw: the store guards on its own.
+        let (manager, session, client) = try await startMismatchProfile()
+        defer { stop(manager) }
+        await client.set(login: "Other-Account", throwing: false)
+        await session.store.refresh()
+        XCTAssertEqual(session.store.accountMismatch, "Other-Account")
+        XCTAssertEqual(session.store.state.viewerLogin, "old-account")
+        XCTAssertEqual(session.store.state.pullRequests.map(\.title), ["Synthetic cached card"])
+    }
+
+    func testUseCurrentAccountClearsCacheKeepsNotesAndPins() async throws {
+        let (manager, session, client) = try await startMismatchProfile()
+        defer { stop(manager) }
+        let store = session.store
+        await client.set(login: "other-account")
+        await store.refresh()
+        let pin = try XCTUnwrap(store.state.pins.first)
+        store.expandedPRs = [pin.id]
+        await store.useCurrentAccount()
+        XCTAssertNil(store.accountMismatch)
+        XCTAssertEqual(store.state.viewerLogin, "other-account")
+        XCTAssertTrue(store.state.dismissedIDs.isEmpty)
+        XCTAssertTrue(store.expandedPRs.isEmpty)
+        XCTAssertEqual(store.state.pullRequests.map(\.title), ["Synthetic card of the other account"])
+        XCTAssertEqual(store.state.pins, [pin])
+        XCTAssertEqual(store.state.notes.map(\.markdown), ["Synthetic profile note"])
+    }
+
+    func testDetailsRefusedWhileMismatched() async throws {
+        let (manager, session, client) = try await startMismatchProfile()
+        defer { stop(manager) }
+        let store = session.store
+        await client.set(login: "other-account")
+        await store.refresh()
+        let reference = try XCTUnwrap(store.state.pullRequests.first?.reference)
+        store.toggleDetails(reference)
+        try await Task.sleep(for: .milliseconds(100))
+        let requests = await client.detailRequests
+        XCTAssertEqual(requests, 0)
+        XCTAssertTrue(store.loadingDetails.isEmpty)
+    }
+
+    func testAccountReturningClearsMismatch() async throws {
+        let (manager, session, client) = try await startMismatchProfile()
+        defer { stop(manager) }
+        let store = session.store
+        await client.set(login: "other-account")
+        await store.refresh()
+        XCTAssertNotNil(store.accountMismatch)
+        await client.set(login: "OLD-account")
+        await store.refresh()
+        XCTAssertNil(store.accountMismatch)
+        XCTAssertEqual(store.state.viewerLogin?.lowercased(), "old-account")
+        XCTAssertEqual(store.state.pullRequests.map(\.title), ["Synthetic card of the old account"])
+    }
+
+    private func startMismatchProfile() async throws -> (ProfileManager, ProfileSession, MismatchClient) {
+        let folder = try makeDirectory()
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let reference = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        try await seed(folder) { state in
+            state.githubEnabled = true
+            state.viewerLogin = "old-account"
+            state.pins = [reference]
+            state.dismissedIDs = ["dismissed"]
+            state.pullRequests = [.init(reference: reference, title: "Synthetic cached card")]
+        }
+        let client = MismatchClient(reference: reference)
+        let manager = makeManager(folder, githubOverride: { _ in client })
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        return (manager, try XCTUnwrap(manager.activeSession), client)
+    }
+
     func testHideOrdersOutEveryWindowAndPausesRefresh() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2126,5 +2221,37 @@ private actor DelayedClient: GitHubClient {
 
     func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
         throw GitHubError.requestFailed
+    }
+}
+
+/// Answers as a settable login. Like `GHClient`, it throws on a login other than the expected one unless told not to.
+private actor MismatchClient: GitHubClient {
+    private var login = "old-account"
+    private var throwsOnMismatch = true
+    private let reference: PullRequestReference
+    private(set) var refreshes = 0
+    private(set) var detailRequests = 0
+
+    init(reference: PullRequestReference) { self.reference = reference }
+
+    func set(login: String, throwing: Bool = true) {
+        self.login = login
+        throwsOnMismatch = throwing
+    }
+
+    func refresh(pins: [PullRequestReference], previous: [PullRequestSnapshot], expectedViewerLogin: String?)
+        async throws -> GitHubRefreshResult
+    {
+        refreshes += 1
+        if throwsOnMismatch, let expectedViewerLogin, expectedViewerLogin.caseInsensitiveCompare(login) != .orderedSame {
+            throw GitHubError.accountMismatch(actualLogin: login)
+        }
+        let title = login.lowercased() == "old-account" ? "Synthetic card of the old account" : "Synthetic card of the other account"
+        return .init(viewerLogin: login, snapshots: [.init(reference: reference, title: title)])
+    }
+
+    func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
+        detailRequests += 1
+        return .init(latestComment: "Synthetic comment")
     }
 }
