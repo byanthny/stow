@@ -32,6 +32,8 @@ public actor ProfileCatalog {
     let dataFolder: URL
     let currentUserID: uid_t
     let trash: @Sendable (URL) throws -> Void
+    /// The owner of a path, without following links. A test seam for the per-folder owner check.
+    let ownerOf: @Sendable (URL) -> uid_t?
     private var dataFolderID: UUID?
 
     public init(
@@ -40,9 +42,18 @@ public actor ProfileCatalog {
             try FileManager.default.trashItem(at: $0, resultingItemURL: nil)
         }
     ) {
+        self.init(
+            dataFolder: dataFolder, currentUserID: currentUserID, trash: trash, ownerOf: Self.fileOwner)
+    }
+
+    init(
+        dataFolder: URL, currentUserID: uid_t, trash: @escaping @Sendable (URL) throws -> Void,
+        ownerOf: @escaping @Sendable (URL) -> uid_t?
+    ) {
         self.dataFolder = dataFolder
         self.currentUserID = currentUserID
         self.trash = trash
+        self.ownerOf = ownerOf
     }
 
     /// Reads the data folder and `profiles/`. Writes nothing.
@@ -76,7 +87,206 @@ public actor ProfileCatalog {
             isNewInstallation: !hasIndexFile && profiles.isEmpty)
     }
 
+    // MARK: changes
+
+    /// Makes a new empty profile folder with its identity, then records it in the index.
+    public func createProfile(name: String, color: String) throws -> ProfileEntry {
+        let snapshot = try writableSnapshot()
+        let clean = try Self.validName(name)
+        guard ProfileIdentity.isValidColor(color) else { throw ProfileError.invalidColor }
+        try requireUnique(clean, among: snapshot.profiles, excluding: nil)
+
+        let id = UUID()
+        let folder = profilesURL.appendingPathComponent(id.uuidString, isDirectory: true)
+        try wrapping {
+            try LiveNoteIO.ensureDirectory(profilesURL)
+            try LiveNoteIO.ensureDirectory(folder)
+        }
+        do {
+            try writeIdentity(ProfileIdentity(id: id, name: clean, color: color), in: folder)
+            var index = snapshot.index
+            index.order = Self.merged(index.order, with: snapshot.profiles.map(\.id) + [id])
+            Self.insert(id, into: &index.seenIDs)
+            try writeIndex(index, after: snapshot)
+        } catch {
+            // The folder is ours and still empty of notes; leave nothing for discovery to find.
+            try? FileManager.default.removeItem(at: folder)
+            throw error
+        }
+        let created = try load().profiles.first { $0.id == id }
+        return created ?? ProfileEntry(
+            id: id, folder: folder, isDataFolder: false, name: clean, color: color, isArrival: false)
+    }
+
+    public func rename(_ id: UUID, to name: String) throws {
+        let snapshot = try writableSnapshot()
+        let entry = try entry(id, in: snapshot)
+        let clean = try Self.validName(name)
+        try requireUnique(clean, among: snapshot.profiles, excluding: id)
+        try writeIdentity(ProfileIdentity(id: id, name: clean, color: entry.color), in: entry.folder)
+    }
+
+    public func setColor(_ id: UUID, to color: String) throws {
+        let snapshot = try writableSnapshot()
+        let entry = try entry(id, in: snapshot)
+        guard ProfileIdentity.isValidColor(color) else { throw ProfileError.invalidColor }
+        // The stored name is the profile's own, not a number added for display.
+        let name = try storedName(of: entry)
+        try writeIdentity(ProfileIdentity(id: id, name: name, color: color), in: entry.folder)
+    }
+
+    /// Moves a profile by `offset` places in the list, stopping at either end.
+    public func move(_ id: UUID, by offset: Int) throws {
+        let snapshot = try writableSnapshot()
+        var ids = snapshot.profiles.map(\.id)
+        guard let position = ids.firstIndex(of: id) else { throw ProfileError.notFound }
+        ids.remove(at: position)
+        let (shifted, overflow) = position.addingReportingOverflow(offset)
+        let target = overflow ? (offset < 0 ? 0 : ids.count) : min(max(shifted, 0), ids.count)
+        ids.insert(id, at: target)
+        var index = snapshot.index
+        index.order = ids
+        try writeIndex(index, after: snapshot)
+    }
+
+    /// Records which profiles are open and which was last active. Profiles that no longer exist are dropped.
+    public func recordSession(open: [ProfileIndex.OpenProfile], lastActiveID: UUID?) throws {
+        let snapshot = try writableSnapshot()
+        let known = Set(snapshot.profiles.map(\.id))
+        var listed = Set<UUID>()
+        var index = snapshot.index
+        index.open = open.filter { known.contains($0.id) && listed.insert($0.id).inserted }
+        index.lastActiveID = lastActiveID.flatMap { known.contains($0) ? $0 : nil }
+        try writeIndex(index, after: snapshot)
+    }
+
+    public func markSeen(_ id: UUID) throws {
+        let snapshot = try writableSnapshot()
+        guard !snapshot.index.seenIDs.contains(id) else { return }
+        var index = snapshot.index
+        index.seenIDs.append(id)
+        try writeIndex(index, after: snapshot)
+    }
+
+    public func setAlwaysShowProfileName(_ value: Bool) throws {
+        let snapshot = try writableSnapshot()
+        guard snapshot.index.alwaysShowProfileName != value else { return }
+        var index = snapshot.index
+        index.alwaysShowProfileName = value
+        try writeIndex(index, after: snapshot)
+    }
+
+    /// Moves the unusable index aside, byte for byte, and starts a new one. Profiles found now count as seen,
+    /// because the old list of seen profiles is gone and a reset must not clear their settings.
+    public func resetIndex() throws -> URL {
+        let snapshot = try load()
+        guard snapshot.indexStatus == .needsReset else { throw ProfileError.notFound }
+        let stamp = Self.backupStamp.string(from: Date())
+        let backup = dataFolder.appendingPathComponent(
+            "profiles-backup-\(stamp)-\(UUID().uuidString.prefix(8)).json")
+        let moved = indexURL.path.withCString { source in
+            backup.path.withCString { Darwin.rename(source, $0) }
+        }
+        guard moved == 0 else { throw ProfileError.unwritable }
+        var index = ProfileIndex()
+        index.order = snapshot.profiles.map(\.id)
+        index.seenIDs = snapshot.profiles.map(\.id)
+        do {
+            var absent = snapshot
+            absent.indexStatus = .absent
+            try writeIndex(index, after: absent)
+        } catch {
+            _ = backup.path.withCString { source in indexURL.path.withCString { Darwin.rename(source, $0) } }
+            throw error
+        }
+        return backup
+    }
+
     // MARK: helpers
+
+    private static let backupStamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return formatter
+    }()
+
+    private static func fileOwner(_ url: URL) -> uid_t? {
+        var info = stat()
+        guard url.path.withCString({ Darwin.lstat($0, &info) }) == 0 else { return nil }
+        return info.st_uid
+    }
+
+    private func writableSnapshot() throws -> ProfileCatalogSnapshot {
+        let snapshot = try load()
+        if snapshot.indexStatus == .needsReset { throw ProfileError.indexNeedsReset }
+        return snapshot
+    }
+
+    private func entry(_ id: UUID, in snapshot: ProfileCatalogSnapshot) throws -> ProfileEntry {
+        guard let entry = snapshot.profiles.first(where: { $0.id == id }) else { throw ProfileError.notFound }
+        return entry
+    }
+
+    private static func validName(_ raw: String) throws -> String {
+        guard let clean = ProfileIdentity.sanitizedName(raw) else { throw ProfileError.emptyName }
+        return clean
+    }
+
+    private func requireUnique(_ name: String, among entries: [ProfileEntry], excluding id: UUID?) throws {
+        let key = name.lowercased()
+        if entries.contains(where: { $0.id != id && $0.name.lowercased() == key }) {
+            throw ProfileError.duplicateName
+        }
+    }
+
+    /// The name in the identity file, which differs from the displayed name when a duplicate is numbered.
+    private func storedName(of entry: ProfileEntry) throws -> String {
+        let identity = try readIdentity(in: entry.folder, folderID: entry.isDataFolder ? nil : entry.id)
+        return identity?.name ?? (entry.isDataFolder ? Self.mainName : Self.unnamedName)
+    }
+
+    private func writeIdentity(_ identity: ProfileIdentity, in folder: URL) throws {
+        guard let data = try? JSONEncoder().encode(identity) else { throw ProfileError.unwritable }
+        try wrapping {
+            try LiveNoteIO.write(data, to: folder.appendingPathComponent(ProfileIdentity.filename))
+        }
+    }
+
+    /// Writes the index atomically. The first write also saves the data folder profile's identity,
+    /// so the ID shown to the app stays the same across launches.
+    private func writeIndex(_ index: ProfileIndex, after snapshot: ProfileCatalogSnapshot) throws {
+        if let main = snapshot.profiles.first(where: \.isDataFolder), snapshot.indexStatus == .absent,
+            try !wrapping({ try LiveNoteIO.exists(dataFolder.appendingPathComponent(ProfileIdentity.filename)) })
+        {
+            try writeIdentity(ProfileIdentity(id: main.id, name: Self.mainName, color: main.color), in: dataFolder)
+        }
+        guard let data = Self.encode(index) else { throw ProfileError.unwritable }
+        try wrapping {
+            try LiveNoteIO.ensureDirectory(dataFolder)
+            try LiveNoteIO.write(data, to: indexURL)
+        }
+    }
+
+    private static func encode(_ index: ProfileIndex) -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try? encoder.encode(index)
+    }
+
+    private func wrapping<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() } catch is StateError { throw ProfileError.unwritable }
+    }
+
+    private static func insert(_ id: UUID, into ids: inout [UUID]) {
+        if !ids.contains(id) { ids.append(id) }
+    }
+
+    /// `base` first, then any of `extra` not already listed, without repeats.
+    private static func merged(_ base: [UUID], with extra: [UUID]) -> [UUID] {
+        var seen = Set<UUID>()
+        return (base + extra).filter { seen.insert($0).inserted }
+    }
 
     var indexURL: URL { dataFolder.appendingPathComponent(ProfileIndex.filename) }
     var profilesURL: URL { dataFolder.appendingPathComponent(Self.profilesDirectoryName, isDirectory: true) }
@@ -127,7 +337,8 @@ public actor ProfileCatalog {
         for name in names.sorted() {
             guard name.count == 36, let id = UUID(uuidString: name) else { continue }
             let folder = profilesURL.appendingPathComponent(name, isDirectory: true)
-            guard isOwnedDirectory(folder), try hasProfileData(in: folder) else { continue }
+            // One unreadable folder must not hide the others.
+            guard isOwnedDirectory(folder), (try? hasProfileData(in: folder)) == true else { continue }
             guard !result.contains(where: { $0.0 == id }) else { continue }
             result.append((id, folder))
         }
@@ -137,7 +348,7 @@ public actor ProfileCatalog {
     private func isOwnedDirectory(_ url: URL) -> Bool {
         var info = stat()
         guard url.path.withCString({ Darwin.lstat($0, &info) }) == 0 else { return false }
-        return (info.st_mode & S_IFMT) == S_IFDIR && info.st_uid == currentUserID
+        return (info.st_mode & S_IFMT) == S_IFDIR && ownerOf(url) == currentUserID
     }
 
     private static func ordered(_ entries: [ProfileEntry], by order: [UUID]) -> [ProfileEntry] {
