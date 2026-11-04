@@ -115,13 +115,7 @@ final class BoardWindowLevelTests: XCTestCase {
     }
 
     private func dispose(_ app: AppDelegate) {
-        app.store?.isTerminating = true
-        for panel in app.noteWindows.values {
-            panel.delegate = nil
-            panel.close()
-        }
-        app.board?.delegate = nil
-        app.board?.close()
-        app.store?.stop()
+        guard let manager = app.manager else { return }
+        for session in manager.sessions.values { session.stop() }
     }
 }

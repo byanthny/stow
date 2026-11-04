@@ -101,6 +101,20 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertEqual(first.profiles.first?.id, second.profiles.first?.id)
     }
 
+    func testDataFolderEntryBeforeFirstSaveKeepsItsIDOnceSaved() async throws {
+        let catalog = catalog()
+        let entry = await catalog.dataFolderEntry()
+        XCTAssertTrue(entry.isDataFolder)
+        XCTAssertEqual(entry.name, "Main")
+        XCTAssertFalse(entry.isArrival)
+        XCTAssertEqual(entry.folder.standardizedFileURL, root.standardizedFileURL)
+        XCTAssertEqual(try listing(), [])
+        // The first save creates the profile; the app's open session must keep the same ID.
+        try write("{}", "state.json")
+        let loaded = try await catalog.load()
+        XCTAssertEqual(loaded.profiles.map(\.id), [entry.id])
+    }
+
     func testDataFolderIdentityProvidesIDAndName() async throws {
         let id = UUID()
         try write(identity(id, "Home"), "identity.json")

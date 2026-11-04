@@ -66,15 +66,7 @@ public actor ProfileCatalog {
         let seen = Set(index.seenIDs)
         var found: [ProfileEntry] = []
 
-        if try hasProfileData(in: dataFolder) {
-            let identity = try readIdentity(in: dataFolder, folderID: nil)
-            let id = identity?.id ?? mintedDataFolderID()
-            found.append(
-                ProfileEntry(
-                    id: id, folder: dataFolder, isDataFolder: true,
-                    name: identity?.name ?? Self.mainName,
-                    color: identity?.color ?? Self.fallbackColor, isArrival: false))
-        }
+        if try hasProfileData(in: dataFolder) { found.append(dataFolderEntry()) }
         for (id, folder) in try profileFolders() where !found.contains(where: { $0.id == id }) {
             let identity = try readIdentity(in: folder, folderID: id)
             found.append(
@@ -89,6 +81,16 @@ public actor ProfileCatalog {
         return ProfileCatalogSnapshot(
             profiles: profiles, index: index, indexStatus: status,
             isNewInstallation: !hasIndexFile && profiles.isEmpty)
+    }
+
+    /// The data folder profile, also before its first save creates it. Without an identity file it takes the ID
+    /// this catalog minted, the same one `load()` reports once the profile exists. Writes nothing.
+    public func dataFolderEntry() -> ProfileEntry {
+        let identity = try? readIdentity(in: dataFolder, folderID: nil)
+        return ProfileEntry(
+            id: identity?.id ?? mintedDataFolderID(), folder: dataFolder, isDataFolder: true,
+            name: identity?.name ?? Self.mainName,
+            color: identity?.color ?? Self.fallbackColor, isArrival: false)
     }
 
     // MARK: changes

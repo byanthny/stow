@@ -25,14 +25,15 @@ final class StowPanel: NSPanel {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private(set) var store: AppStore!
-    private(set) var board: StowPanel!
-    private(set) var noteWindows: [UUID: StowPanel] = [:]
-    private var settingsWindow: NSWindow?
-    private var isRestoring = false
-    /// Held for the process lifetime; another Stow writing the same state would revert its changes.
-    private var stateLock: StateLock?
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private(set) var manager: ProfileManager?
+    /// Held for the process lifetime; a second Stow on the same data folder hands over to this one.
+    private var instanceLock: StateLock?
+
+    /// The active profile's store and windows.
+    var store: AppStore! { manager?.activeSession?.store }
+    var board: StowPanel! { manager?.activeSession?.board }
+    var noteWindows: [UUID: StowPanel] { manager?.activeSession?.noteWindows ?? [:] }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hosted unit tests construct their own app delegate with temporary state.
@@ -42,6 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         #if DEBUG
             var hasIsolatedState = false
             let arguments = ProcessInfo.processInfo.arguments
+            // The folder after --stow-testing-state becomes the data folder, and it can never be the normal one.
             if let index = arguments.firstIndex(of: "--stow-testing-state"), arguments.count > index + 1 {
                 let path = arguments[index + 1]
                 let proposed = URL(fileURLWithPath: path).appendingPathComponent("state.json")
@@ -67,57 +69,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return
             }
         #endif
-        switch StateLock.acquire(forStateAt: stateURL) {
-        case .acquired(let lock): stateLock = lock
+        switch StateLock.acquire(named: StateLock.instanceFilename, in: stateURL.deletingLastPathComponent()) {
+        case .acquired(let lock): instanceLock = lock
         case .unavailable: break
         case .heldByAnotherProcess:
-            // Another Stow already writes this state. Hand over to it instead of competing.
+            // Another Stow already runs on this data folder. Hand over to it instead of competing.
             Self.activateRunningCopy()
             NSApp.terminate(nil)
             return
         }
         Task {
-            await prepare(stateURL: stateURL, isDemo: demo)
+            guard await prepare(stateURL: stateURL, isDemo: demo), let manager else {
+                // Another process, such as an older build, has the profile open. Hand over to it.
+                Self.activateRunningCopy()
+                NSApp.terminate(nil)
+                return
+            }
             #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--stow-smoke-test") {
                     await runSmokeTest()
                     return
                 }
             #endif
-            await store.refresh()
+            for session in manager.sessions.values { await session.store.refresh() }
         }
     }
 
-    func prepare(stateURL: URL, isDemo: Bool) async {
-        store = AppStore(stateURL: stateURL, isDemo: isDemo)
-        store.onDetach = { [weak self] id in self?.showNote(id) }
-        store.onDelete = { [weak self] id in self?.noteWindows.removeValue(forKey: id)?.orderOut(nil) }
-        store.onShowBoard = { [weak self] in self?.showBoard() }
-        store.onAppearanceChange = { [weak self] in self?.applyWindowAppearance() }
-        store.onBoardLevelChange = { [weak self] in self?.applyBoardLevel() }
-        store.onRestoreWindows = { [weak self] in self?.restoreWindows() }
+    /// Opens a profile from the data folder, the folder holding `stateURL`. Returns false when another process
+    /// holds that profile's lock.
+    @discardableResult
+    func prepare(stateURL: URL, isDemo: Bool) async -> Bool {
+        let manager = ProfileManager(dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo)
+        self.manager = manager
         installMenus()
-        await store.start()
-        isRestoring = true
-        createBoard()
-        for note in store.state.notes where note.isDetached { showNote(note.id) }
-        isRestoring = false
-        applyWindowAppearance()
-        showBoard()
+        guard await manager.start() else { return false }
         DispatchQueue.main.async { LaunchMetrics.firstBoardVisible() }
+        return true
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
-        guard store?.isLoaded == true else { return }
-        Task {
-            _ = await store.flush()
-            await store.refresh()
+        for session in manager?.sessions.values.filter({ $0.store.isLoaded }) ?? [] {
+            let store = session.store
+            Task {
+                _ = await store.flush()
+                await store.refresh()
+            }
         }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard board != nil else { return false }
-        showBoard()
+        guard let session = manager?.activeSession, session.board != nil else { return false }
+        session.showBoard()
         return true
     }
 
@@ -172,138 +174,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return .terminateLater
     }
 
-    private func restoreWindows() {
-        isRestoring = true
-        for panel in noteWindows.values {
-            panel.delegate = nil
-            panel.close()
-        }
-        noteWindows.removeAll()
-        board.delegate = nil
-        board.close()
-        createBoard()
-        for note in store.state.notes where note.isDetached { showNote(note.id) }
-        applyWindowAppearance()
-        isRestoring = false
-        showBoard()
+    /// Passes a window move to the profile that owns the window, which records its frame.
+    func windowDidMove(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        manager?.session(owning: window)?.windowDidMove(notification)
     }
 
-    private func createBoard() {
-        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        let frame = restoredFrame(
-            store.state.boardFrame,
-            fallback: NSRect(x: visible.maxX - 404, y: visible.maxY - 744, width: 380, height: 700),
-            minimum: NSSize(width: 320, height: 320))
-        board = makePanel(frame: frame, title: "Stow")
-        applyBoardLevel()
-        board.minSize = NSSize(width: 320, height: 348)
-        board.contentView = NSHostingView(
-            rootView: BoardView(store: store, showSettings: { [weak self] in self?.showSettings() })
-                .themed(by: store.theme))
-    }
-
-    private func makePanel(frame: NSRect, title: String) -> StowPanel {
-        let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
-        let content = NSWindow.contentRect(forFrameRect: frame, styleMask: style)
-        let panel = StowPanel(contentRect: content, styleMask: style, backing: .buffered, defer: false)
-        panel.title = title
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.appearance = store.theme.snapshot.appKitAppearance
-        panel.isReleasedWhenClosed = false
-        panel.hidesOnDeactivate = false
-        panel.becomesKeyOnlyIfNeeded = false
-        panel.level = .floating
-        // Follow every desktop, but stay out of other apps' full-screen spaces by design.
-        panel.collectionBehavior = [.canJoinAllSpaces]
-        panel.delegate = self
-        panel.onPaste = { [weak self] text in self?.store.pasteOutsideEditor(text) }
-        return panel
-    }
-
-    private func applyBoardLevel() {
-        board?.level = store.state.boardAlwaysOnTop ? .floating : .normal
-    }
-
-    private func applyWindowAppearance() {
-        let appearance = store.theme.snapshot.appKitAppearance
-        for panel in [board].compactMap({ $0 }) + Array(noteWindows.values) {
-            panel.isOpaque = false
-            panel.backgroundColor = .clear
-            panel.appearance = appearance
-            panel.contentView?.needsDisplay = true
-        }
-        settingsWindow?.appearance = appearance
-    }
-
-    @objc func showBoard() {
-        guard board != nil else { return }
-        board.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func showNote(_ id: UUID) {
-        guard let note = store.note(id) else { return }
-        let panel: StowPanel
-        if let existing = noteWindows[id] {
-            panel = existing
-        } else {
-            let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-            let offset = CGFloat(noteWindows.count % 8) * 24
-            let frame = restoredFrame(
-                note.frame,
-                fallback: NSRect(x: screen.midX - 170 + offset, y: screen.midY - 190 - offset, width: 340, height: 380),
-                minimum: NSSize(width: 260, height: 180))
-            panel = makePanel(frame: frame, title: "Stow note")
-            panel.noteID = id
-            panel.minSize = NSSize(width: 260, height: 208)
-            panel.contentView = NSHostingView(rootView: NoteView(store: store, noteID: id, detached: true).themed(by: store.theme))
-            noteWindows[id] = panel
-        }
-        panel.level = note.isAlwaysOnTop ? .floating : .normal
-        panel.makeKeyAndOrderFront(nil)
-        if !isRestoring { NSApp.activate(ignoringOtherApps: true) }
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        guard let panel = notification.object as? StowPanel else { return }
-        if let id = panel.noteID {
-            store.closeDetachedNote(id)
-            noteWindows[id] = nil
-        }
-    }
-
-    func windowDidMove(_ notification: Notification) { recordFrame(notification) }
-    func windowDidResize(_ notification: Notification) { recordFrame(notification) }
-    private func recordFrame(_ notification: Notification) {
-        guard !isRestoring, store?.isLoaded == true, let panel = notification.object as? StowPanel else { return }
-        let rect = panel.frame
-        store.saveFrame(.init(x: rect.minX, y: rect.minY, width: rect.width, height: rect.height), noteID: panel.noteID)
-    }
-
+    @objc func showBoard() { manager?.activeSession?.showBoard() }
     @objc func newNote() {
-        showBoard()
-        store.addNote()
+        guard let session = manager?.activeSession else { return }
+        session.showBoard()
+        session.store.addNote()
     }
-    @objc func refresh() { Task { await store.refresh() } }
-    @objc func showSettings() {
-        if settingsWindow == nil {
-            let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 520, height: 690), styleMask: [.titled, .closable],
-                backing: .buffered, defer: false)
-            window.title = "Stow settings"
-            window.isReleasedWhenClosed = false
-            // Reopening Settings brings it to the current desktop instead of switching to its last one.
-            window.collectionBehavior = [.moveToActiveSpace]
-            window.contentView = NSHostingView(rootView: SettingsView(store: store).themed(by: store.theme))
-            window.center()
-            settingsWindow = window
-        }
-        settingsWindow?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+    @objc func refresh() {
+        guard let store = manager?.activeSession?.store else { return }
+        Task { await store.refresh() }
     }
+    @objc func showSettings() { manager?.activeSession?.showSettings() }
 
     private func installMenus() {
         let main = NSMenu()
