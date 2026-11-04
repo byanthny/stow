@@ -35,6 +35,15 @@ extension AppState {
         for index in result.extensionInstances.indices { result.extensionInstances[index].isEnabled = false }
         return result
     }
+
+    /// A profile this Mac has not seen before starts with GitHub and accessories off and no `gh` location.
+    public func preparedForArrival() -> AppState {
+        var result = self
+        result.githubEnabled = false
+        result.ghExecutablePath = nil
+        for index in result.extensionInstances.indices { result.extensionInstances[index].isEnabled = false }
+        return result
+    }
 }
 
 /// An in-memory snapshot codec. Reading, writing, and explicit restore decisions belong to the host.

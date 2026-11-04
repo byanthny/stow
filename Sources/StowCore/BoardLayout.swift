@@ -6,6 +6,10 @@ public struct BoardLayout: Codable, Equatable, Sendable {
         case needsYou, notes, waiting
     }
 
+    public enum OwnerOrder: String, Codable, Sendable {
+        case alphabetical, mostCards
+    }
+
     public static let defaultOrder: [Section] = [.needsYou, .notes, .waiting]
     public static let defaultVisiblePullRequests = 3
     /// Accepted card counts before "Show more"; 0 means every card.
@@ -21,6 +25,10 @@ public struct BoardLayout: Codable, Equatable, Sendable {
     public var oneNoteOpenAtATime: Bool
     /// The board header shows its title beside the icon; the icon always stays.
     public var showsTitle: Bool
+    public var groupByOwner = false
+    public var ownerOrder: OwnerOrder = .alphabetical
+    public var alwaysShowOwnerControl = false
+    public var hidesNotesForHiddenOwners = false
 
     public init(
         order: [Section] = defaultOrder, visiblePullRequests: Int = defaultVisiblePullRequests,
@@ -37,6 +45,7 @@ public struct BoardLayout: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case order, visiblePullRequests, notesCanCollapse, notesStartCollapsed, oneNoteOpenAtATime, showsTitle
+        case groupByOwner, ownerOrder, alwaysShowOwnerControl, hidesNotesForHiddenOwners
     }
 
     public init(from decoder: any Decoder) throws {
@@ -54,6 +63,14 @@ public struct BoardLayout: Codable, Equatable, Sendable {
         notesStartCollapsed = try container.decodeIfPresent(Bool.self, forKey: .notesStartCollapsed) ?? true
         oneNoteOpenAtATime = try container.decodeIfPresent(Bool.self, forKey: .oneNoteOpenAtATime) ?? true
         showsTitle = try container.decodeIfPresent(Bool.self, forKey: .showsTitle) ?? true
+        groupByOwner = try container.decodeIfPresent(Bool.self, forKey: .groupByOwner) ?? false
+        // A name from a newer version, or a value that is not a name, falls back to the default rather than
+        // rejecting the whole state.
+        let ownerOrderName = try? container.decodeIfPresent(String.self, forKey: .ownerOrder)
+        ownerOrder = ownerOrderName.flatMap(OwnerOrder.init(rawValue:)) ?? .alphabetical
+        alwaysShowOwnerControl = try container.decodeIfPresent(Bool.self, forKey: .alwaysShowOwnerControl) ?? false
+        hidesNotesForHiddenOwners =
+            try container.decodeIfPresent(Bool.self, forKey: .hidesNotesForHiddenOwners) ?? false
     }
 
     /// Moves a section up (negative) or down (positive) one place at a time; edges are left alone.

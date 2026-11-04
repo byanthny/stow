@@ -5,11 +5,12 @@ import SwiftUI
 /// The renderer dependency and its network policy are confined to this component.
 struct MarkdownPreview: View {
     let source: String
+    @Environment(\.stowTheme) private var theme
     var body: some View {
-        let fontSize = ThemeController.shared.settings.editorFontSize
+        let fontSize = theme.settings.editorFontSize
         let fontFamily = markdownFontFamily
-        let textColor = Color.stowText
-        let imageProvider = OfflineBlockImages(font: .stow(size: 11), foregroundColor: .stowMuted)
+        let textColor = theme.color(.text)
+        let imageProvider = OfflineBlockImages(font: theme.font(size: 11), foregroundColor: theme.color(.muted))
         Markdown(source)
             .markdownTheme(.basic)
             .markdownTextStyle {
@@ -32,7 +33,7 @@ struct MarkdownPreview: View {
     }
 
     private var markdownFontFamily: FontProperties.Family {
-        if let name = ThemeController.shared.settings.editorFontName, NSFont(name: name, size: 13) != nil {
+        if let name = theme.settings.editorFontName, NSFont(name: name, size: 13) != nil {
             return .custom(name)
         }
         return .system()

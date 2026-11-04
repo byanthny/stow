@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 struct AppearanceView: View {
     @Bindable var store: AppStore
+    @Environment(\.stowTheme) private var theme
     @State private var importError: String?
     @State private var showingConfig = false
     @State private var configDraft = ThemeConfigDraft()
@@ -15,7 +16,7 @@ struct AppearanceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("Appearance").font(.stow(size: 14, weight: .semibold))
+                Text("Appearance").font(theme.font(size: 14, weight: .semibold))
                 Spacer()
                 PullDownMenu(
                     title: settings.name,
@@ -25,11 +26,11 @@ struct AppearanceView: View {
                             .init(title: "Graphite · dark") { preset(.graphite) },
                             .init(title: "Paper · light") { preset(.paper) },
                         ]
-                    ], label: "Theme preset", font: .stow()
+                    ], label: "Theme preset", font: theme.nsFont()
                 ).fixedSize()
             }
             Text("Make Stow feel at home. Changes apply to the board and every open note.")
-                .font(.stow(size: 11)).foregroundStyle(Color.stowMuted)
+                .font(theme.font(size: 11)).foregroundStyle(.stowMuted)
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
                     Text("Interface")
@@ -46,25 +47,25 @@ struct AppearanceView: View {
                     Slider(value: binding(\.editorLineHeight), in: 1...2, step: 0.05)
                         .accessibilityLabel("Note line height")
                     Text(settings.editorLineHeight, format: .number.precision(.fractionLength(2)))
-                        .monospacedDigit().foregroundStyle(Color.stowMuted)
+                        .monospacedDigit().foregroundStyle(.stowMuted)
                 }
-            }.font(.stow(size: 12))
+            }.font(theme.font(size: 12))
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
                     Text("Background opacity")
                     Spacer()
                     Text(settings.backgroundOpacity, format: .percent.precision(.fractionLength(0)))
-                        .monospacedDigit().foregroundStyle(Color.stowMuted)
+                        .monospacedDigit().foregroundStyle(.stowMuted)
                 }
                 Slider(value: binding(\.backgroundOpacity), in: 0.2...1, step: 0.01)
                     .accessibilityLabel("Background opacity")
                 Text(
-                    ThemeController.shared.reduceTransparency
+                    theme.reduceTransparency
                         ? "Reduce Transparency is on in macOS. Your opacity preference is saved and backgrounds stay solid."
                         : "Only backgrounds become transparent; text stays clear."
                 )
-                .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
-            }.font(.stow(size: 12))
+                .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
+            }.font(theme.font(size: 12))
             DisclosureGroup("Colors") {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], alignment: .leading, spacing: 10) {
                     colorPicker("Background", \.background)
@@ -76,7 +77,7 @@ struct AppearanceView: View {
                     colorPicker("Failure", \.red)
                     colorPicker("Ready", \.green)
                 }.padding(.top, 8)
-            }.font(.stow(size: 12))
+            }.font(theme.font(size: 12))
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Button("Copy config") { copyConfig() }.accessibilityIdentifier("appearance.copyConfig")
@@ -85,20 +86,20 @@ struct AppearanceView: View {
                         showingConfig = true
                     }.accessibilityIdentifier("appearance.editConfig")
                     if copiedConfig {
-                        Text("Copied").foregroundStyle(Color.stowMuted).accessibilityIdentifier("appearance.copied")
+                        Text("Copied").foregroundStyle(.stowMuted).accessibilityIdentifier("appearance.copied")
                     }
                 }
                 Text("Small key = value configs are easy to paste and share in messages.")
-                    .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
-            }.font(.stow(size: 11))
+                    .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
+            }.font(theme.font(size: 11))
             HStack(spacing: 10) {
                 Button("Import…") { importTheme() }.accessibilityIdentifier("appearance.import")
                 Button("Export…") { exportTheme() }.accessibilityIdentifier("appearance.export")
                 Spacer()
                 Button("Reset") { store.applyAppearance(.default) }.help("Restore all default appearance settings")
-            }.font(.stow(size: 11))
+            }.font(theme.font(size: 11))
             Text("Import and export .conf text files. Existing JSON themes can still be imported.")
-                .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+                .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
         }
         .sheet(isPresented: $showingConfig) {
             ThemeConfigEditor(draft: configDraft) {
@@ -141,7 +142,7 @@ struct AppearanceView: View {
             label,
             selection: Binding(
                 get: {
-                    Color.stowHex(settings.colors[keyPath: keyPath])
+                    Color(stowHex: settings.colors[keyPath: keyPath])
                 },
                 set: { color in
                     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
@@ -272,31 +273,32 @@ final class ThemeConfigDraft {
 
 private struct ThemeConfigEditor: View {
     @Bindable var draft: ThemeConfigDraft
+    @Environment(\.stowTheme) private var theme
     var apply: () -> Void
     var cancel: () -> Void
     @FocusState private var sourceFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Theme config").font(.stow(size: 16, weight: .semibold))
+            Text("Theme config").font(theme.font(size: 16, weight: .semibold))
             Text("Paste a config from a message, edit the values, then apply. Cancel keeps your current appearance.")
-                .font(.stow(size: 11)).foregroundStyle(Color.stowMuted)
+                .font(theme.font(size: 11)).foregroundStyle(.stowMuted)
             TextEditor(text: $draft.source)
                 .font(.system(size: 12, design: .monospaced))
                 .disableAutocorrection(true)
                 .scrollContentBackground(.hidden)
                 .padding(8)
-                .background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 8))
+                .background(.stowSurface, in: RoundedRectangle(cornerRadius: 8))
                 .focused($sourceFocused)
                 .accessibilityLabel("Theme config source")
                 .accessibilityIdentifier("appearance.config.source")
             if let error = draft.error {
-                Text(error).font(.stow(size: 11)).foregroundStyle(Color.stowRed)
+                Text(error).font(theme.font(size: 11)).foregroundStyle(.stowRed)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("appearance.config.error")
             }
             HStack {
-                Text("UTF-8 text · maximum 1 MB").font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+                Text("UTF-8 text · maximum 1 MB").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
                 Spacer()
                 Button("Cancel", action: cancel).keyboardShortcut(.cancelAction)
                 Button("Apply", action: apply).keyboardShortcut(.defaultAction)
@@ -308,10 +310,10 @@ private struct ThemeConfigEditor: View {
             minWidth: 520, idealWidth: 640, maxWidth: .infinity,
             minHeight: 420, idealHeight: 560, maxHeight: .infinity
         )
-        .background(Color.stowBackground)
+        .background(.stowBackground)
         .background(ResizableThemeSheet())
-        .foregroundStyle(Color.stowText)
-        .preferredColorScheme(ThemeController.shared.colorScheme)
+        .foregroundStyle(.stowText)
+        .preferredColorScheme(theme.colorScheme)
         .onAppear { sourceFocused = true }
     }
 }
@@ -331,6 +333,7 @@ private struct ResizableThemeSheet: NSViewRepresentable {
 
 private struct AppearanceFontPicker: View {
     @Binding var selection: String?
+    @Environment(\.stowTheme) private var theme
     let label: String
     @State private var showing = false
     @State private var search = ""
@@ -369,8 +372,8 @@ private struct AppearanceFontPicker: View {
                     }
                 }
             }.padding(12).frame(width: 300, height: 320)
-                .font(.stow(size: 12))
-                .preferredColorScheme(ThemeController.shared.colorScheme)
+                .font(theme.font(size: 12))
+                .preferredColorScheme(theme.colorScheme)
         }
     }
 

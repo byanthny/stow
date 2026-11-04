@@ -45,6 +45,68 @@ final class StateCompatibilityTests: XCTestCase {
         try XCTUnwrap(JSONSerialization.jsonObject(with: encode(state)) as? [String: Any])
     }
 
+    func testOlderStateDecodesNewFieldsWithDefaults() throws {
+        let original = fixture()
+        var legacy = try object(original)
+        let added = [
+            "ownerSelection", "keepsOnlySelectedOwners", "hideKeepsAlwaysOnTopNotes", "hidesWhenSwitchingAway",
+        ]
+        for key in added {
+            legacy.removeValue(forKey: key)
+        }
+        var layout = try XCTUnwrap(legacy["boardLayout"] as? [String: Any])
+        for key in ["groupByOwner", "ownerOrder", "alwaysShowOwnerControl", "hidesNotesForHiddenOwners"] {
+            layout.removeValue(forKey: key)
+        }
+        legacy["boardLayout"] = layout
+        let decoded = try decode(JSONSerialization.data(withJSONObject: legacy))
+        XCTAssertEqual(decoded.ownerSelection, OwnerSelection())
+        XCTAssertTrue(decoded.ownerSelection.isAll)
+        XCTAssertFalse(decoded.keepsOnlySelectedOwners)
+        XCTAssertFalse(decoded.hideKeepsAlwaysOnTopNotes)
+        XCTAssertTrue(decoded.hidesWhenSwitchingAway)
+        XCTAssertEqual(decoded.boardLayout, BoardLayout())
+        XCTAssertEqual(decoded, original)
+    }
+
+    func testOwnerSelectionNormalizesAndIgnoresCase() throws {
+        let selection = OwnerSelection(["acme", "Acme", "beta"])
+        XCTAssertEqual(selection.owners, ["acme", "beta"])
+        XCTAssertTrue(selection.contains("ACME"))
+        XCTAssertFalse(selection.contains("gamma"))
+        XCTAssertFalse(selection.isAll)
+        XCTAssertEqual(OwnerSelection(["Zed", "alpha", "ZED"]).owners, ["alpha", "Zed"])
+        var state = AppState()
+        state.ownerSelection = selection
+        XCTAssertEqual(try decode(encode(state)).ownerSelection, selection)
+        let loose = Data(#"{"owners":["Beta","beta","Acme"]}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(OwnerSelection.self, from: loose).owners, ["Acme", "Beta"])
+    }
+
+    func testUntrustedOwnerPreferencesFallBackWithoutRejectingTheState() throws {
+        var damaged = try object(fixture())
+        var layout = try XCTUnwrap(damaged["boardLayout"] as? [String: Any])
+        layout["ownerOrder"] = 5
+        damaged["boardLayout"] = layout
+        // A managed user's login adds an underscore and a short code, and its cards can be selected.
+        let owners: [Any] = ["acme", "", " ", "bad login", 5, NSNull(), ["acme"], "-edge", "a--b", "Other", "jo_acme"]
+        damaged["ownerSelection"] = ["owners": owners]
+        let decoded = try decode(JSONSerialization.data(withJSONObject: damaged))
+        XCTAssertEqual(decoded.boardLayout.ownerOrder, .alphabetical)
+        XCTAssertEqual(decoded.ownerSelection.owners, ["acme", "jo_acme", "Other"])
+        XCTAssertEqual(decoded.notes, fixture().notes)
+        let onlyInvalid = Data(#"{"owners":["", "x y", "_"]}"#.utf8)
+        XCTAssertTrue(try JSONDecoder().decode(OwnerSelection.self, from: onlyInvalid).isAll)
+    }
+
+    func testLoginValidation() {
+        for valid in ["a", "acme-labs", "A1", "a-b-c", String(repeating: "a", count: 39)] {
+            XCTAssertTrue(OwnerSelection.isValidLogin(valid), valid)
+        }
+        let invalid = ["", "-acme", "acme-", "a--b", "a_b", "a b", "caf\u{E9}", String(repeating: "a", count: 40)]
+        for login in invalid { XCTAssertFalse(OwnerSelection.isValidLogin(login), login) }
+    }
+
     func testEarlierVersionOneStateDefaultsOnlyNewPreferencesAndPreservesData() throws {
         let original = fixture()
         var legacy = try object(original)

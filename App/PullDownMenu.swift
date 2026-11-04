@@ -25,6 +25,7 @@ struct PullDownMenu: NSViewRepresentable {
         let button = NSPopUpButton(frame: .zero, pullsDown: true)
         button.isBordered = symbol == nil
         button.contentTintColor = tint.map(NSColor.init)
+        context.coordinator.shownTint = tint
         button.toolTip = label
         button.setAccessibilityLabel(label)
         button.setAccessibilityIdentifier(identifier)
@@ -42,6 +43,11 @@ struct PullDownMenu: NSViewRepresentable {
         }
         if button.isEnabled != context.environment.isEnabled { button.isEnabled = context.environment.isEnabled }
         if let font, button.font != font { button.font = font }
+        // The tint follows the profile's theme when its appearance changes.
+        if coordinator.shownTint != tint {
+            coordinator.shownTint = tint
+            button.contentTintColor = tint.map(NSColor.init)
+        }
     }
 
     private func menu(coordinator: Coordinator) -> NSMenu {
@@ -69,6 +75,7 @@ struct PullDownMenu: NSViewRepresentable {
     @MainActor final class Coordinator: NSObject {
         var actions: [() -> Void] = []
         var shownTitles: [[String]]?
+        var shownTint: Color?
 
         @objc func perform(_ sender: NSMenuItem) {
             guard actions.indices.contains(sender.tag) else { return }

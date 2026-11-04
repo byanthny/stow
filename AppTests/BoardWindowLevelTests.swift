@@ -9,8 +9,6 @@ import XCTest
 @MainActor
 final class BoardWindowLevelTests: XCTestCase {
     func testBoardDefaultsToFloatingAndTogglesIndependentlyOfDetachedNotes() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -44,8 +42,6 @@ final class BoardWindowLevelTests: XCTestCase {
     }
 
     func testUnpinnedBoardPersistsAcrossReconstructionAndCanBePinnedAgain() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let first = try await prepare(directory)
@@ -119,13 +115,7 @@ final class BoardWindowLevelTests: XCTestCase {
     }
 
     private func dispose(_ app: AppDelegate) {
-        app.store?.isTerminating = true
-        for panel in app.noteWindows.values {
-            panel.delegate = nil
-            panel.close()
-        }
-        app.board?.delegate = nil
-        app.board?.close()
-        app.store?.stop()
+        guard let manager = app.manager else { return }
+        for session in manager.sessions.values { session.stop() }
     }
 }

@@ -183,6 +183,62 @@ public struct ExtensionInstanceState: Codable, Equatable, Sendable, Identifiable
     }
 }
 
+/// The owners whose pull requests a profile shows. Empty means every owner.
+public struct OwnerSelection: Codable, Equatable, Sendable {
+    /// Unique ignoring case, sorted ignoring case, keeping the first spelling given.
+    public private(set) var owners: [String]
+
+    public init(_ owners: [String] = []) {
+        var seen = Set<String>()
+        self.owners = owners.filter { seen.insert($0.lowercased()).inserted }
+            .sorted { $0.caseInsensitiveCompare($1) == .orderedAscending }
+    }
+
+    private enum CodingKeys: String, CodingKey { case owners }
+
+    /// Saved state and backups are untrusted: an entry that is not an owner's login, such as an empty string or a
+    /// number, is dropped instead of rejecting the whole state.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let entries = try container.decodeIfPresent([Entry].self, forKey: .owners) ?? []
+        self.init(entries.compactMap(\.login).filter(Self.isSavedOwner))
+    }
+
+    /// One saved entry, which may not be text at all.
+    private struct Entry: Decodable {
+        let login: String?
+        init(from decoder: any Decoder) throws { login = try? decoder.singleValueContainer().decode(String.self) }
+    }
+
+    /// An owner a profile can keep selected: a GitHub login, or a managed user's login, which adds an underscore
+    /// and a short code and can own cards although Add owner… does not accept it.
+    private static func isSavedOwner(_ owner: String) -> Bool {
+        isValidLogin(owner.replacingOccurrences(of: "_", with: "-"))
+    }
+
+    public var isAll: Bool { owners.isEmpty }
+
+    public func contains(_ owner: String) -> Bool {
+        owners.contains { $0.caseInsensitiveCompare(owner) == .orderedSame }
+    }
+
+    /// A GitHub login: 1 to 39 ASCII letters, digits, or single hyphens, not at either end.
+    public static func isValidLogin(_ login: String) -> Bool {
+        let bytes = Array(login.utf8)
+        guard (1...39).contains(bytes.count) else { return false }
+        func isAlphanumeric(_ byte: UInt8) -> Bool {
+            (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte)
+        }
+        guard isAlphanumeric(bytes[0]), isAlphanumeric(bytes[bytes.count - 1]) else { return false }
+        for index in bytes.indices where !isAlphanumeric(bytes[index]) {
+            guard bytes[index] == 0x2D, isAlphanumeric(bytes[index - 1]), isAlphanumeric(bytes[index + 1]) else {
+                return false
+            }
+        }
+        return true
+    }
+}
+
 public struct AppState: Codable, Equatable, Sendable {
     public static let currentVersion = 1
     public var schemaVersion: Int = currentVersion
@@ -200,12 +256,17 @@ public struct AppState: Codable, Equatable, Sendable {
     public var appearance: AppearanceSettings = .default
     public var collapsedSections: [String] = []
     public var boardLayout = BoardLayout()
+    public var ownerSelection = OwnerSelection()
+    public var keepsOnlySelectedOwners = false
+    public var hideKeepsAlwaysOnTopNotes = false
+    /// Switching to another profile hides this one. Read from the profile being left.
+    public var hidesWhenSwitchingAway = true
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, notes, pins, dismissedIDs, pullRequests, boardFrame, boardAlwaysOnTop, githubEnabled
         case ghExecutablePath, viewerLogin, lastRefreshAt, extensionInstances, appearance, collapsedSections
-        case boardLayout
+        case boardLayout, ownerSelection, keepsOnlySelectedOwners, hideKeepsAlwaysOnTopNotes, hidesWhenSwitchingAway
     }
 
     public init(from decoder: any Decoder) throws {
@@ -226,5 +287,10 @@ public struct AppState: Codable, Equatable, Sendable {
         appearance = try container.decodeIfPresent(AppearanceSettings.self, forKey: .appearance) ?? .default
         collapsedSections = try container.decodeIfPresent([String].self, forKey: .collapsedSections) ?? []
         boardLayout = try container.decodeIfPresent(BoardLayout.self, forKey: .boardLayout) ?? BoardLayout()
+        ownerSelection = try container.decodeIfPresent(OwnerSelection.self, forKey: .ownerSelection) ?? OwnerSelection()
+        keepsOnlySelectedOwners = try container.decodeIfPresent(Bool.self, forKey: .keepsOnlySelectedOwners) ?? false
+        hideKeepsAlwaysOnTopNotes =
+            try container.decodeIfPresent(Bool.self, forKey: .hideKeepsAlwaysOnTopNotes) ?? false
+        hidesWhenSwitchingAway = try container.decodeIfPresent(Bool.self, forKey: .hidesWhenSwitchingAway) ?? true
     }
 }

@@ -19,8 +19,9 @@ final class AppStoreCancellationTests: XCTestCase {
             try await StateRepository(url: stateURL(directory)).save(initial)
             let store = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
             await store.start()
-            // Background timers are unnecessary for this controlled in-flight detail request.
-            store.stop()
+            // Background timers are unnecessary for this controlled in-flight detail request. Pausing quiets them
+            // and keeps the store saving, which a stopped store no longer does.
+            store.isPaused = true
             defer { store.stop() }
             XCTAssertTrue(store.state.githubEnabled)
             XCTAssertFalse(store.offersGitHubSetup)
@@ -94,7 +95,8 @@ final class AppStoreCancellationTests: XCTestCase {
         try await StateRepository(url: stateURL(directory)).save(initial)
         let store = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
         await store.start()
-        store.stop()
+        // Pausing quiets background timers and keeps the store saving, which a stopped store no longer does.
+        store.isPaused = true
         defer { store.stop() }
         let ids = store.state.notes.map(\.id)
         XCTAssertTrue(store.expandedNoteIDs.isEmpty, "Board notes start as one-line rows")

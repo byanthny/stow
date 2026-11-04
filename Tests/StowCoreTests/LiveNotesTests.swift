@@ -86,6 +86,21 @@ final class LiveNotesTests: XCTestCase {
         XCTAssertEqual(loaded.notes.map(\.markdown), ["B"])
     }
 
+    func testReopenAllowsSavingAfterSaveAndClose() async throws {
+        let url = try directory().appendingPathComponent("state.json")
+        let repository = StateRepository(url: url)
+        let a = state("A")
+        try await repository.saveAndClose(a)
+        let b = state("B")
+        try await repository.save(b)
+        let closed = try await StateRepository(url: url).load()
+        XCTAssertEqual(closed.notes.map(\.markdown), ["A"])
+        await repository.reopen()
+        try await repository.save(b)
+        let loaded = try await repository.load()
+        XCTAssertEqual(loaded.notes.map(\.markdown), ["B"])
+    }
+
     func testNewLocalEditBeforeAdoptionAcknowledgementPreservesAdoptedSourceAsConflict() async throws {
         let url = try directory().appendingPathComponent("state.json")
         let repository = StateRepository(url: url)

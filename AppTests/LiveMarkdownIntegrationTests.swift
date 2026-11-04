@@ -9,8 +9,6 @@ import XCTest
 @MainActor
 final class LiveMarkdownIntegrationTests: XCTestCase {
     func testPortableSnapshotIncludesImmediateExternalEditBeforeWatcherDebounce() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -29,8 +27,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testOrdinaryFlushAndPortableSnapshotAreBlockedDuringRestore() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -38,7 +34,8 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         let before = try XCTUnwrap(app.store.state.notes.first)
         let external = "# External text while restore is active\n"
         app.store.isRestoringBackup = true
-        defer { app.store.isRestoringBackup = false }
+        // The session has stopped by the time this runs, and a stopped profile is no longer the active one.
+        defer { app.store?.isRestoringBackup = false }
         try Data(external.utf8).write(to: noteFile(before.id, store: app.store))
         let blocked = await app.store.flush()
         XCTAssertFalse(blocked)
@@ -58,8 +55,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testExternalEditThenFlushUpdatesSourceWithoutChangingNoteIdentity() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -87,8 +82,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testDirtyAppEditAndExternalEditBothSurviveFlushAndRestart() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -120,8 +113,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testRestorePreservesPreviousBackupAndFolderAndRebuildsRestoredWindows() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -165,7 +156,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         XCTAssertEqual(app.noteWindows[restoredNote.id]?.level, .normal)
         XCTAssertNil(app.noteWindows[oldNote.id])
         XCTAssertFalse(oldWindow.isVisible)
-        XCTAssertEqual(ThemeController.shared.settings, replacement.appearance)
+        XCTAssertEqual(app.store.theme.settings, replacement.appearance)
         XCTAssertEqual(
             try Data(contentsOf: noteFile(restoredNote.id, store: app.store)), Data(restoredNote.markdown.utf8))
         let backups = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -192,8 +183,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testMarkdownBatchImportPreservesSourceAndAllocatesNewStableIdentities() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -219,8 +208,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testUncoordinatedInPlaceAndAtomicEditsReloadWithoutExplicitFlush() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -274,14 +261,8 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     private func dispose(_ app: AppDelegate) {
-        app.store?.isTerminating = true
-        for window in app.noteWindows.values {
-            window.delegate = nil
-            window.close()
-        }
-        app.board?.delegate = nil
-        app.board?.close()
-        app.store?.stop()
+        guard let manager = app.manager else { return }
+        for session in manager.sessions.values { session.stop() }
     }
 
     private func waitUntil(_ predicate: @MainActor () -> Bool) async -> Bool {

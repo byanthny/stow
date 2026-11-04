@@ -362,30 +362,22 @@ struct GitHubTests {
         }
     }
 
-    @Test func accountSwitchDiscardsPrivateTitlesDetailsAndUnpinnedReferences() async throws {
-        let pinned = PullRequestReference(owner: "example", repository: "hidden-pinned", number: 7)
-        let unpinned = PullRequestReference(owner: "example", repository: "hidden-unpinned", number: 8)
-        let accessible = PullRequestReference(owner: "example", repository: "fixture", number: 1)
-        let oldDetails = PullRequestDetails(latestComment: "Old account synthetic private comment")
-        let previous = [pinned, unpinned, accessible].map {
-            PullRequestSnapshot(reference: $0, title: "Old account synthetic private title", details: oldDetails)
+    @Test func accountMismatchStopsAfterFirstResponse() async throws {
+        let transport = ScriptedTransport([.init("StowViewer", try encoded(fixture()))])
+        await #expect(throws: GitHubError.accountMismatch(actualLogin: "synthetic-viewer")) {
+            try await GHClient(transport: transport).refresh(
+                pins: [], previous: [], expectedViewerLogin: "old-account")
         }
-        let inaccessible = json(
-            #"{"data":{"pr0":null},"errors":[{"type":"NOT_FOUND","message":"Synthetic hidden repository"}]}"#, exit: 1)
+        #expect(await transport.count == 1)
+    }
+
+    @Test func accountMatchIgnoresCase() async throws {
         let transport = ScriptedTransport([
             .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
-            .init("StowPinned", inaccessible),
         ])
         let result = try await GHClient(transport: transport).refresh(
-            pins: [pinned], previous: previous, expectedViewerLogin: "old-account")
+            pins: [], previous: [], expectedViewerLogin: "Synthetic-Viewer")
         #expect(result.viewerLogin == "synthetic-viewer")
-        #expect(result.snapshots.count == 2)
-        #expect(!result.snapshots.contains { $0.id == unpinned.id })
-        #expect(result.snapshots.allSatisfy { $0.details == nil })
-        #expect(result.snapshots.allSatisfy { $0.title != "Old account synthetic private title" })
-        let unavailable = try #require(result.snapshots.first { $0.id == pinned.id })
-        #expect(unavailable.isUnavailable)
-        #expect(unavailable.title == pinned.displayName)
     }
 
     @Test(.timeLimit(.minutes(1))) func coordinatorFollowsUpWhenPinsChangeDuringFlight() async throws {
