@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stow, a quiet board for notes and pull requests</title>
+  <meta name="description" content="Stow is a small native Mac app that keeps your Markdown notes and the GitHub pull requests that need you in one quiet window. Free and open source.">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0E0F11">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Stow">
+  <meta property="og:title" content="Stow, a quiet board for notes and pull requests">
+  <meta property="og:description" content="Markdown notes and the GitHub pull requests that need you, in one small native Mac window. Free and open source.">
+  <meta property="og:image" content="/assets/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="The Stow board with pull requests that need you and Markdown notes, beside the headline.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.ico" sizes="32x32">
+  <link rel="icon" href="assets/icon-128.png" type="image/png" sizes="128x128">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="demo.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header wrap" id="top">
+    <a class="brand" href="#top">
+      <img src="assets/icon-128.png" alt="" width="32" height="32">
+      <span>Stow</span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="https://github.com/byanthny/stow">GitHub</a>
+      <a class="btn btn-primary btn-small" href="#install">Get Stow</a>
+    </nav>
+  </header>
+
+  <main id="main" class="wrap">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy">
+        <p class="eyebrow">macOS 14 or later · Apple silicon and Intel</p>
+        <h1 id="hero-title">A quiet board for your notes and pull requests.</h1>
+        <p class="lede">Stow keeps your Markdown notes and the GitHub pull requests that need you in one small native window. Free, open source, and local to your Mac.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="#install">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
+            Get Stow
+          </a>
+          <a class="btn btn-secondary" href="https://github.com/byanthny/stow">
+            <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4L3 12l5 8"/><path d="M16 4l5 8-5 8"/></svg>
+            View on GitHub
+          </a>
+        </div>
+        <p class="fine">Alpha · 0.2.0 · Free under GPL-3.0 · No account needed</p>
+      </div>
+
+      <figure class="demo">
+        <div class="board" data-board>
+          <div class="board-bar">
+            <svg class="board-icon" aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13l2.5-7h11L20 13"/><path d="M4 13v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><path d="M4 13h4.5l1 2h5l1-2H20"/></svg>
+            <span class="board-name">Stow</span>
+            <button type="button" class="icon-btn" data-action="refresh" aria-label="Refresh GitHub">
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+            </button>
+            <button type="button" class="icon-btn" data-action="pin" aria-label="Pin board on top" aria-pressed="true">
+              <svg class="pin-icon" aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6l-1 6 3 3H7l3-3z"/><path d="M12 12v9"/></svg>
+            </button>
+            <button type="button" class="icon-btn" data-action="add" aria-label="New note">
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+          </div>
+
+          <div class="board-scroll">
+            <button type="button" class="section-toggle" data-action="section" aria-expanded="true" aria-controls="needs-body" data-summary="needs-summary">
+              <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+              Needs you
+              <span class="count">4<span class="sr-only"> pull requests</span></span>
+              <span class="attention" aria-hidden="true"></span>
+            </button>
+            <div class="section-body" id="needs-body">
+              <ul class="cards" role="list">
+                <li class="pr">
+                  <p class="pr-repo"><span class="pr-name">example/desktop</span> <span class="pr-num">#27</span></p>
+                  <p class="pr-title">Handle refresh retries</p>
+                  <p class="pr-reason tone-red"><span class="dot" aria-hidden="true"></span>Checks failing</p>
+                  <p class="pr-meta">Checks failing · Approved</p>
+                </li>
+                <li class="pr">
+                  <p class="pr-repo"><span class="pr-name">example/desktop</span> <span class="pr-num">#24</span></p>
+                  <p class="pr-title">Preserve window placement</p>
+                  <p class="pr-reason tone-amber"><span class="dot" aria-hidden="true"></span>Changes requested</p>
+                  <p class="pr-meta">Checks passed · Changes requested</p>
+                </li>
+                <li class="pr">
+                  <p class="pr-repo"><span class="pr-name">example/website</span> <span class="pr-num">#12</span></p>
+                  <p class="pr-title">Fix flaky upload test</p>
+                  <p class="pr-reason tone-red"><span class="dot" aria-hidden="true"></span>Checks failing</p>
+                  <p class="pr-meta">Checks failing</p>
+                </li>
+                <li class="pr" data-extra hidden>
+                  <p class="pr-repo"><span class="pr-name">sample-org/api</span> <span class="pr-num">#58</span></p>
+                  <p class="pr-title">Drop legacy flags</p>
+                  <p class="pr-reason tone-green"><span class="dot" aria-hidden="true"></span>Ready to merge</p>
+                  <p class="pr-meta">Checks passed · Approved</p>
+                </li>
+              </ul>
+              <button type="button" class="more" data-action="more" data-showing="false">Show 1 more</button>
+            </div>
+            <p class="summary" id="needs-summary" hidden>desktop: Handle refresh retries · desktop: Preserve window placement</p>
+
+            <div class="section-label">Notes <span class="count" data-notes-count>2</span></div>
+            <div class="notes-wrap">
+              <ul class="notes" role="list" data-notes>
+                <li class="note">
+                  <div class="note-row">
+                    <button type="button" class="note-toggle" data-action="note" aria-expanded="false" aria-controls="note-1-body">
+                      <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="note-label">
+                        <span class="note-title" id="note-1-title">A little room to think</span>
+                        <span class="note-sub">Edited just now</span>
+                      </span>
+                    </button>
+                    <span class="note-kind">Markdown</span>
+                    <button type="button" class="icon-btn" data-action="pop" aria-label="Pop out note" aria-describedby="note-1-title">
+                      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
+                    </button>
+                  </div>
+                  <div class="note-body" id="note-1-body" hidden>
+                    <textarea class="note-input" aria-label="Note text" rows="5"># A little room to think
+
+- keep the board quiet
+- bring the next action into view</textarea>
+                  </div>
+                </li>
+                <li class="note">
+                  <div class="note-row">
+                    <button type="button" class="note-toggle" data-action="note" aria-expanded="false" aria-controls="note-2-body">
+                      <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="note-label">
+                        <span class="note-title" id="note-2-title">Check the window on the external display.</span>
+                        <span class="note-sub">example/desktop #24</span>
+                      </span>
+                    </button>
+                    <span class="note-kind">Markdown</span>
+                    <button type="button" class="icon-btn" data-action="pop" aria-label="Pop out note" aria-describedby="note-2-title">
+                      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
+                    </button>
+                  </div>
+                  <div class="note-body" id="note-2-body" hidden>
+                    <p class="note-link">
+                      <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
+                      example/desktop #24
+                    </p>
+                    <textarea class="note-input" aria-label="Note text" rows="5">Check the window on the external display.</textarea>
+                  </div>
+                </li>
+              </ul>
+              <div class="hint-region" role="status" data-hint></div>
+              <template id="note-template">
+                <li class="note">
+                  <div class="note-row">
+                    <button type="button" class="note-toggle" data-action="note" aria-expanded="false">
+                      <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                      <span class="note-label">
+                        <span class="note-title"></span>
+                        <span class="note-sub">Edited just now</span>
+                      </span>
+                    </button>
+                    <span class="note-kind">Markdown</span>
+                    <button type="button" class="icon-btn" data-action="pop" aria-label="Pop out note">
+                      <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg>
+                    </button>
+                  </div>
+                  <div class="note-body" hidden>
+                    <textarea class="note-input" aria-label="Note text" rows="5"></textarea>
+                  </div>
+                </li>
+              </template>
+            </div>
+
+            <button type="button" class="section-toggle" data-action="section" aria-expanded="false" aria-controls="waiting-body" data-summary="waiting-summary">
+              <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+              Waiting
+              <span class="count">1<span class="sr-only"> pull request</span></span>
+            </button>
+            <div class="section-body" id="waiting-body" hidden>
+              <ul class="cards" role="list">
+                <li class="pr">
+                  <p class="pr-repo"><span class="pr-name">example/toolkit</span> <span class="pr-num">#8</span></p>
+                  <p class="pr-title">Add keyboard shortcuts</p>
+                  <p class="pr-reason tone-muted"><span class="dot" aria-hidden="true"></span>Waiting for review</p>
+                </li>
+              </ul>
+            </div>
+            <p class="summary" id="waiting-summary">toolkit: Add keyboard shortcuts</p>
+          </div>
+
+          <p class="board-status"><span class="status-dot" aria-hidden="true"></span><span role="status" data-status>Updated 2 min ago</span></p>
+        </div>
+        <figcaption>Try it: open a note, add one, or show more pull requests.</figcaption>
+      </figure>
+    </section>
+
+    <section class="band" id="features" aria-labelledby="features-title">
+      <h2 id="features-title">Small, native, and out of your way</h2>
+      <p class="intro">Every choice in Stow is a default you can change, and nothing turns on until you say so.</p>
+      <ul class="features" role="list">
+        <li class="card">
+          <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7"/><path d="M9 16h5"/></svg>
+          <h3>Notes are plain Markdown</h3>
+          <p>Every note is a <code>.md</code> file you can open in any editor. Stow reloads outside changes and keeps both versions if they ever clash.</p>
+          <pre class="code code-note" translate="no"><code><span class="tok-mark">#</span> <span class="tok-heading">Flaky upload test</span>
+Repro on a slow network:
+
+<span class="tok-mark">```sh</span>
+npm test -- --grep upload
+<span class="tok-mark">```</span></code></pre>
+        </li>
+        <li class="card">
+          <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7"/><path d="M18 15.5V9a3 3 0 0 0-3-3h-4"/><path d="M13 3.5L10.5 6 13 8.5"/></svg>
+          <h3>Pull requests that need you</h3>
+          <p>Needs you and Waiting, from the GitHub CLI login you already have. Partial data never looks ready to merge.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="10" rx="2"/><path d="M8 18h11a2 2 0 0 0 2-2V8"/></svg>
+          <h3>A profile for each part of your day</h3>
+          <p>Keep work and personal apart, each with its own notes, cards, theme, and windows. Switch with <kbd>⌃⌥1</kbd> through <kbd>⌃⌥9</kbd>.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"/><path d="M18 6h2"/><circle cx="16" cy="6" r="2"/><path d="M4 12h4"/><path d="M12 12h8"/><circle cx="10" cy="12" r="2"/><path d="M4 18h12"/><path d="M20 18h0"/><circle cx="18" cy="18" r="2"/></svg>
+          <h3>Your layout, your defaults</h3>
+          <p>Section order, cards per section, collapsed notes, even the header title. Every choice is a setting.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17l5-5-5-5"/><path d="M12 19h8"/></svg>
+          <h3>Themes are a few lines of text</h3>
+          <p>Copy a theme as <code>key = value</code>, share it in a message, and paste it on another Mac.</p>
+        </li>
+        <li class="card">
+          <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          <h3>Private by design</h3>
+          <p>No account, analytics, or server. Your notes stay on your Mac, and Stow never reads your GitHub token.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="band split" aria-labelledby="theme-title">
+      <div class="split-copy">
+        <h2 id="theme-title">Share a theme like a terminal config</h2>
+        <p>Start from a preset, change what you like, and copy it as text. Import and export use plain <code>.conf</code> files.</p>
+      </div>
+      <pre class="code code-lg" translate="no"><code><span class="tok-key">preset</span> <span class="tok-mark">=</span> <span class="tok-value">graphite</span>
+<span class="tok-key">font-family</span> <span class="tok-mark">=</span> <span class="tok-value">Menlo</span>
+<span class="tok-key">font-size</span> <span class="tok-mark">=</span> <span class="tok-value">14</span>
+<span class="tok-key">background-opacity</span> <span class="tok-mark">=</span> <span class="tok-value">0.85</span></code></pre>
+    </section>
+
+    <section class="band" id="install" aria-labelledby="install-title">
+      <h2 class="install-title" id="install-title">Get Stow</h2>
+      <div class="install-grid">
+        <article class="card card-wide" aria-labelledby="build-title">
+          <h3 id="build-title">Build from source</h3>
+          <p>Needs Xcode 16.4 or later, which runs on macOS 15.3 or later. Unzip <code>build/Stow.zip</code> and move Stow.app to Applications. The package is for your own Mac.</p>
+          <pre class="code" translate="no"><code><span class="line">git clone <span class="cont" aria-hidden="true">\
+</span>https://github.com/<wbr>byanthny/stow.git</span><span class="line">cd stow</span><span class="line">./scripts/package.sh</span></code></pre>
+        </article>
+        <article class="card" aria-labelledby="github-title">
+          <h3 id="github-title">Connect GitHub, if you want</h3>
+          <p>Install the <a href="https://cli.github.com/">GitHub CLI</a> and sign in once. Stow asks before using it, and notes work without it.</p>
+          <pre class="code" translate="no"><code><span class="line">gh auth login --hostname github.com</span></code></pre>
+        </article>
+        <article class="card" id="download" aria-labelledby="download-title">
+          <h3 id="download-title">Download</h3>
+          <p>Signed builds are coming. For now, build from source.</p>
+          <a class="btn btn-secondary btn-small" href="https://github.com/byanthny/stow/releases">View releases</a>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div class="footer-row">
+      <p>Stow is free software under GPL-3.0-or-later.</p>
+      <nav class="footer-nav" aria-label="Footer">
+        <a href="https://github.com/byanthny/stow">Source</a>
+        <a href="https://github.com/byanthny/stow/releases">Releases</a>
+        <a href="https://github.com/byanthny/stow/blob/main/SECURITY.md">Security</a>
+        <a href="https://github.com/byanthny/stow/blob/main/docs/privacy.md">Privacy</a>
+      </nav>
+    </div>
+  </footer>
+</body>
+</html>
