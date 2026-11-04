@@ -17,6 +17,8 @@ public final class StateLock: @unchecked Sendable {
     }
 
     public static let filename = ".stow.lock"
+    /// The process-wide lock that keeps a second Stow instance from running on the same data folder.
+    public static let instanceFilename = ".stow-app.lock"
     private let lock = NSLock()
     private var descriptor: Int32
 
@@ -24,7 +26,11 @@ public final class StateLock: @unchecked Sendable {
     deinit { release() }
 
     public static func acquire(forStateAt stateURL: URL) -> Outcome {
-        let directory = stateURL.deletingLastPathComponent()
+        acquire(named: filename, in: stateURL.deletingLastPathComponent())
+    }
+
+    /// Takes the lock file `filename` inside `directory`, creating the private folder if needed.
+    public static func acquire(named filename: String, in directory: URL) -> Outcome {
         do { try LiveNoteIO.ensureDirectory(directory) } catch { return .unavailable }
         let path = directory.appendingPathComponent(filename).path
         // Never follow a planted link, and never let a launched child inherit the lock.

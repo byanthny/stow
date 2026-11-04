@@ -69,4 +69,31 @@ final class StateLockTests: XCTestCase {
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
     }
+
+    func testNamedLocksAreIndependent() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        guard case .acquired(let instance) = StateLock.acquire(named: StateLock.instanceFilename, in: directory),
+            case .acquired(let state) = StateLock.acquire(named: StateLock.filename, in: directory)
+        else { return XCTFail("Locks with different names must not block each other") }
+        XCTAssertEqual(StateLock.instanceFilename, ".stow-app.lock")
+        instance.release()
+        state.release()
+    }
+
+    func testSecondAcquireInSameProcessIsRefusedUntilRelease() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        guard case .acquired(let lock) = StateLock.acquire(named: "a.lock", in: directory) else {
+            return XCTFail("The first acquire must succeed")
+        }
+        guard case .heldByAnotherProcess = StateLock.acquire(named: "a.lock", in: directory) else {
+            return XCTFail("A second acquire of the same name must be refused while held")
+        }
+        lock.release()
+        guard case .acquired(let again) = StateLock.acquire(named: "a.lock", in: directory) else {
+            return XCTFail("The lock must be available again after release")
+        }
+        again.release()
+    }
 }
