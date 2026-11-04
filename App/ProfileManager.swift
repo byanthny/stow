@@ -290,8 +290,7 @@ final class ProfileManager {
 
     /// Moves a profile by `offset` places in the list, which also renumbers the ⌃⌥ shortcuts.
     func move(_ id: UUID, by offset: Int) async throws {
-        try await catalog.move(id, by: offset)
-        try await reloadProfiles()
+        try await finish(outcome { try await self.catalog.move(id, by: offset) })
     }
 
     func setAlwaysShowProfileName(_ value: Bool) async throws {
@@ -311,8 +310,8 @@ final class ProfileManager {
     /// the last profile and one another process holds. Throws `CancellationError` when the person keeps the
     /// profile open after its changes could not be saved. If the move fails, a profile that was open opens again.
     func delete(_ id: UUID) async throws {
-        let outcome: Result<Void, any Error> = await serialized(id) {
-            do {
+        let deletion: Result<Void, any Error> = await serialized(id) {
+            await self.outcome {
                 // Checked first, so a deletion that cannot happen never closes the profile.
                 let snapshot = try await self.catalog.load()
                 if snapshot.indexStatus == .needsReset { throw ProfileError.indexNeedsReset }
@@ -328,37 +327,51 @@ final class ProfileManager {
                     throw error
                 }
                 if self.lastActiveID == id { self.lastActiveID = nil }
-                return .success(())
-            } catch {
-                return .failure(error)
             }
         }
-        try outcome.get()
-        try await reloadProfiles()
+        try await finish(deletion)
     }
 
     /// Writes the profile's identity file while holding its lock, then reloads the list. An open profile already
     /// holds its lock. A closed one is locked for the write, and refused while another process holds it.
     private func changeIdentity(of id: UUID, _ change: @escaping @MainActor () async throws -> Void) async throws {
-        let outcome: Result<Void, any Error> = await serialized(id) {
-            do {
-                let lock = try self.lockUnlessOpen(id)
+        let written: Result<Void, any Error> = await serialized(id) {
+            await self.outcome {
+                let lock = try await self.lockUnlessOpen(id)
                 defer { lock?.release() }
                 try await change()
-                return .success(())
-            } catch {
-                return .failure(error)
             }
         }
-        try outcome.get()
+        try await finish(written)
+    }
+
+    /// The result of `body`, for work that runs in a profile's request queue.
+    private func outcome(of body: () async throws -> Void) async -> Result<Void, any Error> {
+        do {
+            try await body()
+            return .success(())
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    /// Reloads the list after a change, and after one that found its profile gone, so the profile's row and menu
+    /// items go too; then throws the change's error, if any.
+    private func finish(_ outcome: Result<Void, any Error>) async throws {
+        if case .failure(let error) = outcome, (error as? ProfileError) != .notFound { throw error }
         try await reloadProfiles()
+        try outcome.get()
     }
 
     /// The profile's lock for a write to its folder, or nil when an open session here holds it already or the
-    /// folder cannot be locked. Throws `.inUse` while another process holds it.
-    private func lockUnlessOpen(_ id: UUID) throws -> StateLock? {
+    /// folder cannot be locked. Throws `.inUse` while another process holds it, and `.notFound` when the profile is
+    /// gone. The catalog confirms the profile first, because taking a lock creates a missing folder, and an empty
+    /// folder where a deleted profile was would make Finder's Put Back ask to replace it.
+    private func lockUnlessOpen(_ id: UUID) async throws -> StateLock? {
         if let session = sessions[id], !session.isStopped { return nil }
-        guard let entry = profiles.first(where: { $0.id == id }) else { throw ProfileError.notFound }
+        guard let entry = try await catalog.load().profiles.first(where: { $0.id == id }) else {
+            throw ProfileError.notFound
+        }
         switch StateLock.acquire(forStateAt: entry.folder.appendingPathComponent("state.json")) {
         case .acquired(let lock): return lock
         case .unavailable: return nil

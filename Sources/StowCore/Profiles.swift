@@ -14,8 +14,10 @@ public enum ProfileIcon: Codable, Equatable, Sendable {
     public static let maximumEmojiBytes = 32
 
     /// The icon when it is well formed, else nil. A symbol name is 1 to 64 ASCII letters, digits, and dots. An emoji
-    /// is exactly one character of at most 32 UTF-8 bytes, with at least one emoji scalar. Whether macOS has a
-    /// symbol of that name is for the app to check.
+    /// is exactly one character of at most 32 UTF-8 bytes that shows as an emoji: it has a scalar with emoji
+    /// presentation, or an emoji scalar with U+FE0F asking for that presentation. Digits, #, *, and © alone show
+    /// as text, although Unicode lists them as emoji. Whether macOS has a symbol of that name is for the app to
+    /// check.
     public static func validated(_ icon: ProfileIcon) -> ProfileIcon? {
         switch icon {
         case .symbol(let name):
@@ -24,11 +26,17 @@ public enum ProfileIcon: Codable, Equatable, Sendable {
                 bytes.allSatisfy({ isASCIIAlphanumeric($0) || $0 == UInt8(ascii: ".") })
             else { return nil }
         case .emoji(let text):
-            guard text.count == 1, text.utf8.count <= maximumEmojiBytes,
-                text.unicodeScalars.contains(where: \.properties.isEmoji)
-            else { return nil }
+            guard text.count == 1, text.utf8.count <= maximumEmojiBytes, showsAsEmoji(text.unicodeScalars) else {
+                return nil
+            }
         }
         return icon
+    }
+
+    private static func showsAsEmoji(_ scalars: String.UnicodeScalarView) -> Bool {
+        let selector: Unicode.Scalar = "\u{FE0F}"
+        if scalars.contains(where: \.properties.isEmojiPresentation) { return true }
+        return scalars.contains(selector) && scalars.contains { $0 != selector && $0.properties.isEmoji }
     }
 
     private static func isASCIIAlphanumeric(_ byte: UInt8) -> Bool {

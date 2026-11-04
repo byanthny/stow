@@ -177,10 +177,13 @@ private struct BoardSettingsView: View {
 /// A setting's label on the left with its checkbox on the right, in line with the other Settings controls.
 struct SettingsToggle: View {
     let title: String
+    /// The checkbox's identifier for UI automation, when it has one.
+    let identifier: String?
     @Binding var isOn: Bool
 
-    init(_ title: String, isOn: Binding<Bool>) {
+    init(_ title: String, identifier: String? = nil, isOn: Binding<Bool>) {
         self.title = title
+        self.identifier = identifier
         self._isOn = isOn
     }
 
@@ -189,7 +192,8 @@ struct SettingsToggle: View {
             // The checkbox carries the label for VoiceOver; the visible text is a click target only.
             Text(title).accessibilityHidden(true)
             Spacer()
-            Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.checkbox)
+            let checkbox = Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.checkbox)
+            if let identifier { checkbox.accessibilityIdentifier(identifier) } else { checkbox }
         }
         .contentShape(Rectangle())
         .onTapGesture { isOn.toggle() }

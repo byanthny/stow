@@ -72,8 +72,16 @@ final class ProfileTests: XCTestCase {
     }
 
     func testIconValidation() {
-        for valid in [ProfileIcon.symbol("star.fill"), .emoji("😀"), .symbol("1.circle"), .emoji("👨‍👩‍👧")] {
-            XCTAssertEqual(ProfileIcon.validated(valid), valid, "\(valid)")
+        let valid: [ProfileIcon] = [
+            .symbol("star.fill"), .symbol("1.circle"), .emoji("😀"), .emoji("👨‍👩‍👧"), .emoji("🇺🇸"),
+            // A keycap or a text-style emoji counts once it asks for emoji presentation with U+FE0F.
+            .emoji("1\u{FE0F}\u{20E3}"), .emoji("\u{00A9}\u{FE0F}"), .emoji("\u{263A}\u{FE0F}"),
+        ]
+        for icon in valid { XCTAssertEqual(ProfileIcon.validated(icon), icon, "\(icon)") }
+        // Digits, #, *, and © are emoji only as keycap bases or with U+FE0F; alone they are text.
+        for text in ["1", "#", "*", "\u{00A9}", "\u{263A}", "a\u{FE0F}", "\u{FE0F}"] {
+            let scalars = text.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            XCTAssertNil(ProfileIcon.validated(.emoji(text)), scalars)
         }
         let longest = String(repeating: "a", count: 64)
         XCTAssertEqual(ProfileIcon.validated(.symbol(longest)), .symbol(longest))

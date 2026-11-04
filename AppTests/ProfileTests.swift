@@ -1305,14 +1305,26 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(main.store.state.appearance, .paper)
     }
 
-    func testNewProfileColorIsTheFirstUnusedPaletteColor() {
+    func testNewProfileColorsStayDistinct() {
         let palette = ProfilePalette.colors
         XCTAssertGreaterThan(palette.count, 3)
         XCTAssertTrue(palette.allSatisfy(ProfileIdentity.isValidColor))
         XCTAssertEqual(ProfilePalette.firstUnused(among: []), palette[0])
         XCTAssertEqual(ProfilePalette.firstUnused(among: ["#8E8E93", palette[0].lowercased()]), palette[1])
         XCTAssertEqual(ProfilePalette.firstUnused(among: [palette[1]]), palette[0])
-        XCTAssertEqual(ProfilePalette.firstUnused(among: palette), palette[0])
+
+        // Each new profile's default differs from every color in use, also once the palette is used up.
+        var used = ["#8E8E93"]
+        for _ in 0..<40 {
+            let color = ProfilePalette.firstUnused(among: used)
+            XCTAssertTrue(ProfileIdentity.isValidColor(color), color)
+            XCTAssertFalse(used.contains { $0.caseInsensitiveCompare(color) == .orderedSame }, color)
+            used.append(color)
+        }
+        XCTAssertEqual(Array(used.dropFirst().prefix(palette.count)), palette)
+        let afterPalette = ProfilePalette.firstUnused(among: palette)
+        XCTAssertEqual(ProfilePalette.firstUnused(among: palette), afterPalette, "The choice is deterministic")
+        XCTAssertNotEqual(ProfilePalette.firstUnused(among: palette + [afterPalette.lowercased()]), afterPalette)
     }
 
     func testNewProfileRequestShowsTheSheetInSettings() async throws {
@@ -1438,6 +1450,56 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(manager.profiles.first?.icon, .emoji("😀"))
         XCTAssertTrue(isHeld(StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))))
         XCTAssertFalse(main.isStopped)
+    }
+
+    func testIdentityChangesNeverRecreateAMissingProfileFolder() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let homeEntry = try await addProfile("Home", in: folder)
+        let manager = makeManager(folder, catalog: catalog(folder, trash: bin))
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+
+        // A color change queued behind a deletion, as a settling color well can be, finds the profile gone.
+        let deletion = Task { try await manager.delete(workEntry.id) }
+        let recolor = Task { try await manager.setColor(workEntry.id, to: "#AABBCC") }
+        try await deletion.value
+        do {
+            try await recolor.value
+            XCTFail("A change to a deleted profile must fail")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .notFound)
+        }
+        // An empty folder left in its place would make Finder's Put Back ask to replace it.
+        XCTAssertFalse(exists("profiles/\(workEntry.id.uuidString)", in: folder))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: bin.path), [workEntry.id.uuidString])
+
+        // A folder removed outside Stow is not recreated either, and the list drops the profile.
+        try FileManager.default.removeItem(at: homeEntry.folder)
+        XCTAssertTrue(manager.profiles.contains { $0.id == homeEntry.id }, "The list has not been read since")
+        let changes: [(String, @MainActor () async throws -> Void)] = [
+            ("rename", { try await manager.rename(homeEntry.id, to: "Away") }),
+            ("color", { try await manager.setColor(homeEntry.id, to: "#AABBCC") }),
+            ("icon", { try await manager.setIcon(homeEntry.id, to: .symbol("house")) }),
+        ]
+        for (label, change) in changes {
+            do {
+                try await change()
+                XCTFail("\(label) of a missing profile must fail")
+            } catch {
+                XCTAssertEqual(error as? ProfileError, .notFound, label)
+            }
+            XCTAssertFalse(exists("profiles/\(homeEntry.id.uuidString)", in: folder), label)
+            XCTAssertFalse(manager.profiles.contains { $0.id == homeEntry.id }, label)
+        }
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow"])
     }
 
     func testDeleteClosesAndMovesProfileToTrash() async throws {
@@ -1589,6 +1651,10 @@ final class ProfileTests: XCTestCase {
         let before = try outsideWork(tree(folder))
         XCTAssertNotNil(before["/state.json"] ?? nil)
         XCTAssertNotNil(before["/\(ProfileIndex.filename)"] ?? nil)
+        XCTAssertNotNil(before["/\(ProfileIdentity.filename)"] ?? nil)
+        let workIdentityURL = workEntry.folder.appendingPathComponent(ProfileIdentity.filename)
+        let workIdentity = try Data(contentsOf: workIdentityURL)
+        let listed = try await ProfileCatalog(dataFolder: folder).load()
 
         var backup = AppState()
         backup.githubEnabled = false
@@ -1596,9 +1662,15 @@ final class ProfileTests: XCTestCase {
         let restored = await work.store.restoreBackup(backup)
         XCTAssertTrue(restored)
         XCTAssertEqual(work.store.state.notes.map(\.markdown), ["Synthetic restored note"])
+        // Every file outside the restored profile, the first profile's and the index included, is unchanged.
         XCTAssertEqual(try outsideWork(tree(folder)), before)
         XCTAssertEqual(main.store.state.notes.map(\.markdown), ["Synthetic profile note"])
-        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+        // The restored profile keeps its own identity, and the list read afresh is as it was.
+        XCTAssertEqual(try Data(contentsOf: workIdentityURL), workIdentity)
+        let relisted = try await ProfileCatalog(dataFolder: folder).load()
+        XCTAssertEqual(relisted.profiles, listed.profiles)
+        XCTAssertEqual(relisted.index, listed.index)
+        XCTAssertEqual(relisted.profiles.map(\.name), ["Stow", "Work"])
     }
 
     func testBoardHeaderShowsIconWhenSet() async throws {

@@ -39,13 +39,13 @@ struct ProfilesSettingsView: View {
                 .font(theme.font(size: 11)).foregroundStyle(.stowAmber).fixedSize(horizontal: false, vertical: true)
             }
             SettingsToggle(
-                "Always show profile name",
+                "Always show profile name", identifier: "profiles.alwaysShowName",
                 isOn: Binding(
                     get: { profile.manager?.alwaysShowsProfileName ?? false },
                     set: { shows in setAlwaysShowProfileName(shows) }))
             if profiles.count > 1 {
                 SettingsToggle(
-                    "Hide when switching away",
+                    "Hide when switching away", identifier: "profiles.hidesWhenSwitchingAway",
                     isOn: Binding(
                         get: { store.state.hidesWhenSwitchingAway }, set: { store.setHidesWhenSwitchingAway($0) }))
             }
@@ -126,7 +126,7 @@ private struct ProfileRow: View {
     var body: some View {
         HStack(spacing: 6) {
             ColorPicker(selection: color, supportsOpacity: false) { Text(verbatim: "Color for \(entry.name)") }
-                .labelsHidden().fixedSize().accessibilityIdentifier("profiles.color")
+                .labelsHidden().fixedSize().accessibilityIdentifier(identifier("color"))
             Button {
                 isPickingIcon = true
             } label: {
@@ -136,7 +136,7 @@ private struct ProfileRow: View {
             .buttonStyle(.plain).foregroundStyle(.stowMuted).help("Choose an icon")
             .accessibilityLabel("Icon for \(entry.name)")
             .accessibilityValue(entry.icon?.displayable.map(\.spokenName) ?? "None")
-            .accessibilityIdentifier("profiles.icon")
+            .accessibilityIdentifier(identifier("icon"))
             .popover(isPresented: $isPickingIcon, arrowEdge: .bottom) {
                 ProfileIconPicker(entry: entry) { icon in
                     isPickingIcon = false
@@ -146,7 +146,7 @@ private struct ProfileRow: View {
             }
             TextField("Name of \(entry.name)", text: $name, prompt: Text("Name"))
                 .labelsHidden().focused($isEditingName).onSubmit(rename)
-                .accessibilityIdentifier("profiles.name")
+                .accessibilityIdentifier(identifier("name"))
             if count > 1 {
                 Button {
                     run { try await $0.move(entry.id, by: -1) }
@@ -154,16 +154,16 @@ private struct ProfileRow: View {
                     Image(systemName: "chevron.up")
                 }
                 .disabled(position == 0).accessibilityLabel("Move \(entry.name) up")
-                .accessibilityIdentifier("profiles.moveUp")
+                .accessibilityIdentifier(identifier("moveUp"))
                 Button {
                     run { try await $0.move(entry.id, by: 1) }
                 } label: {
                     Image(systemName: "chevron.down")
                 }
                 .disabled(position == count - 1).accessibilityLabel("Move \(entry.name) down")
-                .accessibilityIdentifier("profiles.moveDown")
+                .accessibilityIdentifier(identifier("moveDown"))
                 Button("Delete…", action: confirmDelete)
-                    .accessibilityLabel("Delete \(entry.name)").accessibilityIdentifier("profiles.delete")
+                    .accessibilityLabel("Delete \(entry.name)").accessibilityIdentifier(identifier("delete"))
             }
         }
         .font(theme.font(size: 12))
@@ -175,6 +175,9 @@ private struct ProfileRow: View {
             if !editing { rename() }
         }
     }
+
+    /// An identifier for one of this row's controls, ending in the profile's ID so UI automation can tell rows apart.
+    private func identifier(_ control: String) -> String { "profiles.\(control).\(entry.id.uuidString)" }
 
     /// The well's color. The color panel reports every step of a drag, so the write waits until the pick settles.
     private var color: Binding<Color> {
@@ -196,7 +199,8 @@ private struct ProfileRow: View {
                     } catch {
                         report(profileProblem(error, name: current))
                     }
-                    pendingColor = nil
+                    // A pick made while this wrote stays in the well until its own write.
+                    if pendingColor == hex { pendingColor = nil }
                 }
             })
     }
@@ -283,17 +287,22 @@ private struct ProfileIconPicker: View {
                     }
                     .buttonStyle(.plain).help(symbol.label)
                     .accessibilityLabel(symbol.label).accessibilityAddTraits(isChosen ? .isSelected : [])
+                    .accessibilityIdentifier("profiles.iconPicker.symbol.\(symbol.id)")
                 }
             }
-            Button("None") { choose(nil) }.accessibilityIdentifier("profiles.icon.none")
+            Button("None") { choose(nil) }.accessibilityIdentifier("profiles.iconPicker.none")
             HStack {
                 TextField("Symbol name", text: $symbolName).onSubmit(useSymbol)
+                    .accessibilityIdentifier("profiles.iconPicker.symbolName")
                 Button("Use", action: useSymbol).accessibilityLabel("Use symbol")
+                    .accessibilityIdentifier("profiles.iconPicker.useSymbol")
                     .disabled(symbolName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             HStack {
                 TextField("Emoji", text: $emoji).onSubmit(useEmoji)
+                    .accessibilityIdentifier("profiles.iconPicker.emoji")
                 Button("Use", action: useEmoji).accessibilityLabel("Use emoji")
+                    .accessibilityIdentifier("profiles.iconPicker.useEmoji")
                     .disabled(emoji.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             if let problem {
@@ -363,6 +372,7 @@ struct NewProfileSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+                    .accessibilityIdentifier("newProfile.cancel")
                 Button("Create", action: create).keyboardShortcut(.defaultAction).disabled(isCreating)
                     .accessibilityIdentifier("newProfile.create")
             }
@@ -409,10 +419,41 @@ struct ProfileIconView: View {
 enum ProfilePalette {
     static let colors = ["#0A84FF", "#30D158", "#FF9F0A", "#BF5AF2", "#FF375F", "#64D2FF", "#FFD60A", "#AC8E68"]
 
-    /// The first palette color that no profile uses, ignoring case, or the first color when every one is in use.
+    /// The first color that no profile uses, ignoring case: the palette in order, then further hues spread around
+    /// the color wheel, so a new profile's default always differs from the colors in use.
     static func firstUnused(among used: [String]) -> String {
         let taken = Set(used.map { $0.uppercased() })
-        return colors.first { !taken.contains($0) } ?? colors[0]
+        if let color = colors.first(where: { !taken.contains($0) }) { return color }
+        // Hues 137 degrees apart reach every whole degree in 360 steps; each later round is paler or darker.
+        for step in 0..<(360 * 9) {
+            let round = step / 360
+            let color = hex(
+                hue: Double(step * 137 % 360) / 360, saturation: 0.7 - 0.15 * Double(round % 3),
+                brightness: 0.9 - 0.15 * Double(round / 3))
+            if !taken.contains(color) { return color }
+        }
+        // Only with thousands of profiles: the first color of all that no profile uses.
+        return (0..<0x100_0000).lazy.map { String(format: "#%06X", $0) }.first { !taken.contains($0) } ?? colors[0]
+    }
+
+    /// `#RRGGBB` for a hue, saturation, and brightness, each from 0 to 1.
+    private static func hex(hue: Double, saturation: Double, brightness: Double) -> String {
+        let sector = hue * 6
+        let fraction = sector - sector.rounded(.down)
+        let low = brightness * (1 - saturation)
+        let falling = brightness * (1 - saturation * fraction)
+        let rising = brightness * (1 - saturation * (1 - fraction))
+        let (red, green, blue) =
+            switch Int(sector) % 6 {
+            case 0: (brightness, rising, low)
+            case 1: (falling, brightness, low)
+            case 2: (low, brightness, rising)
+            case 3: (low, falling, brightness)
+            case 4: (rising, low, brightness)
+            default: (brightness, low, falling)
+            }
+        let bytes = [red, green, blue].map { Int(($0 * 255).rounded()) }
+        return String(format: "#%02X%02X%02X", bytes[0], bytes[1], bytes[2])
     }
 }
 
