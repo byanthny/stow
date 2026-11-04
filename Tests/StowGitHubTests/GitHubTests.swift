@@ -271,6 +271,86 @@ struct GitHubTests {
         #expect(details.latestCommentAuthor == "newer")
     }
 
+    @Test func lazyDetailsBoundPagesItemsNamesAndLinks() async throws {
+        func checkRun(_ name: String, _ conclusion: String, url: String = "https://example.com/check") -> GraphQLValue {
+            .object([
+                "__typename": .string("CheckRun"), "name": .string(name), "status": .string("COMPLETED"),
+                "conclusion": .string(conclusion), "detailsUrl": .string(url),
+            ])
+        }
+        func page(_ connection: String, _ nodes: [GraphQLValue], next: String?) -> GraphQLValue {
+            let body: GraphQLValue = .object([
+                "nodes": .array(nodes),
+                "pageInfo": .object(["hasNextPage": .bool(next != nil), "endCursor": next.map(GraphQLValue.string) ?? .null]),
+            ])
+            let pullRequest: GraphQLValue =
+                connection == "contexts"
+                ? .object(["statusCheckRollup": .object(["contexts": body])]) : .object([connection: body])
+            return .object(["data": .object(["repository": .object(["pullRequest": pullRequest])])])
+        }
+        let passing = (0..<100).map { checkRun("Synthetic check \($0)", "SUCCESS") }
+        let failing = checkRun(
+            String(repeating: "n", count: 500), "FAILURE",
+            url: "https://example.com/" + String(repeating: "u", count: 3_000))
+        let transport = ScriptedTransport([
+            .init("contexts", try encoded(page("contexts", passing, next: "checks-2"))),
+            .init(
+                "contexts", try encoded(page("contexts", Array(passing.dropLast()) + [failing], next: "checks-3")),
+                cursor: "checks-2"),
+            .init(
+                "contexts", try encoded(page("contexts", [checkRun("Late", "SUCCESS")], next: "checks-4")),
+                cursor: "checks-3"),
+            // A fourth page of checks must not be requested.
+            .init("latestReviews", try encoded(page("latestReviews", [], next: nil))),
+            .init("reviewThreads", try encoded(page("reviewThreads", [], next: nil))),
+        ])
+        let details = try await GHClient(transport: transport).details(
+            for: .init(owner: "example", repository: "fixture", number: 1))
+        #expect(await transport.count == 5)
+        #expect(!details.isComplete)
+        #expect(details.checks.count == GHClient.maxDetailItems)
+        let first = try #require(details.checks.first)
+        #expect(first.state == "FAILURE", "A failing check must survive the cut")
+        #expect(first.name.count == 200)
+        #expect(first.url == nil, "Oversized links are dropped")
+        #expect(details.checks.dropFirst().allSatisfy { $0.url?.absoluteString == "https://example.com/check" })
+    }
+
+    @Test func onlyPrivateRegularExecutablesNamedGHAreLaunched() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("StowGHPathTests-\(UUID().uuidString)")
+        defer { try? manager.removeItem(at: root) }
+        func file(_ relative: String, mode: Int) throws -> String {
+            let url = root.appendingPathComponent(relative)
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/sh\n".utf8).write(to: url)
+            try manager.setAttributes([.posixPermissions: mode], ofItemAtPath: url.path)
+            return url.path
+        }
+        func link(_ relative: String, to target: String) throws -> String {
+            let url = root.appendingPathComponent(relative)
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.createSymbolicLink(atPath: url.path, withDestinationPath: target)
+            return url.path
+        }
+        let valid = try file("Cellar/gh/bin/gh", mode: 0o755)
+        #expect(GHClient.isUsableExecutable(atPath: valid))
+        #expect(GHClient.discoverExecutable(preferredPath: valid)?.path == valid)
+        #expect(GHClient.isUsableExecutable(atPath: try link("bin/gh", to: valid)))
+
+        let otherName = try file("named/sh", mode: 0o755)
+        let groupWritable = try file("group/gh", mode: 0o775)
+        let worldWritable = try file("world/gh", mode: 0o757)
+        let notExecutable = try file("plain/gh", mode: 0o644)
+        let disguisedShell = try link("disguised/gh", to: otherName)
+        let directory = root.appendingPathComponent("folder/gh").path
+        try manager.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        for rejected in [otherName, groupWritable, worldWritable, notExecutable, disguisedShell, directory, "gh"] {
+            #expect(!GHClient.isUsableExecutable(atPath: rejected), "\(rejected) must not be launched")
+            #expect(GHClient.discoverExecutable(preferredPath: rejected)?.path != rejected)
+        }
+    }
+
     @Test func inaccessibleDetailsAndUnsupportedHostsAreSafeErrors() async throws {
         let transport = ScriptedTransport([.init("StowDetails", json(#"{"data":{"repository":null}}"#))])
         let client = GHClient(transport: transport)

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import StowCore
 
@@ -75,14 +76,16 @@ extension GHClient {
                             if node["__typename"].string == "CheckRun", let checkName = node["name"].string {
                                 let state = node["conclusion"].string ?? node["status"].string ?? "UNKNOWN"
                                 checks.append(
-                                    .init(name: checkName, state: state, url: Self.safeURL(node["detailsUrl"].string)))
+                                    .init(
+                                        name: Self.displayName(checkName), state: state,
+                                        url: Self.safeURL(node["detailsUrl"].string)))
                                 if state == "UNKNOWN" { complete = false }
                             } else if node["__typename"].string == "StatusContext",
                                 let checkName = node["context"].string
                             {
                                 checks.append(
                                     .init(
-                                        name: checkName, state: node["state"].string ?? "UNKNOWN",
+                                        name: Self.displayName(checkName), state: node["state"].string ?? "UNKNOWN",
                                         url: Self.safeURL(node["targetUrl"].string)))
                                 if node["state"].string == nil { complete = false }
                             } else {
@@ -91,7 +94,7 @@ extension GHClient {
                         case "latestReviews":
                             reviews.append(
                                 .init(
-                                    author: node["author"]["login"].string ?? "Deleted user",
+                                    author: Self.displayName(node["author"]["login"].string ?? "Deleted user"),
                                     state: node["state"].string ?? "UNKNOWN"))
                             if node["state"].string == nil { complete = false }
                         default:
@@ -118,7 +121,8 @@ extension GHClient {
                     }
                     pages += 1
                     if connection["pageInfo"]["hasNextPage"].bool != true { break }
-                    guard pages < maxPages, let next = connection["pageInfo"]["endCursor"].string,
+                    // Details are display-only; a few pages bound process launches for very large PRs.
+                    guard pages < Self.maxDetailPages, let next = connection["pageInfo"]["endCursor"].string,
                         seen.insert(next).inserted
                     else {
                         complete = false
@@ -137,13 +141,31 @@ extension GHClient {
             if name == "reviewThreads" && !connectionComplete { threadsKnown = false }
         }
         if successfulPages == 0, let firstFailure { throw firstFailure }
+        // Cached details are saved with every index write, so keep them bounded.
+        if checks.count > Self.maxDetailItems {
+            // Keep checks that may need attention when the list must be cut.
+            let passing: Set = ["SUCCESS", "NEUTRAL", "SKIPPED"]
+            checks = Array(
+                (checks.filter { !passing.contains($0.state) } + checks.filter { passing.contains($0.state) })
+                    .prefix(Self.maxDetailItems))
+            complete = false
+        }
+        if reviews.count > Self.maxDetailItems {
+            reviews = Array(reviews.prefix(Self.maxDetailItems))
+            complete = false
+        }
         return .init(
             checks: checks, reviews: reviews, unresolvedThreadCount: threadsKnown ? unresolved : nil,
             latestComment: newestComment?.body, latestCommentAuthor: newestComment?.author,
             fetchedAt: .now, isComplete: complete)
     }
+    static let maxDetailPages = 3
+    static let maxDetailItems = 100
+    private static func displayName(_ name: String) -> String { String(name.prefix(200)) }
     private static func safeURL(_ string: String?) -> URL? {
-        guard let string, let url = URL(string: string), url.scheme == "https" || url.scheme == "http" else {
+        guard let string, string.utf8.count <= 2_048, let url = URL(string: string),
+            url.scheme == "https" || url.scheme == "http"
+        else {
             return nil
         }
         return url
@@ -236,16 +258,26 @@ public actor GHClient: GitHubClient {
     public init(transport: any GraphQLTransport) { self.transport = transport }
 
     public nonisolated static func discoverExecutable(preferredPath: String? = nil) -> URL? {
-        let fm = FileManager.default
         let explicit = preferredPath.map { [$0] } ?? []
         let paths =
             explicit + ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/gh" }
-        return paths.first { path in
-            var directory: ObjCBool = false
-            return path.hasPrefix("/") && fm.fileExists(atPath: path, isDirectory: &directory)
-                && !directory.boolValue && fm.isExecutableFile(atPath: path)
-        }.map { URL(fileURLWithPath: $0) }
+        return paths.first(where: isUsableExecutable(atPath:)).map { URL(fileURLWithPath: $0) }
+    }
+
+    /// Stow launches only an absolute path named `gh` that resolves to a regular executable file
+    /// other users cannot modify. Anything else is ignored, whatever saved state or a restore says.
+    public nonisolated static func isUsableExecutable(atPath path: String) -> Bool {
+        guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return false }
+        // A link named gh must also lead to a program named gh, as Homebrew and installer links do.
+        let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        var info = stat()
+        guard (resolved as NSString).lastPathComponent == "gh",
+            resolved.withCString({ Darwin.lstat($0, &info) }) == 0,
+            (info.st_mode & S_IFMT) == S_IFREG,
+            info.st_mode & (S_IWGRP | S_IWOTH) == 0
+        else { return false }
+        return FileManager.default.isExecutableFile(atPath: resolved)
     }
 
     private struct Envelope {

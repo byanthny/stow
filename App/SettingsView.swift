@@ -1,4 +1,5 @@
 import AppKit
+import StowGitHub
 import SwiftUI
 
 struct SettingsView: View {
@@ -87,10 +88,16 @@ struct SettingsView: View {
         panel.title = "Choose the GitHub CLI executable"
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url,
-            FileManager.default.isExecutableFile(atPath: url.path)
-        {
-            store.setExecutablePath(url.path)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard GHClient.isUsableExecutable(atPath: url.path) else {
+            let alert = NSAlert()
+            alert.messageText = "Stow can't use that file"
+            alert.informativeText =
+                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh and must not be writable by other users."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
         }
+        store.setExecutablePath(url.path)
     }
 }
