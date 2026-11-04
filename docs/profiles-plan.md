@@ -1,4 +1,4 @@
-# profiles implementation plan
+# Profiles implementation plan
 
 > For agents: execute this plan task by task with superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkboxes (`- [ ]`) for tracking.
 
@@ -10,12 +10,12 @@
 
 **Spec:** [profiles.md](profiles.md). Read it before starting any task; this plan argues from it.
 
-## global constraints
+## Global constraints
 
 - Target macOS 14 and Swift 6. Add no dependencies. Keep `Package.resolved` unchanged.
 - "Every layout choice is a setting with a default, not a fixed rule. Nothing turns on unless the user turns it on."
 - "Keep a setup with one profile and cards from one owner looking and behaving exactly as Stow does today."
-- The first profile stays in the data folder and is named "Main". Other profiles live in `profiles/<profile-id>/`. The identity file is `identity.json`, the index is `profiles.json`, and the instance lock is `.stow-app.lock`.
+- The first profile stays in the data folder and is named "Stow" (task 9 renames the earlier "Main" fallback). Other profiles live in `profiles/<profile-id>/`. The identity file is `identity.json`, the index is `profiles.json`, and the instance lock is `.stow-app.lock`.
 - Hold a profile's `.stow.lock` before writing its folder. Hold `.stow-app.lock` for the process lifetime.
 - Launch only `gh` paths `GHClient.isUsableExecutable` accepts, with Stow's environment unchanged. Never read tokens or set `GH_CONFIG_DIR`. Add no URL scheme or other inter-process interface.
 - New profiles start with GitHub off and the existing offer. Profiles not seen before start with GitHub and accessories off and no saved `gh` location. Restores keep each profile's machine-local GitHub settings.
@@ -24,7 +24,7 @@
 - Documentation uses lowercase headings and short, direct prose. Commits use conventional subjects and the existing signing setup; never bypass signing.
 - Core tests: `swift test --filter <TestClass>`. Hosted tests: the `xcodebuild … test` command from `scripts/test.sh`, with `-only-testing:StowAppTests/<TestClass>` appended. Full check: `./scripts/test.sh`, `./scripts/build.sh Debug`, `./scripts/build.sh Release`.
 
-## review focus
+## Review focus
 
 1. A refresh or save still running when its profile is hidden or closed. It must land only in its own profile, and nothing may be written after the lock is released. Tested in task 9.
 2. External edits to a hidden profile's notes. They must be merged when the profile is shown, not lost and not turned into conflict copies. Tested in task 9.
@@ -32,7 +32,7 @@
 4. An index write failing because the disk is full or the folder is read-only. Existing profiles stay listed and usable, and the error is shown. Tested in task 4.
 5. Owner names that differ only by case, such as a typed "acme" against GitHub's "Acme". They are one owner everywhere. Tested in task 15.
 
-## file map
+## File map
 
 | file | responsibility |
 | --- | --- |
@@ -50,7 +50,7 @@
 
 ---
 
-### task 1: named locks
+### Task 1: named locks
 
 **Files:** modify `Sources/StowCore/StateLock.swift`; test `Tests/StowCoreTests/StateLockTests.swift`.
 
@@ -79,7 +79,7 @@ Keep each `.acquired` lock alive until the test ends.
 - [ ] **Step 4: Run `swift test --filter StateLockTests`.** Expected: all pass, including the four existing tests.
 - [ ] **Step 5: Commit** `feat(core): named state locks`.
 
-### task 2: profile identity and index values
+### Task 2: profile identity and index values
 
 **Files:** create `Sources/StowCore/Profiles.swift`; test `Tests/StowCoreTests/ProfileTests.swift`.
 
@@ -146,7 +146,7 @@ func testIndexRejectsNewerVersionAndOversizedData() {
 - [ ] **Step 4: Run `swift test --filter ProfileTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(core): profile identity and index values`.
 
-### task 3: discover profiles
+### Task 3: discover profiles
 
 **Files:** create `Sources/StowCore/ProfileCatalog.swift`; test `Tests/StowCoreTests/ProfileCatalogTests.swift`.
 
@@ -190,7 +190,7 @@ public actor ProfileCatalog {
 - [ ] **Step 4: Run `swift test --filter ProfileCatalogTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(core): discover profiles from folders`.
 
-### task 4: change profiles
+### Task 4: change profiles
 
 **Files:** modify `Sources/StowCore/ProfileCatalog.swift`; test `Tests/StowCoreTests/ProfileCatalogTests.swift`.
 
@@ -215,7 +215,7 @@ public actor ProfileCatalog {
 - [ ] **Step 4: Run the tests.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(core): create, rename, and order profiles`.
 
-### task 5: delete profiles to the Trash
+### Task 5: delete profiles to the Trash
 
 **Files:** modify `Sources/StowCore/ProfileCatalog.swift`; test `Tests/StowCoreTests/ProfileCatalogTests.swift`.
 
@@ -238,7 +238,7 @@ public actor ProfileCatalog {
 - [ ] **Step 4: Run the tests.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(core): delete profiles to the Trash`.
 
-### task 6: per-profile fields and arrival rules
+### Task 6: per-profile fields and arrival rules
 
 **Files:** modify `Sources/StowCore/Models.swift`, `BoardLayout.swift`, `Portability.swift`, and `StateRepository.swift`; tests in `Tests/StowCoreTests/StateCompatibilityTests.swift`, `BoardPreferencesTests.swift`, `PortabilityTests.swift`, and `LiveNotesTests.swift`.
 
@@ -280,7 +280,7 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 4: Run `swift test --filter StowCoreTests`.** Expected: all pass.
 - [ ] **Step 5: Commit** `feat(core): per-profile owner and window preferences`.
 
-### task 7: a theme per store
+### Task 7: a theme per store
 
 **Files:** modify `App/Theme.swift`, `App/AppStore.swift`, `App/Windows.swift`, and every view that uses `Color.stow…`, `Font.stow(…)`, or `ThemeController.shared` (`AccessoryViews`, `AppearanceView`, `BoardView`, `DataTransferView`, `MarkdownPreview`, `NativeEditor`, `NoteView`, `PRCard`, `SettingsView`); test `AppTests/AppearanceIntegrationTests.swift`.
 
@@ -302,7 +302,7 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 4: Run `./scripts/test.sh`.** Expected: every test passes, and `grep -rn "ThemeController.shared" App` prints nothing.
 - [ ] **Step 5: Commit** `refactor(app): give each store its own theme`.
 
-### task 8: run the board as a profile session
+### Task 8: run the board as a profile session
 
 **Files:** create `App/ProfileSession.swift`, `App/ProfileManager.swift`, and `AppTests/ProfileTests.swift`; modify `App/Windows.swift`, `App/SmokeTest.swift`, and `Stow.xcodeproj/project.pbxproj`.
 
@@ -347,7 +347,7 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 4: Regenerate the project with XcodeGen** and keep the package reference named `stow`. Run `./scripts/test.sh`. Expected: every existing hosted test and the smoke test pass unchanged, plus the two new tests.
 - [ ] **Step 5: Commit** `refactor(app): run the board as a profile session`.
 
-### task 9: open, hide, show, and close profiles
+### Task 9: open, hide, show, and close profiles
 
 **Files:** modify `App/ProfileSession.swift`, `App/ProfileManager.swift`, and `App/AppStore.swift`; test `AppTests/ProfileTests.swift`.
 
@@ -362,7 +362,7 @@ extension StateRepository { public func reopen() }                   // writable
   - `AppStore.init(…, arrival: Bool = false)`, which applies `preparedForArrival()` after loading and saves.
 
 - [ ] **Step 1: Write the failing tests:**
-  - `testTwoProfilesStayIsolated`: a note added in each profile appears only in that profile's `state.json` and notes folder, and the boards are titled "Main" and "Work".
+  - `testTwoProfilesStayIsolated`: a note added in each profile appears only in that profile's `state.json` and notes folder, and the boards are titled "Stow" and "Work".
   - `testHideOrdersOutEveryWindowAndPausesRefresh`: no window is visible and none is miniaturized; a scripted client sees no refresh while hidden and one refresh on show.
   - `testHideKeepsAlwaysOnTopNotesWhenEnabled`.
   - `testOpeningAnOpenProfileBringsItForward`: there is still one session, and its board becomes key.
@@ -383,10 +383,11 @@ extension StateRepository { public func reopen() }                   // writable
   - After opening an arrival, call `catalog.markSeen`.
   - A switch orders windows in and out at once, without animation that delays it, and respects Reduce Motion *(owner request)*.
   - When a session's window becomes key, that profile becomes `lastActiveID`.
+  - The data folder profile's default name changes from "Main" to "Stow", both as the fallback in `ProfileCatalog` and in the identity file written by the first index write. Update the core tests to match. The board title then stays "Stow" for one profile once task 12 makes the title the profile name.
 - [ ] **Step 4: Run hosted `ProfileTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(app): hide, show, and close profiles`.
 
-### task 10: restore at launch and save at quit
+### Task 10: restore at launch and save at quit
 
 **Files:** modify `App/ProfileManager.swift`, `App/Windows.swift`, and `App/AppStore.swift`; test `AppTests/ProfileTests.swift`.
 
@@ -399,14 +400,14 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 1: Write the failing tests:**
   - `testRelaunchRestoresOpenAndHiddenProfiles`;
   - `testLaunchWithNothingVisibleShowsLastActive`;
-  - `testFirstLaunchAfterUpgradeOpensOnlyMain`;
+  - `testFirstLaunchAfterUpgradeOpensOnlyTheFirstProfile`;
   - `testKeepOpenAfterPartialQuitFailureKeepsEveryProfileWritable`: with B's notes folder unwritable, `terminationSave()` returns A true and B false. After `cancelTermination()`, an edit in A flushes, and A's `state.json` contains it.
 - [ ] **Step 2: Run hosted `ProfileTests`.** Expected: the new tests fail.
 - [ ] **Step 3: Implement launch restore and quit.** `applicationShouldTerminate` uses `terminationSave()`. The existing alert names the profiles that failed, and **Keep open** calls `cancelTermination()`.
 - [ ] **Step 4: Run hosted `ProfileTests` and `AppIntegrationTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(app): restore profiles at launch and save each at quit`.
 
-### task 11: profile-aware menus
+### Task 11: profile-aware menus
 
 **Files:** modify `App/Windows.swift` and `App/ProfileManager.swift`; test `AppTests/ProfileTests.swift`.
 
@@ -427,7 +428,7 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 4: Run hosted `ProfileTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(app): profile-aware menus and Dock menu`.
 
-### task 12: manage profiles
+### Task 12: manage profiles
 
 **Files:** create `App/ProfilesSettingsView.swift`; modify `App/SettingsView.swift`, `App/BoardView.swift`, `App/NoteView.swift`, `App/ProfileManager.swift`, and `Stow.xcodeproj/project.pbxproj`; test `AppTests/ProfileTests.swift`.
 
@@ -457,7 +458,11 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 3: Build the UI.**
   - Settings → Profiles lists each profile with a name field, a color well, up and down buttons, and **Delete…**. It also offers **New profile…** (name and color, with empty and duplicate errors), **Always show profile name**, and **Reset profile list**, shown only while the index needs a reset.
   - A new profile's color defaults to the first color in a small built-in palette that no other profile uses.
-  - When names show, the board header becomes a color dot and name menu: show or open others, Hide, Close, New profile…, and Profile settings.
+  - The board header's icon becomes the profile switcher, and the title becomes the profile's name *(owner request)*. The icon is the profile's icon if set, otherwise the existing tray symbol, tinted with the profile color when colors show. It always opens the profile menu: switch to or open others, Hide, Close, New profile…, and Profile settings. With one profile, the menu offers New profile… and Profile settings.
+  - The title text follows `BoardLayout.showsTitle` (Settings → Board → **Show board title**, on by default, per profile). When it is off, only the text hides and the icon switcher stays *(owner request)*.
+  - Hosted tests *(owner request)*:
+    - `testHeaderTitleIsProfileName`: renaming the profile changes the title.
+    - `testHidingTitleKeepsIconSwitcher`: with `showsTitle` false the name text is gone, and the icon button with its menu remains.
   - Detached notes show the accent and name.
   - Settings → Profiles adds an icon picker per profile *(owner request)*: None, a short list of common SF Symbols, a text field for any symbol name, and an emoji field. It also adds the **Hide when switching away** toggle (task 9's `hidesWhenSwitchingAway`) to each profile's Settings.
   - The board header shows color, icon, and name. The icon is decorative for VoiceOver, and the name carries the label.
@@ -465,7 +470,7 @@ extension StateRepository { public func reopen() }                   // writable
 - [ ] **Step 4: Regenerate the project with XcodeGen** (package reference `stow`). Run `./scripts/test.sh`. Expected: pass.
 - [ ] **Step 5: Commit** `feat(app): create, rename, and delete profiles`.
 
-### task 13: pause a profile on account mismatch
+### Task 13: pause a profile on account mismatch
 
 **Files:** modify `Sources/StowGitHub/GHClient.swift`, `Sources/StowGitHub/Transport.swift`, `App/AppStore.swift`, and `App/BoardView.swift`; tests `Tests/StowGitHubTests/GitHubTests.swift` and `AppTests/ProfileTests.swift`.
 
@@ -497,7 +502,7 @@ Add these hosted tests:
 - [ ] **Step 4: Run both test commands.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(github): pause a profile when gh answers as another account`.
 
-### task 14: share one GitHub client per gh location
+### Task 14: share one GitHub client per gh location
 
 **Files:** modify `App/ProfileManager.swift` and `App/AppStore.swift`; test `AppTests/ProfileTests.swift`.
 
@@ -514,7 +519,7 @@ Add these hosted tests:
 - [ ] **Step 4: Run hosted `ProfileTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(github): share rate-limit backoff across profiles`.
 
-### task 15: owner rules
+### Task 15: owner rules
 
 **Files:** create `Sources/StowCore/Owners.swift`; test `Tests/StowCoreTests/OwnerTests.swift`.
 
@@ -548,7 +553,7 @@ public func isNoteShown(_ note: Note, selection: OwnerSelection, hidesLinkedNote
 - [ ] **Step 4: Run `swift test --filter OwnerTests`.** Expected: pass.
 - [ ] **Step 5: Commit** `feat(core): owner selection rules`.
 
-### task 16: owner control, grouping, and the note filter
+### Task 16: owner control, grouping, and the note filter
 
 **Files:** create `App/OwnerControl.swift`; modify `App/BoardView.swift`, `App/AppStore.swift`, `App/SettingsView.swift`, and `Stow.xcodeproj/project.pbxproj`; test `AppTests/OwnerViewTests.swift` (new).
 
@@ -574,7 +579,7 @@ public func isNoteShown(_ note: Note, selection: OwnerSelection, hidesLinkedNote
 - [ ] **Step 4: Regenerate the project with XcodeGen** (package reference `stow`). Run `./scripts/test.sh`. Expected: pass.
 - [ ] **Step 5: Commit** `feat(board): filter and group pull requests by owner`.
 
-### task 17: documentation and verification
+### Task 17: documentation and verification
 
 **Files:** modify `docs/architecture.md`, `docs/privacy.md`, `docs/portability.md`, `docs/verification.md`, `docs/roadmap.md`, `AGENTS.md`, and `README.md`.
 
