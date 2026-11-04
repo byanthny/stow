@@ -11,6 +11,8 @@ struct BoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
     @State private var expandedSections: Set<AttentionSection> = []
+    /// The height of the board's scrolling area. An open note grows to show its text up to about this tall.
+    @State private var visibleHeight: CGFloat = 0
 
     var body: some View {
         let header = BoardHeader(profile: profile, layout: store.state.boardLayout)
@@ -65,6 +67,11 @@ struct BoardView: View {
                         }
                         AccessoryViews(store: store)
                     }.accessibilityElement(children: .contain).accessibilityLabel("Board contents").padding(.bottom, 14)
+                }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: { height in
+                    visibleHeight = height
                 }
                 .onChange(of: store.focusRequestID) { _, _ in
                     guard let id = store.focusNoteID else { return }
@@ -178,7 +185,10 @@ struct BoardView: View {
                     if note.isDetached {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
                     } else if store.isNoteExpanded(note.id) {
-                        NoteView(store: store, noteID: note.id) { store.toggleNoteExpanded(note.id) }
+                        // Leaves room for the pinned section header and the note's own header.
+                        NoteView(store: store, noteID: note.id, editorHeightLimit: max(176, visibleHeight - 96)) {
+                            store.toggleNoteExpanded(note.id)
+                        }
                     } else {
                         CollapsedNoteRow(store: store, note: note)
                     }

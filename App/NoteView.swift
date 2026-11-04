@@ -11,9 +11,10 @@ struct NoteView: View {
     /// A detached note's profile. Its color shows as a thin accent and its name in the title area once profile
     /// names show.
     var profile: ProfileHandle?
+    /// How tall a board note's editor may grow with its text before it scrolls.
+    var editorHeightLimit: CGFloat = 176
     /// Board notes can fold back into a one-line row.
     var onCollapse: (() -> Void)?
-    @State private var isPreview = false
     /// Only a detached note's header shares its window's title bar row.
     private var headerChrome: WindowChrome { detached ? chrome : WindowChrome() }
 
@@ -29,12 +30,11 @@ struct NoteView: View {
                         }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                             .accessibilityLabel("Collapse note").help("Collapse note")
                     }
-                    Label(identity?.name ?? (detached ? "Note" : "Markdown"), systemImage: "doc.text")
-                        .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
+                    if let identity {
+                        Label(identity.name, systemImage: "doc.text")
+                            .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
+                    }
                     Spacer(minLength: 0)
-                    Button(isPreview ? "Edit" : "Preview") { isPreview.toggle() }
-                        .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
-                        .accessibilityIdentifier("note.previewToggle")
                     if detached {
                         QuietIconButton(
                             symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top", scale: .small
@@ -68,22 +68,16 @@ struct NoteView: View {
                         .accessibilityAction(named: "Remove pull request link") { store.unlinkPullRequest(noteID) }
                 }
 
-                if isPreview {
-                    ScrollView {
-                        MarkdownPreview(source: note.markdown.isEmpty ? "*Nothing here yet.*" : note.markdown)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
-                    }
-                    .frame(minHeight: detached ? 120 : 100, maxHeight: detached ? .infinity : 240)
-                } else {
-                    NativeEditor(
-                        text: Binding(
-                            get: { store.note(noteID)?.markdown ?? "" },
-                            set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
-                        focusRequestID: store.focusRequestID, appearance: theme.settings
-                    )
-                    .frame(minHeight: detached ? 120 : 104, maxHeight: detached ? .infinity : 176)
-                    .padding(.horizontal, 8)
-                }
+                // A board note shows its whole text, up to the limit; a detached note fills its window.
+                NativeEditor(
+                    text: Binding(
+                        get: { store.note(noteID)?.markdown ?? "" },
+                        set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
+                    focusRequestID: store.focusRequestID, appearance: theme.settings,
+                    fitsText: detached ? nil : 104...max(104, editorHeightLimit)
+                )
+                .frame(minHeight: detached ? 120 : nil, maxHeight: detached ? .infinity : nil)
+                .padding(.horizontal, 8)
                 AccessoryViews(store: store, noteID: noteID)
             }
             .background(.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
