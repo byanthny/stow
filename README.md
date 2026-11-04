@@ -2,7 +2,7 @@
 
 A small native macOS board for Markdown notes and GitHub pull requests.
 
-**Alpha.** Stow is source-only for now: there are no signed downloads, so build it yourself. Expect rough edges, keep backups of notes you care about, and [report bugs](#reporting-bugs) with the issue forms.
+**Alpha.** Download the unsigned DMG from [Releases](https://github.com/byanthny/stow/releases), or build it yourself. Expect rough edges, keep backups of notes you care about, and [report bugs](#reporting-bugs) with the issue forms.
 
 Keep notes on the board or detach them into separate windows. Each detached note has its own always-on-top setting. Closing a note window keeps the note; deleting it is explicit. The board groups pull requests into “Needs you” and “Waiting” using observed GitHub state, and keeps cached cards when a refresh is incomplete.
 

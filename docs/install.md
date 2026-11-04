@@ -1,6 +1,8 @@
-# Local installation
+# Installation
 
-Build with `./scripts/package.sh`, unzip `build/Stow.zip`, and move `Stow.app` to Applications. Open it from Finder. The package is signed ad hoc for local development; Developer ID signing and notarization are not configured. If macOS asks for confirmation, use its Open action for your own local build. Do not share ad-hoc builds or open ones built by someone else.
+Download `Stow-<version>.dmg` from [Releases](https://github.com/byanthny/stow/releases), open it, and drag Stow to Applications. Alpha builds are unsigned, so macOS asks you to allow Stow the first time it opens. GitHub Actions builds each DMG from its release tag. To check one, run `gh attestation verify Stow-<version>.dmg --repo byanthny/stow`, or compare it with its `.sha256`.
+
+To build it yourself, run `./scripts/package.sh`, unzip `build/Stow.zip`, and move `Stow.app` to Applications. That package is signed ad hoc for your own Mac. Only use DMGs from this repository's Releases, and don't share ad-hoc builds or open ones from anywhere else.
 
 Stow appears in the Dock. Command-N creates a note; Command-0 reopens the board. Closing the board leaves detached notes open. Closing a detached note returns it to the board. Delete is a separate note action that also removes the managed Markdown file.
 
