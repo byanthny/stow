@@ -119,6 +119,16 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertEqual(try decoder.decode(BoardLayout.self, from: JSONEncoder().encode(changed)), changed)
     }
 
+    func testOwnerOrderOfAnotherTypeFallsBackToAlphabetical() throws {
+        for value in ["5", "true", "null", "{}", #"["mostCards"]"#] {
+            let json = #"{"ownerOrder":"# + value + #","groupByOwner":true,"visiblePullRequests":4}"#
+            let layout = try JSONDecoder().decode(BoardLayout.self, from: Data(json.utf8))
+            XCTAssertEqual(layout.ownerOrder, .alphabetical, value)
+            XCTAssertTrue(layout.groupByOwner, value)
+            XCTAssertEqual(layout.visiblePullRequests, 4, value)
+        }
+    }
+
     func testBoardLayoutPersistsAndRejectsOutOfRangeCounts() async throws {
         let url = try directory().appendingPathComponent("state.json")
         var original = fixture()

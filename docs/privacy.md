@@ -12,7 +12,7 @@ Profiles organize work; they are not a security boundary. Every profile lives in
 
 Deleting a profile moves its folder to the Trash, where it stays readable until you empty the Trash. Stow never deletes profile data outright.
 
-A profile's backup contains only that profile, but it includes cached cards from every owner the account can see. Turn on Settings → Board → **Keep only selected owners on disk** to leave other owners' cards out of the profile's files and future backups. Backups saved before you turned it on still contain them. Restoring a backup on another Mac can otherwise carry private pull-request titles there.
+A profile's backup contains only that profile, but it includes cached cards from every owner the account can see. Turn on Settings → Board → **Keep only selected owners on disk** to leave other owners' cards out of the profile's files and future backups. Backups saved before you turned it on still contain them. Restoring a backup on another Mac can otherwise carry private pull-request titles there. Dismissals stay either way: `state.json` and backups keep each dismissed pull request's ID, which names its owner and repository, including other owners'. Opening the profile in an older build of Stow turns the setting off.
 
 Every profile uses the account `gh` is signed in as. If a refresh answers as a different account, Stow discards the result, pauses that profile's GitHub use, and asks before clearing its cached cards. A new profile, or a profile folder Stow has not seen before, starts with GitHub and accessories off.
 

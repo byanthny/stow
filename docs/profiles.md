@@ -65,7 +65,7 @@ These count as failures even if everything else works:
 - Stow creates a first profile only for a new installation: no index and no profile data anywhere. It never creates empty state where it expected a profile, and never creates a new first profile while any profile data exists.
 - The index is written atomically with owner-only permissions, like `state.json`. An unreadable, corrupt, or newer index is preserved and never overwritten. Stow still finds every profile, lists them by name, opens the profile in the data folder (or the first listed profile if there is none), and offers **Reset profile list**, which moves the old index to a backup before writing a new one *(call)*. Until then, profile order and open windows are not saved.
 - If two profiles end up with the same name, for example after a Put Back, Stow numbers the later one on screen until it is renamed, without rewriting its files *(call)*.
-- New `AppState` fields decode with defaults. An older build ignores them and drops them on its next save, which resets only display preferences.
+- New `AppState` fields decode with defaults. An older build ignores them and drops them on its next save. That resets display preferences and also turns off **Keep only selected owners on disk**, a privacy setting: the older build saves every owner's cards, and so does this one until the setting is turned on again.
 
 ## One app, several open profiles
 

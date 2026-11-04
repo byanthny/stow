@@ -22,7 +22,7 @@ struct ProfilesSettingsView: View {
             ForEach(Array(profiles.enumerated()), id: \.element.id) { position, entry in
                 ProfileRow(
                     entry: entry, position: position, count: profiles.count,
-                    profile: ProfileHandle(id: entry.id, manager: manager)
+                    profile: ProfileHandle(id: entry.id, manager: manager), settingsID: profile.id
                 ) { problem = $0 }
             }
             HStack {
@@ -113,6 +113,8 @@ private struct ProfileRow: View {
     let count: Int
     /// This row's profile.
     let profile: ProfileHandle
+    /// The profile whose Settings window shows this row.
+    let settingsID: UUID
     /// Shows why a change failed, or clears the message when one succeeds.
     let report: (String?) -> Void
     @Environment(\.stowTheme) private var theme
@@ -224,7 +226,9 @@ private struct ProfileRow: View {
         alert.addButton(withTitle: "Move to Trash").hasDestructiveAction = true
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        run { try await $0.delete(entry.id) }
+        // When this window closes with the profile, the manager says why a deletion failed instead.
+        let settingsID = settingsID
+        run { try await $0.delete(entry.id, askedFrom: settingsID) }
     }
 
     /// Runs a change through the profile manager and reports why it failed, if it did.
@@ -487,9 +491,9 @@ extension Color {
     }
 }
 
-/// Why a change to profiles failed, as Settings says it. Nil when there is nothing to say, as when the person kept
-/// a profile open after its changes could not be saved.
-private func profileProblem(_ error: any Error, name: String) -> String? {
+/// Why a change to profiles failed, as Settings and the deletion alert say it. Nil when there is nothing to say, as
+/// when the person kept a profile open after its changes could not be saved.
+func profileProblem(_ error: any Error, name: String) -> String? {
     if error is CancellationError { return nil }
     switch error as? ProfileError {
     case .emptyName?: return "Enter a name for the profile."
@@ -501,6 +505,8 @@ private func profileProblem(_ error: any Error, name: String) -> String? {
     case .notFound?: return "\(name) is no longer in the profile list."
     case .indexNeedsReset?: return "Reset the profile list first."
     case .invalidIdentity?: return "\(name)’s identity file can’t be read, so Stow left it unchanged."
+    case .newerIdentity?:
+        return "A newer version of Stow saved \(name), so this version leaves its name, color, and icon unchanged."
     case .unwritable?:
         return "Stow couldn’t save the change. Check that the data folder can be written to and has space."
     case .invalidIndex?, .newerIndex?, nil: return "Stow couldn’t read the profile list."

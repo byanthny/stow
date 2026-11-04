@@ -115,6 +115,10 @@ final class AppStore {
         } catch {
             storageNeedsRecovery = true
             saveError = "Saved data could not be opened. Your original file has been preserved."
+            // Nothing turns on unless the person turns it on: state that cannot be read starts, and is recovered,
+            // with GitHub and accessories off, and offers GitHub as a new installation does.
+            state = state.preparedForArrival()
+            offersGitHubSetup = !isDemo
         }
         // Whatever its saved state says, a profile not seen before must not turn GitHub or accessories on here.
         if isArrival { state = state.preparedForArrival() }
@@ -285,6 +289,8 @@ final class AppStore {
             changed()
         } catch GitHubError.accountMismatch(let actual) {
             guard generation == sessionGeneration else { return }
+            // A refresh that asked for an older login can name the one this profile now uses; that is no mismatch.
+            if state.viewerLogin?.caseInsensitiveCompare(actual) == .orderedSame { return }
             markAccountMismatch(actual: actual)
         } catch {
             guard generation == sessionGeneration else { return }
@@ -325,8 +331,17 @@ final class AppStore {
         cancelDetails()
         sessionGeneration += 1
         isRefreshing = false
+        restartRefreshes()
         changed()
         await refresh()
+    }
+
+    /// Cancels the refresh in flight and starts a new coordinator, so the next refresh never joins one that asked
+    /// for the old login, whose mismatch would otherwise come back under the new one.
+    private func restartRefreshes() {
+        guard let previous = coordinator, let githubClient else { return }
+        Task { await previous.cancel() }
+        coordinator = RefreshCoordinator(client: githubClient)
     }
 
     func toggleDetails(_ reference: PullRequestReference) {

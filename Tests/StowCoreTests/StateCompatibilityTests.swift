@@ -83,6 +83,22 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(OwnerSelection.self, from: loose).owners, ["Acme", "Beta"])
     }
 
+    func testUntrustedOwnerPreferencesFallBackWithoutRejectingTheState() throws {
+        var damaged = try object(fixture())
+        var layout = try XCTUnwrap(damaged["boardLayout"] as? [String: Any])
+        layout["ownerOrder"] = 5
+        damaged["boardLayout"] = layout
+        // A managed user's login adds an underscore and a short code, and its cards can be selected.
+        let owners: [Any] = ["acme", "", " ", "bad login", 5, NSNull(), ["acme"], "-edge", "a--b", "Other", "jo_acme"]
+        damaged["ownerSelection"] = ["owners": owners]
+        let decoded = try decode(JSONSerialization.data(withJSONObject: damaged))
+        XCTAssertEqual(decoded.boardLayout.ownerOrder, .alphabetical)
+        XCTAssertEqual(decoded.ownerSelection.owners, ["acme", "jo_acme", "Other"])
+        XCTAssertEqual(decoded.notes, fixture().notes)
+        let onlyInvalid = Data(#"{"owners":["", "x y", "_"]}"#.utf8)
+        XCTAssertTrue(try JSONDecoder().decode(OwnerSelection.self, from: onlyInvalid).isAll)
+    }
+
     func testLoginValidation() {
         for valid in ["a", "acme-labs", "A1", "a-b-c", String(repeating: "a", count: 39)] {
             XCTAssertTrue(OwnerSelection.isValidLogin(valid), valid)

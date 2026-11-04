@@ -196,9 +196,24 @@ public struct OwnerSelection: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case owners }
 
+    /// Saved state and backups are untrusted: an entry that is not an owner's login, such as an empty string or a
+    /// number, is dropped instead of rejecting the whole state.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        self.init(try container.decodeIfPresent([String].self, forKey: .owners) ?? [])
+        let entries = try container.decodeIfPresent([Entry].self, forKey: .owners) ?? []
+        self.init(entries.compactMap(\.login).filter(Self.isSavedOwner))
+    }
+
+    /// One saved entry, which may not be text at all.
+    private struct Entry: Decodable {
+        let login: String?
+        init(from decoder: any Decoder) throws { login = try? decoder.singleValueContainer().decode(String.self) }
+    }
+
+    /// An owner a profile can keep selected: a GitHub login, or a managed user's login, which adds an underscore
+    /// and a short code and can own cards although Add owner… does not accept it.
+    private static func isSavedOwner(_ owner: String) -> Bool {
+        isValidLogin(owner.replacingOccurrences(of: "_", with: "-"))
     }
 
     public var isAll: Bool { owners.isEmpty }

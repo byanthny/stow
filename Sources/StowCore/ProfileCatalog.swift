@@ -4,7 +4,7 @@ public struct ProfileEntry: Equatable, Sendable {
     public var id: UUID
     public var folder: URL
     public var isDataFolder: Bool
-    /// Sanitized, with "Stow" or "Unnamed profile" as the fallback. Duplicates are numbered here
+    /// Sanitized, with "Stow" or "Unnamed profile" as the fallback. Names that look alike are numbered here
     /// for display only; the identity file is untouched.
     public var name: String
     public var color: String
@@ -37,6 +37,9 @@ public actor ProfileCatalog {
     let moveToTrash: @Sendable (URL) throws -> Void
     /// The owner of a path, without following links. A test seam for the per-folder owner check.
     let ownerOf: @Sendable (URL) -> uid_t?
+    /// Whether a profile file exists, without following links; throws when it cannot be checked. A test seam for
+    /// a folder that stops being readable.
+    let fileExists: @Sendable (URL) throws -> Bool
     /// The ID minted for a data folder profile without a readable identity. Cleared when that profile is trashed.
     var dataFolderID: UUID?
 
@@ -52,12 +55,14 @@ public actor ProfileCatalog {
 
     init(
         dataFolder: URL, currentUserID: uid_t, trash: @escaping @Sendable (URL) throws -> Void,
-        ownerOf: @escaping @Sendable (URL) -> uid_t?
+        ownerOf: @escaping @Sendable (URL) -> uid_t?,
+        fileExists: @escaping @Sendable (URL) throws -> Bool = { try LiveNoteIO.exists($0) }
     ) {
         self.dataFolder = dataFolder
         self.currentUserID = currentUserID
         self.moveToTrash = trash
         self.ownerOf = ownerOf
+        self.fileExists = fileExists
     }
 
     /// Reads the data folder and `profiles/`. Writes nothing, except to finish a deletion of the data folder
@@ -97,7 +102,8 @@ public actor ProfileCatalog {
 
     // MARK: changes
 
-    /// Makes a new empty profile folder with its identity, then records it in the index.
+    /// Makes a new empty profile folder with its identity, then records it in the index. Returns the profile as it
+    /// was made, without reading the folder again, so nothing can fail once it exists.
     public func createProfile(name: String, color: String) throws -> ProfileEntry {
         let snapshot = try writableSnapshot()
         let clean = try Self.validName(name)
@@ -121,14 +127,15 @@ public actor ProfileCatalog {
             try? FileManager.default.removeItem(at: folder)
             throw error
         }
-        let created = try load().profiles.first { $0.id == id }
-        return created ?? ProfileEntry(
+        return ProfileEntry(
             id: id, folder: folder, isDataFolder: false, name: clean, color: color, icon: nil, isArrival: false)
     }
 
+    /// Renames a profile. Like every identity change, it refuses an identity file a newer build wrote.
     public func rename(_ id: UUID, to name: String) throws {
         let snapshot = try writableSnapshot()
         let entry = try entry(id, in: snapshot)
+        try requireCurrentIdentity(in: entry.folder)
         let clean = try Self.validName(name)
         try requireUnique(clean, among: snapshot.profiles, excluding: id)
         try writeIdentity(
@@ -139,6 +146,7 @@ public actor ProfileCatalog {
         let snapshot = try writableSnapshot()
         let entry = try entry(id, in: snapshot)
         guard ProfileIdentity.isValidColor(color) else { throw ProfileError.invalidColor }
+        try requireCurrentIdentity(in: entry.folder)
         // The stored name is the profile's own, not a number added for display.
         let name = try storedName(of: entry)
         try writeIdentity(ProfileIdentity(id: id, name: name, color: color, icon: entry.icon), in: entry.folder)
@@ -149,6 +157,7 @@ public actor ProfileCatalog {
         let snapshot = try writableSnapshot()
         let entry = try entry(id, in: snapshot)
         if let icon, ProfileIcon.validated(icon) == nil { throw ProfileError.invalidIcon }
+        try requireCurrentIdentity(in: entry.folder)
         let name = try storedName(of: entry)
         try writeIdentity(ProfileIdentity(id: id, name: name, color: entry.color, icon: icon), in: entry.folder)
     }
@@ -173,6 +182,7 @@ public actor ProfileCatalog {
     }
 
     /// Records which profiles are open and which was last active. Profiles that no longer exist are dropped.
+    /// Writes nothing when the record is unchanged, so a quit that changes nothing leaves the index alone.
     public func recordSession(open: [ProfileIndex.OpenProfile], lastActiveID: UUID?) throws {
         let snapshot = try writableSnapshot()
         let known = Set(snapshot.profiles.map(\.id))
@@ -180,6 +190,7 @@ public actor ProfileCatalog {
         var index = snapshot.index
         index.open = open.filter { known.contains($0.id) && listed.insert($0.id).inserted }
         index.lastActiveID = lastActiveID.flatMap { known.contains($0) ? $0 : nil }
+        guard index != snapshot.index else { return }
         try writeIndex(index, after: snapshot)
     }
 
@@ -255,11 +266,21 @@ public actor ProfileCatalog {
         return clean
     }
 
+    /// Names that look alike count as the same, so menus and window titles stay distinguishable.
     private func requireUnique(_ name: String, among entries: [ProfileEntry], excluding id: UUID?) throws {
-        let key = name.lowercased()
-        if entries.contains(where: { $0.id != id && $0.name.lowercased() == key }) {
+        let key = ProfileIdentity.comparisonKey(name)
+        if entries.contains(where: { $0.id != id && ProfileIdentity.comparisonKey($0.name) == key }) {
             throw ProfileError.duplicateName
         }
+    }
+
+    /// Refuses to replace an identity file a newer build wrote, even one whose fields this build cannot read.
+    func requireCurrentIdentity(in folder: URL) throws {
+        let file = folder.appendingPathComponent(ProfileIdentity.filename)
+        guard let data = try? LiveNoteIO.read(file, maximumBytes: ProfileIdentity.maximumBytes),
+            let version = ProfileIdentity.storedVersion(data), version > ProfileIdentity.currentVersion
+        else { return }
+        throw ProfileError.newerIdentity(version)
     }
 
     /// The name in the identity file, which differs from the displayed name when a duplicate is numbered.
@@ -276,7 +297,8 @@ public actor ProfileCatalog {
         return identity.name
     }
 
-    private func writeIdentity(_ identity: ProfileIdentity, in folder: URL) throws {
+    func writeIdentity(_ identity: ProfileIdentity, in folder: URL) throws {
+        try requireCurrentIdentity(in: folder)
         guard let data = try? JSONEncoder().encode(identity) else { throw ProfileError.unwritable }
         try wrapping {
             try LiveNoteIO.write(data, to: folder.appendingPathComponent(ProfileIdentity.filename))
@@ -342,8 +364,8 @@ public actor ProfileCatalog {
     }
 
     private func hasProfileData(in folder: URL) throws -> Bool {
-        let state = try LiveNoteIO.exists(folder.appendingPathComponent("state.json"))
-        let identity = try LiveNoteIO.exists(folder.appendingPathComponent(ProfileIdentity.filename))
+        let state = try fileExists(folder.appendingPathComponent("state.json"))
+        let identity = try fileExists(folder.appendingPathComponent(ProfileIdentity.filename))
         return state || identity
     }
 
@@ -397,23 +419,23 @@ public actor ProfileCatalog {
         return result + remaining
     }
 
-    /// Later duplicates get " 2", " 3", and so on, comparing sanitized names ignoring case.
+    /// Later duplicates get " 2", " 3", and so on, comparing names as they look on screen.
     private static func numbered(_ entries: [ProfileEntry]) -> [ProfileEntry] {
-        var taken = Set(entries.map { $0.name.lowercased() })
+        var taken = Set(entries.map { ProfileIdentity.comparisonKey($0.name) })
         var counts: [String: Int] = [:]
         var seen = Set<String>()
         return entries.map { entry in
             var entry = entry
-            let key = entry.name.lowercased()
+            let key = ProfileIdentity.comparisonKey(entry.name)
             if seen.insert(key).inserted { return entry }
             var number = counts[key, default: 1]
             var candidate: String
             repeat {
                 number += 1
                 candidate = "\(entry.name) \(number)"
-            } while taken.contains(candidate.lowercased())
+            } while taken.contains(ProfileIdentity.comparisonKey(candidate))
             counts[key] = number
-            taken.insert(candidate.lowercased())
+            taken.insert(ProfileIdentity.comparisonKey(candidate))
             entry.name = candidate
             return entry
         }

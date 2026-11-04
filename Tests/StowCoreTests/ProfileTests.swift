@@ -18,6 +18,51 @@ final class ProfileTests: XCTestCase {
         XCTAssertNil(ProfileIdentity.sanitizedName("\u{200B}\u{FEFF}"))
     }
 
+    func testSanitizedNameRemovesEveryInvisibleCharacterButJoiners() {
+        // Invisible operators, deprecated format characters, annotation marks, tags, the combining grapheme
+        // joiner, and Hangul fillers would let two names look alike.
+        let invisible = [
+            "\u{2061}", "\u{2062}", "\u{2063}", "\u{2064}", "\u{206A}", "\u{FFF9}", "\u{1D173}", "\u{E0001}",
+            "\u{E0057}", "\u{E007F}", "\u{034F}", "\u{115F}", "\u{3164}", "\u{FFA0}", "\u{17B4}",
+        ]
+        for character in invisible {
+            let scalars = character.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            XCTAssertEqual(ProfileIdentity.sanitizedName("Wo\(character)rk\(character)"), "Work", scalars)
+        }
+        XCTAssertNil(ProfileIdentity.sanitizedName("\u{2061}\u{034F}\u{E0020}"))
+        // A name of joiners and selectors alone shows nothing.
+        XCTAssertNil(ProfileIdentity.sanitizedName("\u{200D}\u{200C}\u{FE0F}"))
+        // Joiners and emoji presentation stay, so emoji sequences still render.
+        XCTAssertEqual(ProfileIdentity.sanitizedName("🏳️‍🌈 Team"), "🏳️‍🌈 Team")
+        XCTAssertEqual(ProfileIdentity.sanitizedName("❤️ Home"), "❤️ Home")
+    }
+
+    func testSanitizedNameMapsEverySpaceToOnePlainSpace() {
+        let spaces = [
+            "\u{00A0}", "\u{2000}", "\u{2003}", "\u{2007}", "\u{200A}", "\u{202F}", "\u{205F}", "\u{3000}", "  ",
+            " \u{00A0} ", " \u{200B} ",
+        ]
+        for space in spaces {
+            let scalars = space.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            XCTAssertEqual(ProfileIdentity.sanitizedName("Work\(space)Home"), "Work Home", scalars)
+        }
+        XCTAssertEqual(ProfileIdentity.sanitizedName("\u{3000}Work\u{00A0}"), "Work")
+        XCTAssertNil(ProfileIdentity.sanitizedName("\u{00A0}\u{3000}"))
+    }
+
+    func testComparisonKeyMatchesNamesThatLookAlike() {
+        let work = ProfileIdentity.comparisonKey("Work")
+        for alike in ["work", "WORK", "Work\u{200D}", "W\u{200C}ork", "Work\u{FE0F}", "Ｗｏｒｋ", " Work\u{2060}"] {
+            let scalars = alike.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            XCTAssertEqual(ProfileIdentity.comparisonKey(alike), work, scalars)
+        }
+        XCTAssertEqual(
+            ProfileIdentity.comparisonKey("Home\u{00A0}\u{3000}Office"), ProfileIdentity.comparisonKey("home office"))
+        for different in ["Works", "Wörk", "Wark", "Work Home"] {
+            XCTAssertNotEqual(ProfileIdentity.comparisonKey(different), work, different)
+        }
+    }
+
     func testSanitizedNameKeepsEmojiAndRightToLeftText() {
         XCTAssertEqual(ProfileIdentity.sanitizedName("👨‍👩‍👧 Family"), "👨‍👩‍👧 Family")
         XCTAssertEqual(ProfileIdentity.sanitizedName("עבודה"), "עבודה")
@@ -45,6 +90,28 @@ final class ProfileTests: XCTestCase {
         let decoded = try ProfileIdentity.decode(data, folderID: id)
         XCTAssertEqual(decoded, ProfileIdentity(id: id, name: "Work", color: "#1A2B3C"))
         XCTAssertEqual(try ProfileIdentity.decode(data, folderID: nil).id, id)
+    }
+
+    func testIdentityVersionDefaultsToOneAndANewerIdentityStillDecodes() throws {
+        let id = UUID()
+        let bare = ##"{"id":"\##(id.uuidString)","name":"Work","color":"#1A2B3C"}"##
+        XCTAssertEqual(try ProfileIdentity.decode(Data(bare.utf8), folderID: id).schemaVersion, 1)
+        let written = try JSONEncoder().encode(ProfileIdentity(id: id, name: "Work", color: "#1A2B3C"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: written) as? [String: Any])
+        XCTAssertEqual(object["schemaVersion"] as? Int, ProfileIdentity.currentVersion)
+        // A newer build's identity shows as far as this build can read it.
+        let newer = ##"{"schemaVersion":2,"id":"\##(id.uuidString)","name":"Future","color":"#1A2B3C","pattern":"x"}"##
+        let decoded = try ProfileIdentity.decode(Data(newer.utf8), folderID: id)
+        XCTAssertEqual(decoded.schemaVersion, 2)
+        XCTAssertEqual(decoded.name, "Future")
+        XCTAssertEqual(ProfileIdentity.storedVersion(Data(newer.utf8)), 2)
+        XCTAssertEqual(ProfileIdentity.storedVersion(Data(bare.utf8)), 1)
+        for bad in ["0", "-1", "\"2\""] {
+            let json = ##"{"schemaVersion":\##(bad),"id":"\##(id.uuidString)","name":"Work","color":"#1A2B3C"}"##
+            XCTAssertThrowsError(try ProfileIdentity.decode(Data(json.utf8), folderID: id), bad) {
+                XCTAssertEqual($0 as? ProfileError, .invalidIdentity)
+            }
+        }
     }
 
     func testIdentityRejectsMismatchedFolderAndOversizedData() throws {

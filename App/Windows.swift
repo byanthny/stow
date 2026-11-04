@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Held for the process lifetime; a second Stow on the same data folder hands over to this one.
     private var instanceLock: StateLock?
     private var profilesMenu = NSMenu(title: "Profiles")
+    /// The menu bar's Profiles item, hidden while one profile looks as Stow did before profiles.
+    private var profilesMenuItem: NSMenuItem?
     /// Menu items whose titles name the active profile once several exist: base title, then the item.
     private var profileTitled: [(base: String, join: String, item: NSMenuItem)] = []
 
@@ -83,8 +85,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         Task {
             guard await prepare(stateURL: stateURL, isDemo: demo), let manager else {
-                // Another process, such as an older build, has the profile open. Hand over to it.
-                Self.activateRunningCopy()
+                // Another process, such as an older build, has the profiles open: hand over to it. With no profile
+                // to list, the manager has already said so.
+                if self.manager?.profiles.isEmpty == false { Self.activateRunningCopy() }
                 NSApp.terminate(nil)
                 return
             }
@@ -99,10 +102,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Opens the profiles of the data folder, the folder holding `stateURL`. Returns false when no profile could
-    /// open because other processes hold their locks.
+    /// open because other processes hold their locks. Tests pass a catalog whose Trash is their own.
     @discardableResult
-    func prepare(stateURL: URL, isDemo: Bool) async -> Bool {
-        let manager = ProfileManager(dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo)
+    func prepare(stateURL: URL, isDemo: Bool, catalog: ProfileCatalog? = nil) async -> Bool {
+        let manager = ProfileManager(
+            dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo, catalog: catalog)
         self.manager = manager
         manager.onProfilesChange = { [weak self] in self?.rebuildProfilesMenu() }
         installMenus()
@@ -112,6 +116,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        // A profile put back from the Trash, or moved in Finder, appears or goes from the menus. A list that
+        // cannot be read now stays as it was.
+        if let manager { Task { try? await manager.reloadProfiles() } }
         for session in manager?.sessions.values.filter({ $0.store.isLoaded }) ?? [] {
             let store = session.store
             Task {
@@ -167,13 +174,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// The Profiles menu lists every profile in order. The first nine carry ⌃⌥1 to ⌃⌥9, and Next and Previous
-    /// use ⌃⌥] and ⌃⌥[. These are menu key equivalents, so they work only while Stow is the active app.
+    /// use ⌃⌥] and ⌃⌥[. These are menu key equivalents, so they work only while Stow is the active app. The menu
+    /// shows once a second profile exists, or always with Always show profile name. Until then it is hidden and
+    /// carries no shortcuts, since AppKit still honors those of a hidden menu, so one profile looks and behaves as
+    /// Stow did before profiles.
     private func rebuildProfilesMenu() {
         guard let manager else { return }
+        let shows = manager.showsProfileNames
+        profilesMenuItem?.isHidden = !shows
         profilesMenu.removeAllItems()
         for (position, entry) in manager.profiles.enumerated() {
-            profilesMenu.addItem(
-                profileItem(entry, in: manager, shortcut: position < 9 ? String(position + 1) : nil))
+            let shortcut = shows && position < 9 ? String(position + 1) : nil
+            profilesMenu.addItem(profileItem(entry, in: manager, shortcut: shortcut))
         }
         profilesMenu.addItem(.separator())
         if manager.profiles.count > 1 {
@@ -251,7 +263,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return .terminateLater
     }
 
-    /// Passes a window move to the profile that owns the window, which records its frame.
+    /// Records a moved window's frame through the profile that owns it. Windows report moves to their profile
+    /// directly, so only tests call this.
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }
         manager?.session(owning: window)?.windowDidMove(notification)
@@ -305,8 +318,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windows
         // The Profiles menu sits before Window, as the menus that list windows usually do.
         profilesMenu = NSMenu(title: "Profiles")
-        main.insertItem(withTitle: "Profiles", action: nil, keyEquivalent: "", at: main.items.count - 1)
-            .submenu = profilesMenu
+        let profilesItem = main.insertItem(
+            withTitle: "Profiles", action: nil, keyEquivalent: "", at: main.items.count - 1)
+        profilesItem.submenu = profilesMenu
+        profilesMenuItem = profilesItem
         for menu in [app, file, profilesMenu, windows] { menu.delegate = self }
         rebuildProfilesMenu()
         NSApp.mainMenu = main

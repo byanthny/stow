@@ -54,7 +54,8 @@ extension ProfileCatalog {
 
     /// Moves a profile's folder to the Trash, where it stays recoverable, then drops the profile from the index.
     /// Holds the profile's lock throughout, and refuses while another holder has it and for the last profile.
-    /// If a step fails, the move is undone before the error is thrown. Profile data is never deleted.
+    /// If a step of the data folder profile's move fails, its files go back before the error is thrown; any that
+    /// cannot go back stay recorded, and the next load finishes the move. Profile data is never deleted.
     public func trash(_ id: UUID) throws {
         let snapshot = try writableSnapshot()
         let entry = try entry(id, in: snapshot)
@@ -62,7 +63,7 @@ extension ProfileCatalog {
         let lock = try Self.holdLock(of: entry.folder)
         defer { lock?.release() }
         if entry.isDataFolder {
-            try trashDataFolderProfile(id)
+            try trashDataFolderProfile(entry)
             dataFolderID = nil
         } else {
             do { try moveToTrash(entry.folder) } catch { throw ProfileError.unwritable }
@@ -71,9 +72,16 @@ extension ProfileCatalog {
     }
 
     /// Moves the data folder profile's files into an empty `profiles/<id>/` under a journal, then trashes that
-    /// folder, so Put Back returns the profile to a place Stow looks.
-    private func trashDataFolderProfile(_ id: UUID) throws {
+    /// folder, so Put Back returns the profile to a place Stow looks. A profile without an identity file first
+    /// gets one, so it keeps its ID and name when it comes back.
+    private func trashDataFolderProfile(_ entry: ProfileEntry) throws {
+        let id = entry.id
         let destination = profilesURL.appendingPathComponent(id.uuidString, isDirectory: true)
+        if try !wrapping({ try LiveNoteIO.exists(dataFolder.appendingPathComponent(ProfileIdentity.filename)) }) {
+            try writeIdentity(
+                ProfileIdentity(id: id, name: Self.dataFolderName, color: entry.color, icon: entry.icon),
+                in: dataFolder)
+        }
         try wrapping { try LiveNoteIO.ensureDirectory(profilesURL) }
         // Discovery ignores a profiles folder that is not a real one owned by this user.
         guard isOwnedDirectory(profilesURL), makeMoveDestination(destination) else { throw ProfileError.unwritable }
@@ -138,9 +146,10 @@ extension ProfileCatalog {
     }
 
     /// Finishes a move of the data folder profile that a crash interrupted, so its files are never left split
-    /// between two folders. It runs only while it can hold the data folder's lock and the destination's;
-    /// otherwise the journal waits for a later launch. It moves only the journal's profile files, never replaces
-    /// anything, and leaves an unreadable or newer journal untouched.
+    /// between two folders. While another holder has the data folder's lock or the destination's, the journal
+    /// waits for a later launch; on a volume that cannot lock, it proceeds unguarded, as writes there do. It
+    /// moves only the journal's profile files, never replaces anything, and leaves an unreadable or newer journal
+    /// untouched.
     func finishInterruptedMove() {
         guard (try? LiveNoteIO.exists(journalURL)) == true else { return }
         let dataLock: StateLock?

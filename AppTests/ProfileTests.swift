@@ -1,12 +1,13 @@
 import AppKit
 import Foundation
-import StowCore
 import StowExtensionSDK
 import StowGitHub
 import StowSampleExtension
 import XCTest
 
 @testable import Stow
+// The catalog's test seams are internal.
+@testable import StowCore
 
 /// Profile sessions on synthetic state in temporary folders, never the normal data folder.
 @MainActor
@@ -208,6 +209,43 @@ final class ProfileTests: XCTestCase {
         XCTAssertNil(store.accountMismatch)
         XCTAssertEqual(store.state.viewerLogin?.lowercased(), "old-account")
         XCTAssertEqual(store.state.pullRequests.map(\.title), ["Synthetic card of the old account"])
+    }
+
+    func testUseCurrentAccountDuringASlowRefreshKeepsTheNewAccount() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let reference = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        try await seed(folder) { state in
+            state.githubEnabled = true
+            state.viewerLogin = "old-account"
+            state.pins = [reference]
+            state.pullRequests = [.init(reference: reference, title: "Synthetic cached card")]
+        }
+        let client = SlowMismatchClient(reference: reference)
+        let manager = makeManager(folder, githubOverride: { _ in client })
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let store = try XCTUnwrap(manager.activeSession).store
+        await store.refresh()
+        XCTAssertEqual(store.accountMismatch, "other-account")
+
+        // A refresh for the old login starts just before the person chooses Use other-account here, and gh
+        // answers it slowly.
+        await client.holdNextMismatch()
+        let slow = Task { await store.refresh() }
+        let holding = await waitUntil { await client.isHolding }
+        XCTAssertTrue(holding)
+        let adopting = Task { await store.useCurrentAccount() }
+        // The new account's refresh does not join the slow one.
+        let refreshedApart = await waitUntil { await client.refreshes == 3 }
+        XCTAssertTrue(refreshedApart)
+        await client.release()
+        await adopting.value
+        await slow.value
+        XCTAssertNil(store.accountMismatch, "The slow answer for the old login must not bring the banner back")
+        XCTAssertEqual(store.state.viewerLogin, "other-account")
+        XCTAssertEqual(store.state.pullRequests.map(\.title), ["Synthetic card of the other account"])
     }
 
     private func startMismatchProfile() async throws -> (ProfileManager, ProfileSession, MismatchClient) {
@@ -723,6 +761,38 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(try tree(folder), closedTree, "Nothing may change once the lock is released")
     }
 
+    func testUnreadableStateStartsAndRecoversWithGitHubAndAccessoriesOff() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let stateURL = folder.appendingPathComponent("state.json")
+        try Data("synthetic damaged state".utf8).write(to: stateURL)
+        let client = CountingClient()
+        let provider = RecordingAccessoryProvider()
+        let manager = makeManager(folder, githubOverride: { _ in client }, accessoryProviders: [provider])
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let store = try XCTUnwrap(manager.activeSession).store
+        XCTAssertTrue(store.storageNeedsRecovery)
+        // Nothing turns on unless the person turns it on, also when saved state cannot be read.
+        XCTAssertFalse(store.state.githubEnabled)
+        XCTAssertTrue(store.state.extensionInstances.allSatisfy { !$0.isEnabled })
+        XCTAssertTrue(store.offersGitHubSetup, "The usual offer turns GitHub back on with one click")
+        await store.refresh()
+
+        await store.recoverState()
+        XCTAssertFalse(store.storageNeedsRecovery)
+        let recovered = try await StateRepository(url: stateURL).load()
+        XCTAssertFalse(recovered.githubEnabled)
+        XCTAssertTrue(recovered.extensionInstances.allSatisfy { !$0.isEnabled })
+        await store.refresh()
+        await store.refreshAccessories()
+        let refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 0, "GitHub stays off until the person turns it on")
+        let accessories = await provider.startedIDs
+        XCTAssertEqual(accessories, [])
+    }
+
     func testRefreshFinishingAfterCloseWritesNothing() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -1146,6 +1216,47 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(exists(ProfileIndex.filename, in: folder))
     }
 
+    func testLaunchNeverStartsAFirstProfileWhileProfileDataExists() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        let profilesFolder = folder.appendingPathComponent(ProfileCatalog.profilesDirectoryName)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: profilesFolder.path)
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        // The first profile went to the Trash, and the other profiles' folder cannot be listed for now.
+        let catalog = catalog(folder, trash: bin)
+        let listed = try await catalog.load()
+        let mainID = try XCTUnwrap(listed.profiles.first(where: \.isDataFolder)).id
+        try await catalog.trash(mainID)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: profilesFolder.path)
+        let manager = makeManager(folder)
+        let reports = Recorder()
+        manager.reportNoProfiles = { reports.names.append("no profiles") }
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertFalse(started)
+        XCTAssertEqual(reports.names, ["no profiles"])
+        XCTAssertTrue(manager.sessions.isEmpty)
+        for name in ["state.json", "notes", ProfileIdentity.filename] {
+            XCTAssertFalse(exists(name, in: folder), "\(name) must not be written")
+        }
+        XCTAssertNil(manager.prepareToQuit(), "Nothing opened, so a quit has nothing to save or record")
+
+        // Once the folder can be read again, the next launch opens the remaining profile.
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: profilesFolder.path)
+        let next = makeManager(folder)
+        defer { stop(next) }
+        let restarted = await next.start()
+        XCTAssertTrue(restarted)
+        XCTAssertEqual(Set(next.sessions.keys), [workEntry.id])
+        XCTAssertFalse(exists("state.json", in: folder))
+    }
+
     func testKeepOpenAfterPartialQuitFailureKeepsEveryProfileWritable() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -1351,16 +1462,51 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(reordered[2].representedObject as? UUID, work.id)
     }
 
-    func testProfilesMenuIsMinimalWithOneProfile() async throws {
+    func testProfilesMenuAppearsOnlyOnceNamesShow() async throws {
         let folder = try makeDirectory()
-        defer { try? FileManager.default.removeItem(at: folder) }
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
         try await seed(folder)
-        let app = try await makeApp(folder)
+        let app = AppDelegate()
+        let prepared = await app.prepare(
+            stateURL: folder.appendingPathComponent("state.json"), isDemo: false,
+            catalog: catalog(folder, trash: bin))
+        XCTAssertTrue(prepared)
         defer { stop(app) }
-        let profiles = menu("Profiles", in: app)
+        let manager = try XCTUnwrap(app.manager)
+        failOnReports(from: manager)
+        let item = try XCTUnwrap(NSApp.mainMenu?.items.first { $0.title == "Profiles" })
+        let profiles = try XCTUnwrap(item.submenu)
+
+        // One profile looks as Stow did before profiles: only File and the Dock offer New profile….
+        XCTAssertTrue(item.isHidden)
+        XCTAssertFalse(performShortcut("1"), "A hidden menu's shortcuts do nothing")
+        let fileItems = menu("File", in: app).items.filter { $0.title.contains("profile") }.map(\.title)
+        XCTAssertEqual(fileItems, ["New profile…"])
+        XCTAssertEqual(app.applicationDockMenu(NSApp)?.items.map(\.title), ["New profile…"])
+
+        try await manager.setAlwaysShowProfileName(true)
+        XCTAssertFalse(item.isHidden)
         app.menuNeedsUpdate(profiles)
         XCTAssertEqual(profiles.items.map(\.title), ["Stow", "", "New profile…"])
-        XCTAssertEqual(menu("File", in: app).items.filter { $0.title.contains("profile") }.map(\.title), ["New profile…"])
+        try await manager.setAlwaysShowProfileName(false)
+        XCTAssertTrue(item.isHidden)
+
+        // A second profile shows it, and its shortcuts work.
+        let work = try await manager.createProfile(name: "Work", color: "#336699")
+        XCTAssertFalse(item.isHidden)
+        app.menuNeedsUpdate(profiles)
+        XCTAssertEqual(profiles.items.filter { $0.representedObject is UUID }.map(\.keyEquivalent), ["1", "2"])
+        XCTAssertTrue(performShortcut("2"))
+        let switched = await waitUntil { manager.sessions[work.id]?.isHidden == false }
+        XCTAssertTrue(switched)
+
+        // Deleting it hides the menu again.
+        try await manager.delete(work.id)
+        XCTAssertTrue(item.isHidden)
     }
 
     func testNextAndPreviousProfileWrap() async throws {
@@ -1445,6 +1591,34 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(work.board.title, "Work")
         XCTAssertEqual(main.store.state.notes.map(\.markdown), ["Synthetic profile note"])
         XCTAssertEqual(main.store.state.appearance, .paper)
+    }
+
+    func testNewProfileIsListedWhenTheListCannotBeReadAfterward() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let indexURL = folder.appendingPathComponent(ProfileIndex.filename)
+        // Once the create has written the index, the data folder can no longer be read, as if its permissions
+        // changed right after.
+        let failing = ProfileCatalog(
+            dataFolder: folder, currentUserID: getuid(), trash: { _ in }, ownerOf: { _ in getuid() },
+            fileExists: { url in
+                if FileManager.default.fileExists(atPath: indexURL.path) { throw StateError.unreadable }
+                return FileManager.default.fileExists(atPath: url.path)
+            })
+        let manager = makeManager(folder, catalog: failing)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+
+        // The profile exists, so creating it succeeds and it is listed until the list can be read again.
+        let entry = try await manager.createProfile(name: "Work", color: "#336699")
+        XCTAssertEqual(entry.name, "Work")
+        XCTAssertTrue(exists("profiles/\(entry.id.uuidString)/\(ProfileIdentity.filename)", in: folder))
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+        XCTAssertTrue(manager.showsProfileNames)
+        XCTAssertTrue(main.showsName)
     }
 
     func testNewProfileColorsStayDistinct() {
@@ -1644,6 +1818,126 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(manager.profiles.map(\.name), ["Stow"])
     }
 
+    func testChoosingAProfileWhoseFolderWasRemovedNeverRecreatesIt() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder)
+        let work = try await addProfile("Work", in: folder)
+        let home = try await addProfile("Home", in: folder)
+        let play = try await addProfile("Play", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let main = try XCTUnwrap(manager.activeSession)
+        let reports = Recorder()
+        manager.reportNotFound = { reports.names.append($0.name) }
+        // The menus are read while every folder is still there.
+        let profiles = menu("Profiles", in: app)
+        app.menuNeedsUpdate(profiles)
+        let dock = try XCTUnwrap(app.applicationDockMenu(NSApp))
+        var removed: [UUID: [String: Data?]] = [:]
+        /// Moves a profile's folder out of the data folder, as Finder's Move to Trash does.
+        func remove(_ entry: ProfileEntry) throws {
+            removed[entry.id] = try tree(entry.folder)
+            try FileManager.default.moveItem(at: entry.folder, to: bin.appendingPathComponent(entry.id.uuidString))
+        }
+
+        // From the Profiles menu, as its shortcut ⌃⌥2 does.
+        try remove(work)
+        let workItem = try XCTUnwrap(profiles.items.first { $0.title == "Work" })
+        _ = NSApp.sendAction(try XCTUnwrap(workItem.action), to: workItem.target, from: workItem)
+        let reportedWork = await waitUntil { reports.names == ["Work"] }
+        XCTAssertTrue(reportedWork)
+        // From the Dock menu.
+        try remove(home)
+        dock.performActionForItem(at: try XCTUnwrap(dock.items.firstIndex { $0.title == "Home" }))
+        let reportedHome = await waitUntil { reports.names == ["Work", "Home"] }
+        XCTAssertTrue(reportedHome)
+        // The profile a switch started from stays as it was.
+        XCTAssertFalse(main.isHidden)
+        XCTAssertTrue(main.board.isVisible)
+        // From the Dock icon, which opens the most recently active profile once every profile is closed.
+        let openedPlay = await manager.open(play.id)
+        XCTAssertTrue(openedPlay)
+        for id in [main.entry.id, play.id] {
+            let closed = await manager.close(id)
+            XCTAssertTrue(closed)
+        }
+        XCTAssertEqual(manager.lastActiveID, play.id)
+        try remove(play)
+        _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+        let reportedPlay = await waitUntil { reports.names == ["Work", "Home", "Play"] }
+        XCTAssertTrue(reportedPlay)
+
+        // An empty folder in their places would make Finder's Put Back ask to replace it.
+        for entry in [work, home, play] {
+            XCTAssertFalse(exists("profiles/\(entry.id.uuidString)", in: folder), entry.name)
+            XCTAssertNil(manager.sessions[entry.id], entry.name)
+            XCTAssertEqual(try tree(bin.appendingPathComponent(entry.id.uuidString)), removed[entry.id], entry.name)
+        }
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow"])
+
+        // Put Back returns a folder, and Stow lists it again when it comes forward.
+        try FileManager.default.moveItem(at: bin.appendingPathComponent(work.id.uuidString), to: work.folder)
+        app.applicationDidBecomeActive(Notification(name: NSApplication.didBecomeActiveNotification))
+        let relisted = await waitUntil { manager.profiles.contains { $0.id == work.id } }
+        XCTAssertTrue(relisted)
+        let reopened = await manager.open(work.id)
+        XCTAssertTrue(reopened)
+    }
+
+    func testOpenQueuedBehindADeleteFindsTheProfileGone() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        _ = try await addProfile("Home", in: folder)
+        let manager = makeManager(folder, catalog: catalog(folder, trash: bin))
+        defer { stop(manager) }
+        let reports = Recorder()
+        manager.reportNotFound = { reports.names.append($0.name) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+
+        // An open chosen while the deletion runs waits its turn, then finds the profile gone.
+        let deletion = Task { try await manager.delete(workEntry.id) }
+        let opening = Task { await manager.open(workEntry.id) }
+        try await deletion.value
+        let opened = await opening.value
+        XCTAssertFalse(opened)
+        XCTAssertNil(manager.sessions[workEntry.id])
+        XCTAssertFalse(exists("profiles/\(workEntry.id.uuidString)", in: folder))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: bin.path), [workEntry.id.uuidString])
+        // Said, if at all, as a profile that cannot be found, never as one open elsewhere.
+        XCTAssertTrue(reports.names.allSatisfy { $0 == "Work" })
+
+        // The same for the first profile: no new, empty "Stow" starts in the data folder under its old ID.
+        let mainID = main.entry.id
+        let mainDeletion = Task { try await manager.delete(mainID) }
+        let mainOpening = Task { await manager.open(mainID) }
+        try await mainDeletion.value
+        let mainOpened = await mainOpening.value
+        XCTAssertFalse(mainOpened)
+        XCTAssertNil(manager.sessions[mainID])
+        for name in ["state.json", "notes", ProfileIdentity.filename] {
+            XCTAssertFalse(exists(name, in: folder), "\(name) must not be written")
+        }
+        XCTAssertEqual(
+            Set(try FileManager.default.contentsOfDirectory(atPath: bin.path)),
+            [workEntry.id.uuidString, mainID.uuidString])
+        XCTAssertEqual(manager.profiles.map(\.name), ["Home"])
+        XCTAssertTrue(reports.names.allSatisfy { $0 == "Work" || $0 == "Stow" })
+    }
+
     func testDeleteClosesAndMovesProfileToTrash() async throws {
         let folder = try makeDirectory()
         let bin = try makeDirectory()
@@ -1722,6 +2016,54 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(exists("profiles/\(workEntry.id.uuidString)/identity.json", in: folder))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: bin.path), [])
         XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+    }
+
+    func testFailedDeletionIsReportedWhenTheSettingsThatAskedHaveClosed() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        // The Trash refuses, so the move fails after Work has closed, and Work opens again.
+        let refusing = ProfileCatalog(dataFolder: folder) { _ in throw CocoaError(.fileWriteNoPermission) }
+        let manager = makeManager(folder, catalog: refusing)
+        defer { stop(manager) }
+        let reports = Recorder()
+        manager.reportDeletionFailure = { entry, error in
+            reports.names.append(entry.name)
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        work.showSettings()
+        XCTAssertEqual(work.settingsWindow?.isVisible, true)
+
+        do {
+            try await manager.delete(workEntry.id, askedFrom: workEntry.id)
+            XCTFail("The Trash refused the move")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        XCTAssertEqual(reports.names, ["Work"], "Work's Settings closed with it, so an alert says why")
+        XCTAssertTrue(work.isStopped)
+        let reopened = try XCTUnwrap(manager.sessions[workEntry.id])
+        XCTAssertFalse(reopened.isStopped)
+        XCTAssertTrue(exists("profiles/\(workEntry.id.uuidString)/identity.json", in: folder))
+
+        // Settings that stay open show the reason themselves.
+        main.showSettings()
+        XCTAssertEqual(main.settingsWindow?.isVisible, true)
+        do {
+            try await manager.delete(workEntry.id, askedFrom: main.entry.id)
+            XCTFail("The Trash refused the move")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertNotNil(manager.sessions[workEntry.id])
     }
 
     func testNamesAppearOnlyWithTwoProfilesOrSetting() async throws {
@@ -2005,8 +2347,18 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(started)
         let manager = try XCTUnwrap(app.manager)
         manager.confirmClosingWithoutSaving = { _ in false }
-        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
+        failOnReports(from: manager)
         return app
+    }
+
+    /// Fails the test on any report the test does not expect, instead of opening a modal alert.
+    private func failOnReports(from manager: ProfileManager) {
+        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
+        manager.reportNotFound = { entry in XCTFail("Unexpected report that \(entry.name) cannot be found") }
+        manager.reportNoProfiles = { XCTFail("Unexpected report that no profile can be found") }
+        manager.reportDeletionFailure = { entry, error in
+            XCTFail("Unexpected report that \(entry.name) could not be deleted: \(error)")
+        }
     }
 
     private func stop(_ app: AppDelegate) {
@@ -2016,6 +2368,19 @@ final class ProfileTests: XCTestCase {
     private func menu(_ title: String, in app: AppDelegate) -> NSMenu {
         let menu = NSApp.mainMenu?.items.first { $0.title == title }?.submenu
         return menu ?? NSMenu()
+    }
+
+    /// Presses ⌃⌥ and `key` in the menu bar, as the keyboard does while Stow is active, and says whether a menu
+    /// item took it.
+    private func performShortcut(_ key: String) -> Bool {
+        let keyCodes: [String: UInt16] = ["1": 18, "2": 19]
+        guard
+            let event = NSEvent.keyEvent(
+                with: .keyDown, location: .zero, modifierFlags: [.control, .option], timestamp: 0, windowNumber: 0,
+                context: nil, characters: key, charactersIgnoringModifiers: key, isARepeat: false,
+                keyCode: keyCodes[key] ?? 0)
+        else { return false }
+        return NSApp.mainMenu?.performKeyEquivalent(with: event) ?? false
     }
 
     private func newNoteTitle(_ app: AppDelegate) -> String? {
@@ -2037,7 +2402,7 @@ final class ProfileTests: XCTestCase {
             XCTFail("Unexpected question about closing \(entry.name) without saving")
             return false
         }
-        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
+        failOnReports(from: manager)
         return manager
     }
 
@@ -2300,6 +2665,47 @@ private actor MismatchClient: GitHubClient {
     func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
         detailRequests += 1
         return .init(latestComment: "Synthetic comment")
+    }
+}
+
+/// Answers as "other-account". Told to, it holds the next refresh that expects another login until released, then
+/// throws the mismatch, like a `gh` that answers slowly.
+private actor SlowMismatchClient: GitHubClient {
+    private let reference: PullRequestReference
+    private var holdsNext = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    private(set) var refreshes = 0
+    private(set) var isHolding = false
+
+    init(reference: PullRequestReference) { self.reference = reference }
+
+    func holdNextMismatch() { holdsNext = true }
+
+    func release() {
+        waiter?.resume()
+        waiter = nil
+    }
+
+    func refresh(pins: [PullRequestReference], previous: [PullRequestSnapshot], expectedViewerLogin: String?)
+        async throws -> GitHubRefreshResult
+    {
+        refreshes += 1
+        let login = "other-account"
+        if let expectedViewerLogin, expectedViewerLogin.caseInsensitiveCompare(login) != .orderedSame {
+            if holdsNext {
+                holdsNext = false
+                isHolding = true
+                await withCheckedContinuation { waiter = $0 }
+                isHolding = false
+            }
+            throw GitHubError.accountMismatch(actualLogin: login)
+        }
+        return .init(
+            viewerLogin: login, snapshots: [.init(reference: reference, title: "Synthetic card of the other account")])
+    }
+
+    func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
+        throw GitHubError.requestFailed
     }
 }
 

@@ -12,13 +12,15 @@ final class ProfileManager {
     private(set) var profiles: [ProfileEntry] = [] {
         didSet { onProfilesChange?() }
     }
-    /// Called when the profile list, its order, or a name changes, so menus can rebuild their shortcuts.
+    /// Called when the profile list, its order, a name, or whether names show changes, so menus can rebuild.
     @ObservationIgnored var onProfilesChange: (() -> Void)?
     private(set) var sessions: [UUID: ProfileSession] = [:]
     /// The profile that menus act on when no Stow window is key.
     private(set) var lastActiveID: UUID?
     /// Settings → Profiles → Always show profile name, which the index keeps for every profile.
-    private(set) var alwaysShowsProfileName = false
+    private(set) var alwaysShowsProfileName = false {
+        didSet { if alwaysShowsProfileName != oldValue { onProfilesChange?() } }
+    }
     /// The index cannot be read. Settings offers Reset profile list, and profile changes wait for it.
     private(set) var indexNeedsReset = false
     /// The profile whose Settings shows the New profile sheet.
@@ -40,6 +42,36 @@ final class ProfileManager {
         let alert = NSAlert()
         alert.messageText = "\(entry.name) is open in another copy of Stow"
         alert.informativeText = "Quit the other copy, then open the profile here."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    /// Says that a profile someone asked to open is no longer where Stow found it, such as one moved to the Trash
+    /// in Finder after the menus listed it.
+    @ObservationIgnored var reportNotFound: @MainActor (ProfileEntry) -> Void = { entry in
+        let alert = NSAlert()
+        alert.messageText = "Stow can’t find \(entry.name)"
+        alert.informativeText =
+            "Its folder was moved or deleted. If it’s in the Trash, put it back, then open it again."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    /// Says that a launch found profile data but no profile it could list, so it opened nothing rather than start a
+    /// new first profile beside the others.
+    @ObservationIgnored var reportNoProfiles: @MainActor () -> Void = {
+        let alert = NSAlert()
+        alert.messageText = "Stow can’t find any profiles"
+        alert.informativeText =
+            "Stow has a profile list but can’t read any profile folder. Put a deleted profile back from the Trash, or check that the data folder can be read, then open Stow again."
+        alert.addButton(withTitle: "Quit")
+        alert.runModal()
+    }
+    /// Says why a deletion failed when the Settings window that asked for it has closed, as when a profile's own
+    /// Settings deletes it, so the reason is never lost with the window.
+    @ObservationIgnored var reportDeletionFailure: @MainActor (ProfileEntry, any Error) -> Void = { entry, error in
+        guard let reason = profileProblem(error, name: entry.name) else { return }
+        let alert = NSAlert()
+        alert.messageText = "\(entry.name) couldn’t be deleted"
+        alert.informativeText = reason
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -108,23 +140,31 @@ final class ProfileManager {
     /// Reopens the profiles that were open at quit, each hidden or shown as it was. If none would show, the most
     /// recently active profile shows, else the first one reopened, else the data folder profile (the first listed
     /// one when the data folder holds none), which is all that opens without an index, as after the upgrade.
-    /// Without any profile, as in a new installation, the data folder becomes the first profile when it first
-    /// saves. A profile another process holds stays closed, and Stow says so once another profile is open.
-    /// Returns false when no profile could open.
+    /// Only a new installation, with no index and no profile data anywhere, gets a first profile, which the data
+    /// folder becomes when it first saves. When profile data exists but no profile can be listed, nothing opens
+    /// and Stow says so, rather than start a new, empty profile beside the others. A profile another process
+    /// holds stays closed, and Stow says so once another profile is open. Returns false when no profile opened.
     func start() async -> Bool {
-        // When the catalog cannot read the folder, the data folder opens and its store reports the problem.
+        // When the catalog cannot read the data folder at all, the data folder opens and its store reports the
+        // problem without writing.
         let snapshot = try? await catalog.load()
         alwaysShowsProfileName = snapshot?.index.alwaysShowProfileName ?? false
         indexNeedsReset = snapshot?.indexStatus == .needsReset
         profiles = snapshot?.profiles ?? []
-        if profiles.isEmpty { profiles = [await catalog.dataFolderEntry()] }
+        if profiles.isEmpty {
+            guard snapshot?.isNewInstallation ?? true else {
+                reportNoProfiles()
+                return false
+            }
+            profiles = [await catalog.dataFolderEntry()]
+        }
         // An absent index, or one that needs a reset, records no open profiles.
         let recorded = snapshot?.index ?? ProfileIndex()
         var openElsewhere: [ProfileEntry] = []
         for entry in profiles {
             guard let item = recorded.open.first(where: { $0.id == entry.id }) else { continue }
             let opened = await serialized(entry.id) { await self.openSession(entry, hidden: item.isHidden) }
-            if !opened { openElsewhere.append(entry) }
+            if opened == .heldElsewhere { openElsewhere.append(entry) }
         }
         if !sessions.values.contains(where: { !$0.isHidden }) {
             let candidates = [
@@ -140,7 +180,7 @@ final class ProfileManager {
                 // A profile tried here was not open at quit, so a refusal goes unsaid; if none opens, the caller
                 // hands over to the process holding them.
                 let opened = await serialized(entry.id) { await self.openSession(entry) }
-                if opened { break }
+                if opened == .opened { break }
             }
         }
         let shown = profiles.compactMap { sessions[$0.id] }.filter { !$0.isHidden }
@@ -156,7 +196,8 @@ final class ProfileManager {
     }
 
     /// Opens a profile, or brings its windows forward when it is already open. Returns false, after saying so,
-    /// when another copy of Stow has the profile open.
+    /// when another copy of Stow has the profile open, or when its folder is gone, such as one moved to the Trash
+    /// after the menus listed it; the list then drops it.
     @discardableResult
     func open(_ id: UUID) async -> Bool {
         await serialized(id) {
@@ -166,11 +207,12 @@ final class ProfileManager {
                 return true
             }
             guard let entry = self.profiles.first(where: { $0.id == id }) else { return false }
-            guard await self.openSession(entry) else {
-                self.reportOpenElsewhere(entry)
-                return false
+            switch await self.openSession(entry) {
+            case .opened: return true
+            case .heldElsewhere: self.reportOpenElsewhere(entry)
+            case .notFound: self.reportNotFound(entry)
             }
-            return true
+            return false
         }
     }
 
@@ -270,7 +312,11 @@ final class ProfileManager {
     /// reaches the menus, the open profiles' windows, and Settings. When the list cannot be read it stays as it
     /// was and the error is thrown.
     func reloadProfiles() async throws {
-        let snapshot = try await catalog.load()
+        apply(try await catalog.load())
+    }
+
+    /// Takes the list and display setting from a fresh read of the folders, and passes them to the open profiles.
+    private func apply(_ snapshot: ProfileCatalogSnapshot) {
         alwaysShowsProfileName = snapshot.index.alwaysShowProfileName
         indexNeedsReset = snapshot.indexStatus == .needsReset
         // Before the data folder profile first saves, the folder lists nothing; the open profile stays listed.
@@ -283,11 +329,16 @@ final class ProfileManager {
 
     // MARK: changing profiles
 
-    /// Makes a new, empty profile with GitHub and accessories off, and lists it last. It does not open.
+    /// Makes a new, empty profile with GitHub and accessories off, and lists it last. It does not open. Once the
+    /// profile exists this does not fail: if the list cannot be read right after, the new profile is listed as made
+    /// and the next reload catches up.
     @discardableResult
     func createProfile(name: String, color: String) async throws -> ProfileEntry {
         let entry = try await catalog.createProfile(name: name, color: color)
-        try await reloadProfiles()
+        if (try? await reloadProfiles()) == nil, !profiles.contains(where: { $0.id == entry.id }) {
+            profiles.append(entry)
+            for session in sessions.values { session.showsName = showsProfileNames }
+        }
         return profiles.first { $0.id == entry.id } ?? entry
     }
 
@@ -345,6 +396,21 @@ final class ProfileManager {
             }
         }
         try await finish(deletion)
+    }
+
+    /// Deletes a profile as Settings → Profiles asks. A failure after the asking profile closed, as when a profile's
+    /// own Settings deletes it and the move to the Trash fails, can no longer show in that window, so
+    /// `reportDeletionFailure` says why. The error is thrown either way.
+    func delete(_ id: UUID, askedFrom settingsID: UUID) async throws {
+        let entry = profiles.first { $0.id == id }
+        do {
+            try await delete(id)
+        } catch {
+            if let entry, sessions[settingsID]?.settingsWindow?.isVisible != true {
+                reportDeletionFailure(entry, error)
+            }
+            throw error
+        }
     }
 
     /// Writes the profile's identity file while holding its lock, then reloads the list. An open profile already
@@ -469,18 +535,23 @@ final class ProfileManager {
         }
     }
 
-    /// Takes the profile's lock and opens its windows, out of sight when it reopens hidden. Returns false when
-    /// another process holds the lock.
-    private func openSession(_ entry: ProfileEntry, hidden: Bool = false) async -> Bool {
+    private enum OpenOutcome { case opened, heldElsewhere, notFound }
+
+    /// Takes the profile's lock and opens its windows, out of sight when it reopens hidden. The profile is first
+    /// confirmed with a fresh read of the folders, because the list may be older than a folder moved away or a
+    /// deletion just finished: taking the lock would recreate the folder, and its store would write empty state
+    /// there, where Finder's Put Back expects nothing.
+    private func openSession(_ listed: ProfileEntry, hidden: Bool = false) async -> OpenOutcome {
         // A profile open here already holds its lock, and a second lock on the same file would be refused.
-        if sessions[entry.id] != nil { return true }
+        if sessions[listed.id] != nil { return .opened }
+        guard let entry = await confirmed(listed) else { return .notFound }
         guard
             let session = ProfileSession(
                 entry: entry, profile: ProfileHandle(id: entry.id, manager: self), isDemo: isDemo,
                 githubClient: githubOverride(entry),
                 githubClientFactory: { [weak self] in self?.githubClient(for: $0) ?? GHClient(executableURL: $0) },
                 accessoryProviders: accessoryProviders)
-        else { return false }
+        else { return .heldElsewhere }
         session.showsName = showsProfileNames
         session.onActivate = { [weak self] in self?.lastActiveID = entry.id }
         sessions[entry.id] = session
@@ -491,7 +562,24 @@ final class ProfileManager {
         if entry.isArrival, !session.isStopped, store.saveError == nil, !store.storageNeedsRecovery {
             await markSeen(entry.id)
         }
-        return true
+        return .opened
+    }
+
+    /// The profile as the folders show it now, after reloading the list from them; nil, with the profile dropped
+    /// from the list, when it is gone. Two profiles open without being listed, and neither writes where profile
+    /// data was expected: a new installation's first profile, which has no files until it first saves, and the
+    /// data folder profile when the data folder cannot be read at all, whose store then reports the problem.
+    private func confirmed(_ entry: ProfileEntry) async -> ProfileEntry? {
+        guard let snapshot = try? await catalog.load() else { return entry.isDataFolder ? entry : nil }
+        apply(snapshot)
+        if let listed = snapshot.profiles.first(where: { $0.id == entry.id }) { return listed }
+        if snapshot.isNewInstallation, entry.isDataFolder {
+            let first = await catalog.dataFolderEntry()
+            if first.id == entry.id { return first }
+        }
+        // Also when no other profile is left to list.
+        if profiles.contains(where: { $0.id == entry.id }) { profiles.removeAll { $0.id == entry.id } }
+        return nil
     }
 
     /// Records that this Mac has seen a profile, so it opens normally from now on. If the index cannot be

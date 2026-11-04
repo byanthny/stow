@@ -323,6 +323,109 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertEqual(snapshot.profiles.map(\.name), ["Work"])
     }
 
+    func testCreateReturnsTheProfileWhenTheListCannotBeReadAfterward() async throws {
+        try write("{}", "state.json")
+        let indexURL = root.appendingPathComponent(ProfileIndex.filename)
+        // Once the create has written the index, the data folder can no longer be read, as if its permissions
+        // changed right after.
+        let failing = ProfileCatalog(
+            dataFolder: root, currentUserID: getuid(), trash: { _ in }, ownerOf: { _ in getuid() },
+            fileExists: { url in
+                if FileManager.default.fileExists(atPath: indexURL.path) { throw StateError.unreadable }
+                return try LiveNoteIO.exists(url)
+            })
+        let entry = try await failing.createProfile(name: "Work", color: "#336699")
+        XCTAssertEqual(entry.name, "Work")
+        XCTAssertEqual(entry.color, "#336699")
+        XCTAssertFalse(entry.isDataFolder)
+        XCTAssertFalse(entry.isArrival)
+        XCTAssertEqual(
+            entry.folder.standardizedFileURL,
+            root.appendingPathComponent("profiles/\(entry.id.uuidString)").standardizedFileURL)
+        let listed = try await catalog().load()
+        XCTAssertTrue(listed.profiles.contains { $0.id == entry.id && $0.name == "Work" && !$0.isArrival })
+    }
+
+    func testNamesThatLookAlikeAreDuplicates() async throws {
+        let catalog = catalog()
+        let work = try await catalog.createProfile(name: "Work", color: "#336699")
+        for alike in ["work\u{200D}", "Ｗork", "Work\u{FE0F}", "Wo\u{034F}rk", "W\u{2061}ork", "\u{00A0}work"] {
+            let scalars = alike.unicodeScalars.map { String($0.value, radix: 16) }.joined(separator: " ")
+            do {
+                _ = try await catalog.createProfile(name: alike, color: "#336699")
+                XCTFail("\(scalars) looks like Work")
+            } catch {
+                XCTAssertEqual(error as? ProfileError, .duplicateName, scalars)
+            }
+        }
+        let home = try await catalog.createProfile(name: "Home\u{00A0}\u{2003}Office", color: "#336699")
+        XCTAssertEqual(home.name, "Home Office")
+        await assertThrows(.duplicateName) { try await catalog.rename(home.id, to: "work\u{200C}") }
+        // Its own name in another form is not a duplicate.
+        try await catalog.rename(work.id, to: "WORK\u{200D}")
+        let snapshot = try await catalog.load()
+        XCTAssertEqual(snapshot.profiles.map(\.name), ["WORK\u{200D}", "Home Office"])
+    }
+
+    func testNamesOnDiskThatLookAlikeAreNumbered() async throws {
+        let first = try addProfile(name: "Work")
+        let second = UUID()
+        try write(identity(second, "work\u{200D}"), "profiles/\(second.uuidString)/identity.json")
+        var index = ProfileIndex()
+        index.order = [first, second]
+        try JSONEncoder().encode(index).write(to: root.appendingPathComponent(ProfileIndex.filename))
+        let snapshot = try await catalog().load()
+        XCTAssertEqual(snapshot.profiles.map(\.name), ["Work", "work\u{200D} 2"])
+    }
+
+    func testNewerIdentityIsListedButNeverRewritten() async throws {
+        let main = UUID()
+        let newerMain = "{\"schemaVersion\":2,\"id\":\"\(main.uuidString)\",\"name\":\"Home\",\"color\":\"#AA5500\"}"
+        try write("{}", "state.json")
+        try write(newerMain, "identity.json")
+        let id = UUID()
+        let newer =
+            ##"{"schemaVersion":2,"id":"\##(id.uuidString)","name":"Future","color":"#336699","pattern":"x"}"##
+        try write(newer, "profiles/\(id.uuidString)/identity.json")
+        // A newer identity whose fields this build cannot read at all.
+        let opaque = UUID()
+        let unreadable =
+            ##"{"schemaVersion":3,"id":"\##(opaque.uuidString)","name":{"text":"Later"},"color":"oklch(1 0 0)"}"##
+        try write(unreadable, "profiles/\(opaque.uuidString)/identity.json")
+        let catalog = catalog()
+        let snapshot = try await catalog.load()
+        let names = Dictionary(uniqueKeysWithValues: snapshot.profiles.map { ($0.id, $0.name) })
+        XCTAssertEqual(names, [main: "Home", id: "Future", opaque: "Unnamed profile"])
+        XCTAssertEqual(snapshot.profiles.first { $0.id == id }?.color, "#336699")
+
+        let cases = [
+            (main, 2, newerMain, "identity.json"), (id, 2, newer, "profiles/\(id.uuidString)/identity.json"),
+            (opaque, 3, unreadable, "profiles/\(opaque.uuidString)/identity.json"),
+        ]
+        for (target, version, bytes, path) in cases {
+            await assertThrows(.newerIdentity(version)) { try await catalog.rename(target, to: "Renamed") }
+            await assertThrows(.newerIdentity(version)) { try await catalog.setColor(target, to: "#AABBCC") }
+            await assertThrows(.newerIdentity(version)) { try await catalog.setIcon(target, to: .emoji("😀")) }
+            XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(path)), Data(bytes.utf8), path)
+        }
+    }
+
+    func testRecordingAnUnchangedSessionWritesNothing() async throws {
+        let id = try addProfile(name: "Work")
+        let catalog = catalog()
+        // With no index, a session with nothing to record creates none.
+        try await catalog.recordSession(open: [], lastActiveID: nil)
+        XCTAssertFalse(exists(ProfileIndex.filename))
+        try await catalog.recordSession(open: [.init(id: id, isHidden: false)], lastActiveID: id)
+        let indexURL = root.appendingPathComponent(ProfileIndex.filename)
+        let written = try Data(contentsOf: indexURL)
+        // A data folder that cannot be written shows whether a write was attempted.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+        try await catalog.recordSession(open: [.init(id: id, isHidden: false)], lastActiveID: id)
+        XCTAssertEqual(try Data(contentsOf: indexURL), written)
+        await assertThrows(.unwritable) { try await catalog.recordSession(open: [], lastActiveID: id) }
+    }
+
     func testChangesWaitForResetThenSucceed() async throws {
         let id = try addProfile(name: "Work")
         let corrupt = "not json"
@@ -596,6 +699,34 @@ final class ProfileCatalogTests: XCTestCase {
         let snapshot = try await catalog.load()
         XCTAssertEqual(snapshot.profiles.map(\.id), [work])
         XCTAssertEqual(snapshot.index.order, [work])
+    }
+
+    func testFirstProfileTrashedWithoutAnIndexKeepsItsName() async throws {
+        // A data folder profile beside a folder copied in, before any index or identity file was written.
+        try write("{}", "state.json")
+        try write("# First", "notes/\(UUID().uuidString).md")
+        let other = try addProfile(name: "Stow")
+        let catalog = catalog()
+        let listed = try await catalog.load()
+        let main = try XCTUnwrap(listed.profiles.first(where: \.isDataFolder))
+        XCTAssertFalse(exists(ProfileIndex.filename))
+        XCTAssertFalse(exists("identity.json"))
+
+        try await catalog.trash(main.id)
+        let moved = bin.appendingPathComponent(main.id.uuidString)
+        let identity = try ProfileIdentity.decode(
+            Data(contentsOf: moved.appendingPathComponent("identity.json")), folderID: main.id)
+        // The stored name is the profile's own, not one numbered for display beside another "Stow".
+        XCTAssertEqual(identity, ProfileIdentity(id: main.id, name: "Stow", color: main.color))
+        XCTAssertFalse(exists("identity.json"))
+
+        // Put Back returns it to profiles/<id>/, where Stow lists it by its name again.
+        try FileManager.default.moveItem(
+            at: moved, to: root.appendingPathComponent("profiles/\(main.id.uuidString)"))
+        let snapshot = try await catalog.load()
+        XCTAssertEqual(Set(snapshot.profiles.map(\.id)), [main.id, other])
+        XCTAssertTrue(snapshot.profiles.allSatisfy { $0.name.hasPrefix("Stow") })
+        XCTAssertFalse(snapshot.profiles.contains { $0.name == "Unnamed profile" })
     }
 
     func testDeletingMainReusesOnlyAnEmptyLeftoverFolder() async throws {

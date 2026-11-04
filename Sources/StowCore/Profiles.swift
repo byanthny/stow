@@ -1,7 +1,7 @@
 import Foundation
 
 public enum ProfileError: Error, Equatable, Sendable {
-    case invalidIdentity, invalidIndex, newerIndex(Int), indexNeedsReset
+    case invalidIdentity, newerIdentity(Int), invalidIndex, newerIndex(Int), indexNeedsReset
     case emptyName, duplicateName, invalidColor, invalidIcon, inUse, lastProfile, notFound, unwritable
 }
 
@@ -72,6 +72,10 @@ public enum ProfileIcon: Codable, Equatable, Sendable {
 /// A profile's name, color, and optional icon, stored in the profile folder as `identity.json`.
 /// Folders can be copied in from elsewhere, so decoding treats the bytes as untrusted.
 public struct ProfileIdentity: Codable, Equatable, Sendable {
+    public static let currentVersion = 1
+    /// A file without a version predates versions and reads as version 1. A newer version shows as far as this
+    /// build can read it, and this build never rewrites it, so a newer build's fields are never dropped.
+    public var schemaVersion = currentVersion
     public var id: UUID
     public var name: String
     public var color: String
@@ -90,25 +94,61 @@ public struct ProfileIdentity: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, color, icon
+        case schemaVersion, id, name, color, icon
     }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
         id = try container.decode(UUID.self, forKey: .id)
         name = try container.decode(String.self, forKey: .name)
         color = try container.decode(String.self, forKey: .color)
         icon = (try? container.decodeIfPresent(ProfileIcon.self, forKey: .icon)).flatMap(ProfileIcon.validated)
     }
 
-    /// Removes control, bidirectional formatting, and invisible characters, trims, and limits the length.
-    /// Zero-width joiners stay so emoji sequences and some scripts render correctly.
+    /// Removes control characters and every invisible character except the joiners and variation selectors that
+    /// emoji and some scripts need, writes every kind of space as one plain space, trims, and limits the length.
+    /// Nil when nothing visible is left.
     public static func sanitizedName(_ raw: String) -> String? {
-        let kept = String.UnicodeScalarView(raw.unicodeScalars.filter { !isRemoved($0) })
+        let space: Unicode.Scalar = " "
+        var kept = String.UnicodeScalarView()
+        for scalar in raw.unicodeScalars where !isRemoved(scalar) {
+            guard scalar.properties.generalCategory == .spaceSeparator else {
+                kept.append(scalar)
+                continue
+            }
+            // Spacing never tells two names apart.
+            if kept.last != space { kept.append(space) }
+        }
         let trimmed = String(kept).trimmingCharacters(in: .whitespacesAndNewlines)
         let limited = String(trimmed.prefix(maximumNameLength))
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        return limited.isEmpty ? nil : limited
+        // Joiners and selectors alone show nothing.
+        guard limited.unicodeScalars.contains(where: { !$0.properties.isDefaultIgnorableCodePoint }) else {
+            return nil
+        }
+        return limited
+    }
+
+    /// The form names are compared in for uniqueness and for numbering duplicates: compatibility-normalized,
+    /// without joiners, selectors, or any other invisible character, with runs of spaces as one, and lowercased.
+    /// Names that look alike on screen, such as "Work" and a fullwidth "Ｗork", have the same key.
+    static func comparisonKey(_ name: String) -> String {
+        let visible = name.precomposedStringWithCompatibilityMapping.unicodeScalars.filter {
+            !isRemoved($0) && !$0.properties.isDefaultIgnorableCodePoint
+        }
+        let words = String(String.UnicodeScalarView(visible)).split(whereSeparator: \.isWhitespace)
+        return words.joined(separator: " ").lowercased()
+    }
+
+    /// The version an identity file was written with, read without its other fields, so a file a newer build
+    /// wrote is recognized even where this build cannot read the rest. Nil when the bytes are not an identity.
+    static func storedVersion(_ data: Data) -> Int? {
+        struct Probe: Decodable { var schemaVersion: Int? }
+        guard data.count <= maximumBytes, let probe = try? JSONDecoder().decode(Probe.self, from: data) else {
+            return nil
+        }
+        return probe.schemaVersion ?? 1
     }
 
     public static func isValidColor(_ hex: String) -> Bool {
@@ -123,6 +163,7 @@ public struct ProfileIdentity: Codable, Equatable, Sendable {
     public static func decode(_ data: Data, folderID: UUID?) throws -> ProfileIdentity {
         guard data.count <= maximumBytes,
             var identity = try? JSONDecoder().decode(ProfileIdentity.self, from: data),
+            identity.schemaVersion >= 1,
             folderID == nil || identity.id == folderID,
             let name = sanitizedName(identity.name),
             isValidColor(identity.color)
@@ -131,12 +172,22 @@ public struct ProfileIdentity: Codable, Equatable, Sendable {
         return identity
     }
 
+    /// Control characters, line and paragraph separators, every format character except the zero-width joiner
+    /// and non-joiner (bidirectional overrides, invisible operators, and tags among them), and other invisible
+    /// characters, such as the combining grapheme joiner and Hangul fillers, except variation selectors.
     private static func isRemoved(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .lineSeparator, .paragraphSeparator: return true
+        case .format: return scalar.value != 0x200C && scalar.value != 0x200D
+        default: return scalar.properties.isDefaultIgnorableCodePoint && !isVariationSelector(scalar)
+        }
+    }
+
+    /// Selectors that pick a glyph, such as U+FE0F for emoji presentation.
+    private static func isVariationSelector(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
-        case 0x00AD, 0x180E, 0x200B, 0x2060, 0xFEFF, 0x2028, 0x2029, 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069:
-            return true
-        default:
-            return scalar.properties.generalCategory == .control
+        case 0x180B...0x180D, 0x180F, 0xFE00...0xFE0F, 0xE0100...0xE01EF: return true
+        default: return false
         }
     }
 }

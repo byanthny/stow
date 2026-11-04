@@ -64,8 +64,9 @@ public struct BoardLayout: Codable, Equatable, Sendable {
         oneNoteOpenAtATime = try container.decodeIfPresent(Bool.self, forKey: .oneNoteOpenAtATime) ?? true
         showsTitle = try container.decodeIfPresent(Bool.self, forKey: .showsTitle) ?? true
         groupByOwner = try container.decodeIfPresent(Bool.self, forKey: .groupByOwner) ?? false
-        // A name from a newer version falls back to the default rather than rejecting the whole state.
-        let ownerOrderName = try container.decodeIfPresent(String.self, forKey: .ownerOrder)
+        // A name from a newer version, or a value that is not a name, falls back to the default rather than
+        // rejecting the whole state.
+        let ownerOrderName = try? container.decodeIfPresent(String.self, forKey: .ownerOrder)
         ownerOrder = ownerOrderName.flatMap(OwnerOrder.init(rawValue:)) ?? .alphabetical
         alwaysShowOwnerControl = try container.decodeIfPresent(Bool.self, forKey: .alwaysShowOwnerControl) ?? false
         hidesNotesForHiddenOwners =
