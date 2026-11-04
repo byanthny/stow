@@ -1,6 +1,6 @@
 # Profiles and owner views
 
-Design approved by the owner on 2026-11-03, after a final security, privacy, and cost pass. It replaces the earlier proposal. It is implemented on the `byanthny/reverent-torvalds-a738c1` branch and not yet released; the [implementation plan](profiles-plan.md) records the work. Calls made during the design, rather than by the owner, are marked *(call)* so they are easy to revisit.
+Design approved by the owner on 2026-11-03, after a final security, privacy, and cost pass. It replaces the earlier proposal. It is implemented and not yet released; the [implementation plan](profiles-plan.md) records the work. Calls made during the design, rather than by the owner, are marked *(call)* so they are easy to revisit.
 
 ## Why
 

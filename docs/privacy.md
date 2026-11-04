@@ -2,7 +2,7 @@
 
 ## Local data
 
-Stow stores its local setup in `~/Library/Application Support/Stow/`. `state.json` is a metadata index containing note links, window state, settings, pins, dismissals, the last connected login, accessory configurations, and cached pull-request metadata and expanded details. It points to the current managed notes folder; note bodies are separate plaintext `<UUID>.md` files. New setups use `notes/`; restores can select a versioned `notes-<UUID>/` folder. A private `.stow.lock` file lets only one Stow process write this data at a time; a second copy hands over to the running one.
+Stow stores its local setup in `~/Library/Application Support/Stow/`. `state.json` is a metadata index containing note links, window state, settings, pins, dismissals, the last connected login, accessory configurations, and cached pull-request metadata and expanded details. It points to the current managed notes folder; note bodies are separate plaintext `<UUID>.md` files. New setups use `notes/`; restores can select a versioned `notes-<UUID>/` folder. A private `.stow.lock` file lets only one Stow process write a profile's data at a time. A separate `.stow-app.lock` decides whether a second launch hands over to the running copy.
 
 ## Profiles
 
