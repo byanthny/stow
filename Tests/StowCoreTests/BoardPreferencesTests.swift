@@ -94,6 +94,23 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertEqual(layout.shownPullRequests(of: 8, expanded: true), 8)
     }
 
+    func testUnknownOwnerOrderFallsBackToAlphabetical() throws {
+        let decoder = JSONDecoder()
+        let future = try decoder.decode(BoardLayout.self, from: Data(#"{"ownerOrder":"newestFirst"}"#.utf8))
+        XCTAssertEqual(future.ownerOrder, .alphabetical)
+        let known = try decoder.decode(
+            BoardLayout.self, from: Data(#"{"ownerOrder":"mostCards","groupByOwner":true}"#.utf8))
+        XCTAssertEqual(known.ownerOrder, .mostCards)
+        XCTAssertTrue(known.groupByOwner)
+        var changed = BoardLayout()
+        changed.groupByOwner = true
+        changed.ownerOrder = .mostCards
+        changed.alwaysShowOwnerControl = true
+        changed.hidesNotesForHiddenOwners = true
+        XCTAssertNotEqual(changed, BoardLayout())
+        XCTAssertEqual(try decoder.decode(BoardLayout.self, from: JSONEncoder().encode(changed)), changed)
+    }
+
     func testBoardLayoutPersistsAndRejectsOutOfRangeCounts() async throws {
         let url = try directory().appendingPathComponent("state.json")
         var original = fixture()

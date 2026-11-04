@@ -6,6 +6,10 @@ public struct BoardLayout: Codable, Equatable, Sendable {
         case needsYou, notes, waiting
     }
 
+    public enum OwnerOrder: String, Codable, Sendable {
+        case alphabetical, mostCards
+    }
+
     public static let defaultOrder: [Section] = [.needsYou, .notes, .waiting]
     public static let defaultVisiblePullRequests = 3
     /// Accepted card counts before "Show more"; 0 means every card.
@@ -15,6 +19,10 @@ public struct BoardLayout: Codable, Equatable, Sendable {
     /// Pull requests shown in each section before "Show more"; 0 shows every card.
     public var visiblePullRequests: Int
     public var notesCanCollapse: Bool
+    public var groupByOwner = false
+    public var ownerOrder: OwnerOrder = .alphabetical
+    public var alwaysShowOwnerControl = false
+    public var hidesNotesForHiddenOwners = false
 
     public init(
         order: [Section] = defaultOrder, visiblePullRequests: Int = defaultVisiblePullRequests,
@@ -25,7 +33,10 @@ public struct BoardLayout: Codable, Equatable, Sendable {
         self.notesCanCollapse = notesCanCollapse
     }
 
-    private enum CodingKeys: String, CodingKey { case order, visiblePullRequests, notesCanCollapse }
+    private enum CodingKeys: String, CodingKey {
+        case order, visiblePullRequests, notesCanCollapse
+        case groupByOwner, ownerOrder, alwaysShowOwnerControl, hidesNotesForHiddenOwners
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,6 +50,13 @@ public struct BoardLayout: Codable, Equatable, Sendable {
                 forKey: .visiblePullRequests, in: container, debugDescription: "Pull request count out of range")
         }
         notesCanCollapse = try container.decodeIfPresent(Bool.self, forKey: .notesCanCollapse) ?? false
+        groupByOwner = try container.decodeIfPresent(Bool.self, forKey: .groupByOwner) ?? false
+        // A name from a newer version falls back to the default rather than rejecting the whole state.
+        let ownerOrderName = try container.decodeIfPresent(String.self, forKey: .ownerOrder)
+        ownerOrder = ownerOrderName.flatMap(OwnerOrder.init(rawValue:)) ?? .alphabetical
+        alwaysShowOwnerControl = try container.decodeIfPresent(Bool.self, forKey: .alwaysShowOwnerControl) ?? false
+        hidesNotesForHiddenOwners =
+            try container.decodeIfPresent(Bool.self, forKey: .hidesNotesForHiddenOwners) ?? false
     }
 
     /// Moves a section up (negative) or down (positive) one place at a time; edges are left alone.
