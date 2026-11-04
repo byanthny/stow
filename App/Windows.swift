@@ -215,7 +215,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
         panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Follow every desktop, but stay out of other apps' full-screen spaces by design.
+        panel.collectionBehavior = [.canJoinAllSpaces]
         panel.delegate = self
         panel.onPaste = { [weak self] text in self?.store.pasteOutsideEditor(text) }
         return panel
