@@ -12,6 +12,12 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(ProfileIdentity.sanitizedName("  A\u{2028}B\u{2029}C\u{061C}D  "), "ABCD")
     }
 
+    func testSanitizedNameRemovesInvisibleCharacters() {
+        XCTAssertEqual(ProfileIdentity.sanitizedName("Work\u{200B}"), "Work")
+        XCTAssertEqual(ProfileIdentity.sanitizedName("W\u{00AD}o\u{180E}r\u{2060}k\u{FEFF}"), "Work")
+        XCTAssertNil(ProfileIdentity.sanitizedName("\u{200B}\u{FEFF}"))
+    }
+
     func testSanitizedNameKeepsEmojiAndRightToLeftText() {
         XCTAssertEqual(ProfileIdentity.sanitizedName("👨‍👩‍👧 Family"), "👨‍👩‍👧 Family")
         XCTAssertEqual(ProfileIdentity.sanitizedName("עבודה"), "עבודה")

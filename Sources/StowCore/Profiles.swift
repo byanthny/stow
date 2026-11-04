@@ -22,7 +22,7 @@ public struct ProfileIdentity: Codable, Equatable, Sendable {
         self.color = color
     }
 
-    /// Removes control and bidirectional formatting characters, trims, and limits the length.
+    /// Removes control, bidirectional formatting, and invisible characters, trims, and limits the length.
     /// Zero-width joiners stay so emoji sequences and some scripts render correctly.
     public static func sanitizedName(_ raw: String) -> String? {
         let kept = String.UnicodeScalarView(raw.unicodeScalars.filter { !isRemoved($0) })
@@ -54,7 +54,7 @@ public struct ProfileIdentity: Codable, Equatable, Sendable {
 
     private static func isRemoved(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
-        case 0x2028, 0x2029, 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069:
+        case 0x00AD, 0x180E, 0x200B, 0x2060, 0xFEFF, 0x2028, 0x2029, 0x061C, 0x200E, 0x200F, 0x202A...0x202E, 0x2066...0x2069:
             return true
         default:
             return scalar.properties.generalCategory == .control
