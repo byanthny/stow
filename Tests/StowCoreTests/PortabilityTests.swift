@@ -83,6 +83,7 @@ final class PortabilityTests: XCTestCase {
         state.ownerSelection = OwnerSelection(["Acme", "beta"])
         state.keepsOnlySelectedOwners = true
         state.hideKeepsAlwaysOnTopNotes = true
+        state.hidesWhenSwitchingAway = false
         state.boardLayout.groupByOwner = true
         state.boardLayout.ownerOrder = .mostCards
         state.boardLayout.alwaysShowOwnerControl = true
@@ -91,6 +92,7 @@ final class PortabilityTests: XCTestCase {
         XCTAssertEqual(restored.ownerSelection.owners, ["Acme", "beta"])
         XCTAssertTrue(restored.keepsOnlySelectedOwners)
         XCTAssertTrue(restored.hideKeepsAlwaysOnTopNotes)
+        XCTAssertFalse(restored.hidesWhenSwitchingAway)
         XCTAssertEqual(restored.boardLayout, state.boardLayout)
     }
 

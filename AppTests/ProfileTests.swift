@@ -21,7 +21,7 @@ final class ProfileTests: XCTestCase {
             XCTAssertEqual(manager.profiles.map(\.isDataFolder), [true])
             XCTAssertEqual(manager.sessions.count, 1)
             let session = try XCTUnwrap(manager.activeSession)
-            XCTAssertEqual(session.entry.name, "Main")
+            XCTAssertEqual(session.entry.name, "Stow")
             XCTAssertEqual(manager.lastActiveID, session.entry.id)
             XCTAssertFalse(manager.showsProfileNames)
             XCTAssertEqual(session.board.title, "Stow")

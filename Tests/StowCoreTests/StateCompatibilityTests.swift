@@ -48,7 +48,10 @@ final class StateCompatibilityTests: XCTestCase {
     func testOlderStateDecodesNewFieldsWithDefaults() throws {
         let original = fixture()
         var legacy = try object(original)
-        for key in ["ownerSelection", "keepsOnlySelectedOwners", "hideKeepsAlwaysOnTopNotes"] {
+        let added = [
+            "ownerSelection", "keepsOnlySelectedOwners", "hideKeepsAlwaysOnTopNotes", "hidesWhenSwitchingAway",
+        ]
+        for key in added {
             legacy.removeValue(forKey: key)
         }
         var layout = try XCTUnwrap(legacy["boardLayout"] as? [String: Any])
@@ -61,6 +64,7 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertTrue(decoded.ownerSelection.isAll)
         XCTAssertFalse(decoded.keepsOnlySelectedOwners)
         XCTAssertFalse(decoded.hideKeepsAlwaysOnTopNotes)
+        XCTAssertTrue(decoded.hidesWhenSwitchingAway)
         XCTAssertEqual(decoded.boardLayout, BoardLayout())
         XCTAssertEqual(decoded, original)
     }

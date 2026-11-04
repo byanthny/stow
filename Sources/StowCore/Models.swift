@@ -244,12 +244,14 @@ public struct AppState: Codable, Equatable, Sendable {
     public var ownerSelection = OwnerSelection()
     public var keepsOnlySelectedOwners = false
     public var hideKeepsAlwaysOnTopNotes = false
+    /// Switching to another profile hides this one. Read from the profile being left.
+    public var hidesWhenSwitchingAway = true
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, notes, pins, dismissedIDs, pullRequests, boardFrame, boardAlwaysOnTop, githubEnabled
         case ghExecutablePath, viewerLogin, lastRefreshAt, extensionInstances, appearance, collapsedSections
-        case boardLayout, ownerSelection, keepsOnlySelectedOwners, hideKeepsAlwaysOnTopNotes
+        case boardLayout, ownerSelection, keepsOnlySelectedOwners, hideKeepsAlwaysOnTopNotes, hidesWhenSwitchingAway
     }
 
     public init(from decoder: any Decoder) throws {
@@ -274,5 +276,6 @@ public struct AppState: Codable, Equatable, Sendable {
         keepsOnlySelectedOwners = try container.decodeIfPresent(Bool.self, forKey: .keepsOnlySelectedOwners) ?? false
         hideKeepsAlwaysOnTopNotes =
             try container.decodeIfPresent(Bool.self, forKey: .hideKeepsAlwaysOnTopNotes) ?? false
+        hidesWhenSwitchingAway = try container.decodeIfPresent(Bool.self, forKey: .hidesWhenSwitchingAway) ?? true
     }
 }

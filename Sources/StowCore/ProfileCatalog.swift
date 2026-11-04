@@ -4,7 +4,7 @@ public struct ProfileEntry: Equatable, Sendable {
     public var id: UUID
     public var folder: URL
     public var isDataFolder: Bool
-    /// Sanitized, with "Main" or "Unnamed profile" as the fallback. Duplicates are numbered here
+    /// Sanitized, with "Stow" or "Unnamed profile" as the fallback. Duplicates are numbered here
     /// for display only; the identity file is untouched.
     public var name: String
     public var color: String
@@ -25,7 +25,8 @@ public struct ProfileCatalogSnapshot: Equatable, Sendable {
 /// Finds profiles by looking at folders. The index never decides which profiles exist.
 public actor ProfileCatalog {
     public static let profilesDirectoryName = "profiles"
-    static let mainName = "Main"
+    /// The data folder profile's name until the user renames it, so a single profile still reads "Stow".
+    static let dataFolderName = "Stow"
     static let unnamedName = "Unnamed profile"
     static let fallbackColor = "#8E8E93"
 
@@ -89,7 +90,7 @@ public actor ProfileCatalog {
         let identity = try? readIdentity(in: dataFolder, folderID: nil)
         return ProfileEntry(
             id: identity?.id ?? mintedDataFolderID(), folder: dataFolder, isDataFolder: true,
-            name: identity?.name ?? Self.mainName,
+            name: identity?.name ?? Self.dataFolderName,
             color: identity?.color ?? Self.fallbackColor, isArrival: false)
     }
 
@@ -257,7 +258,7 @@ public actor ProfileCatalog {
         let file = entry.folder.appendingPathComponent(ProfileIdentity.filename)
         // A file that cannot even be checked counts as present, so it is never replaced.
         guard (try? LiveNoteIO.exists(file)) ?? true else {
-            return entry.isDataFolder ? Self.mainName : Self.unnamedName
+            return entry.isDataFolder ? Self.dataFolderName : Self.unnamedName
         }
         guard let identity = try readIdentity(in: entry.folder, folderID: entry.isDataFolder ? nil : entry.id)
         else { throw ProfileError.invalidIdentity }
@@ -277,7 +278,8 @@ public actor ProfileCatalog {
         if let main = snapshot.profiles.first(where: \.isDataFolder), snapshot.indexStatus == .absent,
             try !wrapping({ try LiveNoteIO.exists(dataFolder.appendingPathComponent(ProfileIdentity.filename)) })
         {
-            try writeIdentity(ProfileIdentity(id: main.id, name: Self.mainName, color: main.color), in: dataFolder)
+            try writeIdentity(
+                ProfileIdentity(id: main.id, name: Self.dataFolderName, color: main.color), in: dataFolder)
         }
         guard let data = Self.encode(index) else { throw ProfileError.unwritable }
         try wrapping {

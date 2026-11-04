@@ -86,7 +86,7 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertEqual(snapshot.profiles.count, 1)
         let main = try XCTUnwrap(snapshot.profiles.first)
         XCTAssertTrue(main.isDataFolder)
-        XCTAssertEqual(main.name, "Main")
+        XCTAssertEqual(main.name, "Stow")
         XCTAssertFalse(main.isArrival)
         XCTAssertEqual(main.folder.standardizedFileURL, root.standardizedFileURL)
         XCTAssertEqual(snapshot.indexStatus, .absent)
@@ -105,7 +105,7 @@ final class ProfileCatalogTests: XCTestCase {
         let catalog = catalog()
         let entry = await catalog.dataFolderEntry()
         XCTAssertTrue(entry.isDataFolder)
-        XCTAssertEqual(entry.name, "Main")
+        XCTAssertEqual(entry.name, "Stow")
         XCTAssertFalse(entry.isArrival)
         XCTAssertEqual(entry.folder.standardizedFileURL, root.standardizedFileURL)
         XCTAssertEqual(try listing(), [])
@@ -184,7 +184,7 @@ final class ProfileCatalogTests: XCTestCase {
             let snapshot = try await catalog().load()
             XCTAssertEqual(snapshot.indexStatus, .needsReset)
             XCTAssertFalse(snapshot.isNewInstallation)
-            XCTAssertEqual(snapshot.profiles.map(\.name), ["Alpha", "Main", "Zed"])
+            XCTAssertEqual(snapshot.profiles.map(\.name), ["Alpha", "Stow", "Zed"])
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(ProfileIndex.filename)), Data(bytes.utf8))
         }
     }
@@ -243,7 +243,7 @@ final class ProfileCatalogTests: XCTestCase {
         let lockedFolder = root.appendingPathComponent("profiles/\(locked.uuidString)")
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: lockedFolder.path)
         let snapshot = try await catalog().load()
-        XCTAssertEqual(Set(snapshot.profiles.map(\.name)), ["Main", "Good"])
+        XCTAssertEqual(Set(snapshot.profiles.map(\.name)), ["Stow", "Good"])
         XCTAssertTrue(snapshot.profiles.contains { $0.id == good })
     }
 
@@ -253,7 +253,7 @@ final class ProfileCatalogTests: XCTestCase {
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o000], ofItemAtPath: root.appendingPathComponent("profiles").path)
         let snapshot = try await catalog().load()
-        XCTAssertEqual(snapshot.profiles.map(\.name), ["Main"])
+        XCTAssertEqual(snapshot.profiles.map(\.name), ["Stow"])
     }
 
     func testIdenticalDuplicateNamesDisplayNumbered() async throws {
@@ -304,7 +304,7 @@ final class ProfileCatalogTests: XCTestCase {
         let mainIdentity = try ProfileIdentity.decode(
             Data(contentsOf: root.appendingPathComponent("identity.json")), folderID: nil)
         XCTAssertEqual(mainIdentity.id, main.id)
-        XCTAssertEqual(mainIdentity.name, "Main")
+        XCTAssertEqual(mainIdentity.name, "Stow")
         let reloaded = try await catalog.load()
         XCTAssertEqual(reloaded.indexStatus, .loaded)
         XCTAssertEqual(reloaded.profiles.map(\.id), [main.id, entry.id])
