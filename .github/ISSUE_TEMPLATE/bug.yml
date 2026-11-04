@@ -1,0 +1,74 @@
+name: Bug report
+description: Something in Stow doesn't work as expected.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use synthetic data in everything you share here, including screenshots. Never paste private notes, pull request data, `state.json`, backups, logs, or tokens.
+
+        Report security problems [privately](https://github.com/byanthny/stow/security/advisories/new), not in an issue.
+  - type: input
+    id: version
+    attributes:
+      label: Stow version or commit
+      description: The version in Stow → About Stow, or the commit you built from (`git rev-parse --short HEAD`).
+      placeholder: 0.1.0 or 62c227d
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu → About This Mac, or `sw_vers -productVersion`.
+      placeholder: "15.7"
+    validations:
+      required: true
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Mac
+      options:
+        - Apple silicon
+        - Intel
+    validations:
+      required: true
+  - type: dropdown
+    id: github
+    attributes:
+      label: Is GitHub on?
+      description: Settings → GitHub → Show pull requests, in the profile where the bug happens.
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from synthetic state if you can; [contributing](https://github.com/byanthny/stow/blob/main/CONTRIBUTING.md#run-with-synthetic-data) shows how.
+      placeholder: |
+        1. Create a note with Command-N.
+        2. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This report uses only synthetic data, with no private notes, pull request data, or tokens.
+          required: true

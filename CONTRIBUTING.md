@@ -12,7 +12,27 @@ Use Xcode 16.4 or later with its command line tools selected, then run from the 
 ./scripts/build.sh Release
 ```
 
-XcodeGen is only needed when changing targets or dependencies in `project.yml`; keep the checked-in Xcode project in sync. Generate it from a checkout folder named `stow`, because the local package reference takes its name from the folder. Debug builds accept `--stow-testing-state <absolute folder> --stow-demo` to run against synthetic state instead of your own notes.
+XcodeGen is only needed when changing targets or dependencies in `project.yml`; keep the checked-in Xcode project in sync. Generate it from a checkout folder named `stow`, because the local package reference takes its name from the folder.
+
+## Run with synthetic data
+
+Debug builds accept `--stow-testing-state <absolute folder> --stow-demo`. Stow then keeps its data in that folder instead of your own, fills a folder without notes with synthetic notes and pull requests, and doesn't refresh from GitHub. Use a new or disposable folder. Without an absolute path, or with the normal data folder, Stow quits rather than touch your own notes.
+
+In Xcode, choose **Product → Scheme → Edit Scheme…**, then **Run → Arguments**, and add these two entries to **Arguments Passed On Launch**. Xcode saves them in the shared scheme, so don't commit that change.
+
+```text
+--stow-testing-state /tmp/stow-demo
+--stow-demo
+```
+
+From Terminal, build the Debug app and open a new copy with the same arguments:
+
+```sh
+./scripts/build.sh Debug
+open -n build/DerivedData/Debug/Build/Products/Debug/Stow.app --args --stow-testing-state /tmp/stow-demo --stow-demo
+```
+
+Remove the folder to start over. Screenshots for issues and pull requests should come from this synthetic state.
 
 ## Changes
 

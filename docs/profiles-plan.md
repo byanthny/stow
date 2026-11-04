@@ -1,6 +1,6 @@
 # Profiles implementation plan
 
-> For agents: execute this plan task by task with superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkboxes (`- [ ]`) for tracking.
+> **Historical.** Implemented in 0.2.0. This plan is kept as a record of how the work was split; for current behavior, read the [design](profiles.md), [privacy and recovery](privacy.md#profiles), and the code.
 
 **Goal:** Ship the approved [profiles and owner views design](profiles.md): several isolated profiles open side by side in one Stow app, per-profile owner selection and grouping, and a paused profile instead of silent account adoption.
 

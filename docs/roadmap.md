@@ -43,7 +43,7 @@ Work through this queue in order. These are future tasks, not authorization to p
 
 ## 6. Add a small public home
 
-- [ ] Check the app name for conflicts and current domain availability and renewal prices before registration. Candidate research is recorded in the private local handoff, dated 2026-11-03. Prefer an existing domain or a free static-hosting address until a new domain has an approved budget.
+- [ ] Check the app name for conflicts and current domain availability and renewal prices before registration. Candidate research from 2026-11-03 is kept outside the repository. Prefer an existing domain or a free static-hosting address until a new domain has an approved budget.
 - [ ] Prepare the one-page mockup during public-release preparation, then build a small static page with synthetic screenshots, requirements, download links, documentation, and the source link. Default to no backend, account system, analytics, or paid build service.
 - [ ] Point downloads at versioned repository releases instead of duplicating large binaries on the site. Publish and purchase only after explicit approval.
 
