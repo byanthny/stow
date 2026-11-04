@@ -558,6 +558,9 @@ final class ProfileTests: XCTestCase {
 
         // While Stow is inactive no window is key, so only the sessions say which profile is on screen.
         manager.hide(workEntry.id)
+        // When the test host is the active app, as on CI, AppKit makes the remaining board key during the hide,
+        // which records Stow as last active. Mark Work as last active, as it stays while Stow is inactive.
+        work.onActivate?()
         XCTAssertEqual(manager.lastActiveID, workEntry.id)
         XCTAssertTrue(manager.activeSession === main, "Menus act on the profile that shows")
 
@@ -2308,7 +2311,8 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(recorded.count, 2)
 
         // Closing every profile leaves nothing to save, but the quit still records that nothing is open.
-        for id in [workEntry.id, main.entry.id] {
+        // Work closes last: on an active test host, closing Work first would make Stow's board key and last active.
+        for id in [main.entry.id, workEntry.id] {
             let closed = await manager.close(id)
             XCTAssertTrue(closed)
         }
@@ -2327,10 +2331,10 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(Set(next.sessions.keys), [workEntry.id])
 
         // A launch that opened nothing records nothing at quit.
+        stop(next)
         guard case .acquired(let held) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
         else { return XCTFail("The test could not take the profile lock") }
         defer { held.release() }
-        stop(next)
         let blocked = makeManager(folder)
         blocked.reportOpenElsewhere = { _ in }
         try await ProfileCatalog(dataFolder: folder).recordSession(open: [], lastActiveID: main.entry.id)
