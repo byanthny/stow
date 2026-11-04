@@ -228,11 +228,11 @@ pre {
   font-size: 14px;
 }
 
-/* Hero */
+/* Hero: stacked and centered until there's room for two columns */
 
 .hero {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
   gap: 56px;
   padding-block: 48px 80px;
@@ -240,10 +240,13 @@ pre {
 
 .hero-copy {
   display: flex;
-  flex: 1 1 440px;
   flex-direction: column;
+  align-items: center;
   gap: 24px;
+  width: 100%;
+  max-width: 40rem;
   min-width: 0;
+  text-align: center;
 }
 
 .eyebrow {
@@ -273,6 +276,7 @@ h1 {
 .actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
 }
 
@@ -284,10 +288,10 @@ h1 {
 
 .demo {
   display: flex;
-  flex: 1 1 380px;
   flex-direction: column;
   align-items: center;
   gap: 14px;
+  width: 100%;
   min-width: 0;
   margin: 0;
 }
@@ -296,6 +300,27 @@ h1 {
   color: var(--muted);
   font-size: 13px;
   text-align: center;
+}
+
+@media (min-width: 924px) {
+  .hero {
+    flex-direction: row;
+  }
+
+  .hero-copy {
+    flex: 1 1 440px;
+    align-items: stretch;
+    max-width: none;
+    text-align: left;
+  }
+
+  .actions {
+    justify-content: flex-start;
+  }
+
+  .demo {
+    flex: 1 1 380px;
+  }
 }
 
 /* Sections */
@@ -397,6 +422,24 @@ pre {
   text-indent: -2ch;
 }
 
+/* A shell line continuation, shown only where the command can't fit on one line. */
+.cont {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .cont {
+    display: inline;
+  }
+
+  /* Wider and slightly smaller, so the clone URL keeps its own line down to 320 px. */
+  .install-grid .code {
+    margin-inline: -8px;
+    padding: 14px 12px;
+    font-size: min(12px, 3.25vw);
+  }
+}
+
 .tok-mark {
   color: var(--muted-2);
 }
@@ -472,7 +515,8 @@ p kbd {
   align-self: flex-start;
 }
 
-@media (min-width: 720px) {
+/* Two columns start where the GitHub command still fits on one line. */
+@media (min-width: 800px) {
   .install-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -526,6 +570,20 @@ p kbd {
   align-items: center;
   min-height: 44px;
   padding-inline: 4px;
+}
+
+/* Once the footer stacks, both lines sit against the right edge. */
+@media (max-width: 700px) {
+  .footer-row {
+    flex-direction: column;
+    align-items: flex-end;
+    text-align: right;
+  }
+
+  .footer-nav {
+    justify-content: flex-end;
+    margin-right: -4px;
+  }
 }
 
 /* Board demo, a small copy of the app's board window */
@@ -947,6 +1005,11 @@ p kbd {
 
   .site-header {
     padding-block: 12px;
+  }
+
+  .site-header,
+  .site-nav {
+    justify-content: center;
   }
 
   .hero {
