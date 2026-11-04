@@ -294,6 +294,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 backing: .buffered, defer: false)
             window.title = "Stow settings"
             window.isReleasedWhenClosed = false
+            // Reopening Settings brings it to the current desktop instead of switching to its last one.
+            window.collectionBehavior = [.moveToActiveSpace]
             window.contentView = NSHostingView(rootView: SettingsView(store: store))
             window.center()
             settingsWindow = window

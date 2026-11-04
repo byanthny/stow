@@ -78,6 +78,21 @@ final class BoardWindowLevelTests: XCTestCase {
         XCTAssertTrue(pinned.boardAlwaysOnTop)
     }
 
+    func testWindowsFollowTheCurrentDesktopButNotOtherFullScreenApps() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        for panel in [app.board] + Array(app.noteWindows.values) {
+            XCTAssertTrue(panel?.collectionBehavior.contains(.canJoinAllSpaces) == true)
+            XCTAssertFalse(panel?.collectionBehavior.contains(.fullScreenAuxiliary) == true)
+        }
+        app.showSettings()
+        let settings = try XCTUnwrap(NSApp.windows.first { $0.title == "Stow settings" })
+        defer { settings.close() }
+        XCTAssertTrue(settings.collectionBehavior.contains(.moveToActiveSpace))
+    }
+
     private func makeDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "StowBoardLevelTests-\(UUID().uuidString)", isDirectory: true)
