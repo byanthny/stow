@@ -190,8 +190,9 @@ struct BoardView: View {
     private func prSection(_ title: String, section: AttentionSection) -> some View {
         let cards = store.cards(in: section)
         let expanded = expandedSections.contains(section)
-        let listed = SectionCards(cards, layout: store.state.boardLayout, expanded: expanded)
-        let limited = store.state.boardLayout.shownPullRequests(of: cards.count, expanded: false) < cards.count
+        let pins = store.state.pins
+        let listed = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: expanded)
+        let limited = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: false).moreCount > 0
         return pinnedSection(
             title, count: cards.count, id: section.rawValue, collapsible: true,
             summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
@@ -343,19 +344,18 @@ struct SectionCards {
     /// The cards after Show more.
     let moreCount: Int
 
-    init(_ cards: [PullRequestSnapshot], layout: BoardLayout, expanded: Bool) {
-        var remaining = layout.shownPullRequests(of: cards.count, expanded: expanded)
-        moreCount = cards.count - remaining
+    /// Pinned cards always show; the section's limit counts only unpinned cards.
+    init(_ cards: [PullRequestSnapshot], layout: BoardLayout, pins: [PullRequestReference], expanded: Bool) {
         let owners: [(owner: String?, cards: [PullRequestSnapshot])] =
             layout.groupByOwner
             ? groupedByOwner(cards, order: layout.ownerOrder).map { ($0.owner, $0.cards) } : [(nil, cards)]
-        var groups: [Group] = []
-        for (owner, ownerCards) in owners where remaining > 0 {
-            let shown = Array(ownerCards.prefix(remaining))
-            remaining -= shown.count
-            groups.append(Group(owner: owner, count: ownerCards.count, cards: shown))
+        let visible = layout.visibleCards(owners.flatMap { $0.cards }, pins: pins, expanded: expanded)
+        let shownIDs = Set(visible.shown.map(\.id))
+        moreCount = visible.hidden
+        groups = owners.compactMap { owner, ownerCards in
+            let shown = ownerCards.filter { shownIDs.contains($0.id) }
+            return shown.isEmpty ? nil : Group(owner: owner, count: ownerCards.count, cards: shown)
         }
-        self.groups = groups
     }
 }
 

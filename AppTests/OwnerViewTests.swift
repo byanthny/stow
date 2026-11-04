@@ -17,7 +17,7 @@ final class OwnerViewTests: XCTestCase {
         let (store, client) = try await startStore(cards: [review, waiting, pinned]) { $0.pins = [pinned.reference] }
         await store.refresh()
         XCTAssertEqual(store.cards(in: .needsYou).map(\.id), [review.id])
-        XCTAssertEqual(store.cards(in: .waiting).map(\.id), [waiting.id, pinned.id])
+        XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinned.id, waiting.id], "Pinned cards come first")
 
         store.setOwnerSelection(OwnerSelection(["acme"]))
         XCTAssertEqual(store.cards(in: .needsYou).map(\.id), [review.id], "Owners match ignoring case")
@@ -307,23 +307,23 @@ final class OwnerViewTests: XCTestCase {
         func numbers(_ listed: SectionCards) -> [[Int]] { listed.groups.map { $0.cards.map(\.reference.number) } }
 
         // Off by default: one list, three cards, and Show 2 more, as before.
-        var listed = SectionCards(waiting, layout: store.state.boardLayout, expanded: false)
+        var listed = SectionCards(waiting, layout: store.state.boardLayout, pins: store.state.pins, expanded: false)
         XCTAssertEqual(listed.groups.map(\.owner), [nil])
         XCTAssertEqual(numbers(listed), [[1, 2, 3]])
         XCTAssertEqual(listed.moreCount, 2)
 
         store.setGroupByOwner(true)
-        listed = SectionCards(waiting, layout: store.state.boardLayout, expanded: false)
+        listed = SectionCards(waiting, layout: store.state.boardLayout, pins: store.state.pins, expanded: false)
         XCTAssertEqual(listed.groups.map(\.owner), ["acme", "beta"])
         XCTAssertEqual(listed.groups.map(\.count), [2, 3], "Each subheading counts its owner's cards in the section")
         XCTAssertEqual(numbers(listed), [[2, 4], [1]], "Cards keep their order within each owner")
         XCTAssertEqual(listed.moreCount, 2, "Show more still counts cards per section")
-        listed = SectionCards(waiting, layout: store.state.boardLayout, expanded: true)
+        listed = SectionCards(waiting, layout: store.state.boardLayout, pins: store.state.pins, expanded: true)
         XCTAssertEqual(numbers(listed), [[2, 4], [1, 3, 5]])
         XCTAssertEqual(listed.moreCount, 0)
 
         store.setOwnerOrder(.mostCards)
-        listed = SectionCards(waiting, layout: store.state.boardLayout, expanded: false)
+        listed = SectionCards(waiting, layout: store.state.boardLayout, pins: store.state.pins, expanded: false)
         XCTAssertEqual(
             listed.groups.map(\.owner), ["beta"], "An owner whose cards are all after Show more waits for it")
         XCTAssertEqual(numbers(listed), [[1, 3, 5]])
@@ -333,6 +333,21 @@ final class OwnerViewTests: XCTestCase {
         let persisted = try await StateRepository(url: store.stateURL).load()
         XCTAssertTrue(persisted.boardLayout.groupByOwner)
         XCTAssertEqual(persisted.boardLayout.ownerOrder, .mostCards)
+    }
+
+    func testPinnedCardsMoveFirstAndStayAboveShowMore() async throws {
+        let cards = (1...5).map { card("acme", "app", $0, "Synthetic card \($0)") }
+        let (store, _) = try await startStore(cards: cards)
+        await store.refresh()
+        XCTAssertEqual(store.cards(in: .waiting).map(\.reference.number), [1, 2, 3, 4, 5])
+
+        store.togglePin(cards[4].reference)
+
+        let waiting = store.cards(in: .waiting)
+        XCTAssertEqual(waiting.map(\.reference.number), [5, 1, 2, 3, 4], "A pinned card moves to the top")
+        let listed = SectionCards(waiting, layout: store.state.boardLayout, pins: store.state.pins, expanded: false)
+        XCTAssertEqual(listed.groups.flatMap { $0.cards.map(\.reference.number) }, [5, 1, 2, 3])
+        XCTAssertEqual(listed.moreCount, 1, "Show more counts only the unpinned cards it hides")
     }
 
     func testAddOwnerTakesOnlyGitHubLoginsAndRefreshesWhenKeepingOnlySelectedOwners() async throws {

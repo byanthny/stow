@@ -394,11 +394,11 @@ final class AppStore {
     /// A section's cards, newest first. The owner selection leaves out other owners' cards, except pinned ones, and
     /// never changes how a card is classified.
     func cards(in section: AttentionSection) -> [PullRequestSnapshot] {
-        visiblePRs.filter {
+        let cards = visiblePRs.filter {
             isShown($0, selection: state.ownerSelection, pins: state.pins)
                 && classify($0, isPinned: state.pins.contains($0.reference)).section == section
         }
-        .sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+        return pinnedFirst(cards, pins: state.pins)
     }
 
     /// Every card the profile knows now: the saved ones, then those kept only in memory.
