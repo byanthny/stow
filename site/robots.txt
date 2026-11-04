@@ -1,2 +1,4 @@
 User-agent: *
 Allow: /
+
+Sitemap: https://stow.byanthny.com/sitemap.xml
