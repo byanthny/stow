@@ -95,8 +95,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Opens a profile from the data folder, the folder holding `stateURL`. Returns false when another process
-    /// holds that profile's lock.
+    /// Opens the profiles of the data folder, the folder holding `stateURL`. Returns false when no profile could
+    /// open because other processes hold their locks.
     @discardableResult
     func prepare(stateURL: URL, isDemo: Bool) async -> Bool {
         let manager = ProfileManager(dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo)
@@ -142,32 +142,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard store?.isLoaded == true else { return .terminateNow }
-        store.isTerminating = true
-        let finalSave = store.terminationSave()
-        Task.detached { [weak self] in
-            let saved = await finalSave.value
+        guard let manager, manager.sessions.values.contains(where: { !$0.isStopped && $0.store.isLoaded }) else {
+            return .terminateNow
+        }
+        let finalSave = manager.terminationSave()
+        let recording = manager.recordSession()
+        Task.detached {
+            let results = await finalSave.value
+            await recording.value
             // AppKit waits in a nested run loop during termination; a main-queue Task
             // can be blocked there. Deliver the reply as a run-loop source instead.
             RunLoop.main.perform(inModes: [.common]) {
                 MainActor.assumeIsolated {
-                    guard let self else {
-                        NSApp.reply(toApplicationShouldTerminate: saved)
-                        return
+                    let failed = Set(results.filter { !$0.value }.keys)
+                    guard !failed.isEmpty else { return NSApp.reply(toApplicationShouldTerminate: true) }
+                    let failedNames = manager.profiles.filter { failed.contains($0.id) }.map(\.name)
+                    let alert = NSAlert()
+                    // A single profile reads as Stow always has; with names showing, it names the failed ones.
+                    alert.messageText = "Some changes could not be saved"
+                    if manager.showsProfileNames, !failedNames.isEmpty {
+                        let names = ListFormatter.localizedString(byJoining: failedNames)
+                        alert.messageText = "Some changes in \(names) could not be saved"
                     }
-                    if saved {
-                        NSApp.reply(toApplicationShouldTerminate: true)
-                    } else {
-                        let alert = NSAlert()
-                        alert.messageText = "Some changes could not be saved"
-                        alert.informativeText =
-                            "Keep Stow open to preserve notes currently in memory, or quit without saving those changes."
-                        alert.addButton(withTitle: "Keep open")
-                        alert.addButton(withTitle: "Quit without saving")
-                        let quit = alert.runModal() == .alertSecondButtonReturn
-                        self.store.isTerminating = quit
-                        NSApp.reply(toApplicationShouldTerminate: quit)
-                    }
+                    alert.informativeText =
+                        "Keep Stow open to preserve notes currently in memory, or quit without saving those changes."
+                    alert.addButton(withTitle: "Keep open")
+                    alert.addButton(withTitle: "Quit without saving")
+                    let quit = alert.runModal() == .alertSecondButtonReturn
+                    if !quit { manager.cancelTermination() }
+                    NSApp.reply(toApplicationShouldTerminate: quit)
                 }
             }
         }

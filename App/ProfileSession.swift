@@ -56,17 +56,27 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         store.onRestoreWindows = { [weak self] in self?.restoreWindows() }
     }
 
-    /// Loads the profile, then shows its board and the notes that were detached.
-    func start() async {
+    /// Loads the profile, then shows its board and the notes that were detached. A profile reopened hidden is
+    /// paused before it loads and keeps its windows out of sight until it shows, except always-on-top notes it
+    /// keeps on screen while hidden.
+    func start(hidden: Bool = false) async {
+        if hidden { store.isPaused = true }
         await store.start()
         // A session stopped while its store loaded opens no windows.
         guard !isStopped else { return }
         isRestoring = true
         createBoard()
-        for note in store.state.notes where note.isDetached { showNote(note.id) }
+        let notes = store.state.notes.filter(\.isDetached).compactMap { notePanel($0.id) }
+        if hidden {
+            isHidden = true
+            hiddenWindows = ownWindows.filter { !staysWhileHidden($0) }
+            for panel in notes where staysWhileHidden(panel) { panel.orderFront(nil) }
+        } else {
+            for panel in notes { panel.makeKeyAndOrderFront(nil) }
+        }
         isRestoring = false
         applyWindowAppearance()
-        showBoard()
+        if !hidden { showBoard() }
     }
 
     /// Closes the profile with a final save: stops the store and closes the windows, then waits for a save still
@@ -112,15 +122,14 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         guard board != nil, !isHidden else { return }
         isHidden = true
         store.isPaused = true
-        let keepsFloatingNotes = store.state.hideKeepsAlwaysOnTopNotes
-        hiddenWindows = ownWindows.filter { window in
-            guard window.isVisible else { return false }
-            if keepsFloatingNotes, let id = (window as? StowPanel)?.noteID, store.note(id)?.isAlwaysOnTop == true {
-                return false
-            }
-            return true
-        }
+        hiddenWindows = ownWindows.filter { $0.isVisible && !staysWhileHidden($0) }
         for window in hiddenWindows { window.orderOut(nil) }
+    }
+
+    /// An always-on-top note stays on screen while its profile hides, when the profile keeps such notes.
+    private func staysWhileHidden(_ window: NSWindow) -> Bool {
+        guard store.state.hideKeepsAlwaysOnTopNotes, let id = (window as? StowPanel)?.noteID else { return false }
+        return store.note(id)?.isAlwaysOnTop == true
     }
 
     /// Brings the profile's windows forward and makes its board key. A hidden profile first gets back the
@@ -140,7 +149,14 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     }
 
     func showNote(_ id: UUID) {
-        guard let note = store.note(id) else { return }
+        guard let panel = notePanel(id) else { return }
+        panel.makeKeyAndOrderFront(nil)
+        if !isRestoring { NSApp.activate(ignoringOtherApps: true) }
+    }
+
+    /// The note's window at the note's level, made the first time it is needed. It is not ordered in.
+    private func notePanel(_ id: UUID) -> StowPanel? {
+        guard let note = store.note(id) else { return nil }
         let panel: StowPanel
         if let existing = noteWindows[id] {
             panel = existing
@@ -159,8 +175,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
-        panel.makeKeyAndOrderFront(nil)
-        if !isRestoring { NSApp.activate(ignoringOtherApps: true) }
+        return panel
     }
 
     func showSettings() {

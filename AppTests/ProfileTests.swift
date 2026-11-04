@@ -849,6 +849,248 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(isHeld(StateLock.acquire(forStateAt: workEntry.folder.appendingPathComponent("state.json"))))
     }
 
+    func testRelaunchRestoresOpenAndHiddenProfiles() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let accessory = ExtensionInstanceState(moduleID: "org.stow.sample", slot: .boardAccessory, isEnabled: true)
+        let floating = Note(markdown: "Synthetic floating note", isDetached: true, isAlwaysOnTop: true)
+        let ordinary = Note(markdown: "Synthetic ordinary note", isDetached: true, isAlwaysOnTop: false)
+        try await seed(folder) { state in
+            state.notes = [floating, ordinary]
+            state.hideKeepsAlwaysOnTopNotes = true
+            state.extensionInstances = [accessory]
+        }
+        let workEntry = try await addProfile("Work", in: folder)
+        let homeEntry = try await addProfile("Home", in: folder)
+        let first = makeManager(folder)
+        defer { stop(first) }
+        let started = await first.start()
+        XCTAssertTrue(started)
+        let stowID = try XCTUnwrap(first.activeSession).entry.id
+        // Home opens and closes again, then a switch to Work hides the first profile.
+        let openedHome = await first.open(homeEntry.id)
+        XCTAssertTrue(openedHome)
+        let closedHome = await first.close(homeEntry.id)
+        XCTAssertTrue(closedHome)
+        await first.switchTo(workEntry.id)
+        XCTAssertEqual(first.sessions[stowID]?.isHidden, true)
+        XCTAssertEqual(first.lastActiveID, workEntry.id)
+        await quit(first)
+        let index = try await ProfileCatalog(dataFolder: folder).load().index
+        XCTAssertEqual(index.open, [.init(id: stowID, isHidden: true), .init(id: workEntry.id, isHidden: false)])
+        XCTAssertEqual(index.lastActiveID, workEntry.id)
+
+        let provider = RecordingAccessoryProvider()
+        let manager = makeManager(folder, accessoryProviders: [provider])
+        defer { stop(manager) }
+        let restarted = await manager.start()
+        XCTAssertTrue(restarted)
+        XCTAssertEqual(Set(manager.sessions.keys), [stowID, workEntry.id])
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        XCTAssertFalse(work.isHidden)
+        assertForward(work, in: manager)
+        let stow = try XCTUnwrap(manager.sessions[stowID])
+        let stowWindows = windows(of: stow)
+        XCTAssertEqual(stowWindows.count, 3, "The board and both detached notes")
+        XCTAssertTrue(stow.isHidden)
+        XCTAssertTrue(stow.store.isPaused)
+        // As when it hid: the board and the ordinary note are out of sight, and the floating note it keeps stays.
+        XCTAssertFalse(stow.board.isVisible)
+        XCTAssertEqual(stow.noteWindows[ordinary.id]?.isVisible, false)
+        let floatingWindow = try XCTUnwrap(stow.noteWindows[floating.id])
+        XCTAssertTrue(floatingWindow.isVisible)
+        XCTAssertEqual(floatingWindow.level, .floating)
+        XCTAssertFalse(isHeld(StateLock.acquire(forStateAt: homeEntry.folder.appendingPathComponent("state.json"))))
+        // Paused from the start, the hidden profile runs no accessory until it shows.
+        try await Task.sleep(for: .milliseconds(300))
+        let startedWhileHidden = await provider.startedIDs
+        XCTAssertEqual(startedWhileHidden, [])
+
+        manager.show(stowID)
+        XCTAssertFalse(stow.isHidden)
+        XCTAssertFalse(stow.store.isPaused)
+        XCTAssertTrue(stowWindows.allSatisfy(\.isVisible))
+        let startedOnShow = await waitUntil { await provider.startedIDs == [accessory.id] }
+        XCTAssertTrue(startedOnShow)
+    }
+
+    func testLaunchWithNothingVisibleShowsLastActive() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let first = makeManager(folder)
+        defer { stop(first) }
+        let started = await first.start()
+        XCTAssertTrue(started)
+        let stowID = try XCTUnwrap(first.activeSession).entry.id
+        let opened = await first.open(workEntry.id)
+        XCTAssertTrue(opened)
+        // Hiding both leaves nothing on screen, and Work stays the most recently active profile.
+        first.hide(stowID)
+        first.hide(workEntry.id)
+        XCTAssertEqual(first.lastActiveID, workEntry.id)
+        await quit(first)
+
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let restarted = await manager.start()
+        XCTAssertTrue(restarted)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        XCTAssertFalse(work.isHidden)
+        XCTAssertFalse(work.store.isPaused)
+        assertForward(work, in: manager)
+        let stow = try XCTUnwrap(manager.sessions[stowID])
+        XCTAssertTrue(stow.isHidden)
+        XCTAssertFalse(stow.board.isVisible)
+        stop(manager)
+
+        // Without a most recently active profile the first one shows; a closed most recent one opens and shows.
+        let scenarios: [(open: [ProfileIndex.OpenProfile], lastActiveID: UUID?, shown: UUID)] = [
+            ([.init(id: stowID, isHidden: true), .init(id: workEntry.id, isHidden: true)], nil, stowID),
+            ([.init(id: stowID, isHidden: true)], workEntry.id, workEntry.id),
+        ]
+        for scenario in scenarios {
+            try await ProfileCatalog(dataFolder: folder).recordSession(
+                open: scenario.open, lastActiveID: scenario.lastActiveID)
+            let next = makeManager(folder)
+            defer { stop(next) }
+            let launched = await next.start()
+            XCTAssertTrue(launched)
+            XCTAssertEqual(Set(next.sessions.keys), [stowID, workEntry.id])
+            let shown = try XCTUnwrap(next.sessions[scenario.shown])
+            XCTAssertFalse(shown.isHidden)
+            assertForward(shown, in: next)
+            for session in next.sessions.values where session !== shown {
+                XCTAssertTrue(session.isHidden, session.entry.name)
+                XCTAssertFalse(session.board.isVisible, session.entry.name)
+            }
+        }
+    }
+
+    func testFirstLaunchAfterUpgradeOpensOnlyTheFirstProfile() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        // A data folder saved by a build without profiles: no index and no identity file.
+        try await seed(folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertTrue(session.entry.isDataFolder)
+        let note = try XCTUnwrap(session.store.state.notes.first)
+        session.store.editNote(note.id, markdown: "Synthetic edit saved at quit")
+        // Quitting saves the profile and records nothing, so the folder stays as an older build expects it.
+        await quit(manager)
+        let saved = try await StateRepository(url: folder.appendingPathComponent("state.json")).load()
+        XCTAssertEqual(saved.notes.map(\.markdown), ["Synthetic edit saved at quit"])
+        for name in [ProfileIndex.filename, ProfileIdentity.filename] {
+            XCTAssertFalse(exists(name, in: folder), "\(name) must not be written")
+        }
+
+        // A profile folder copied in beside it, still without an index, stays closed.
+        let copiedID = try await addArrival(in: folder, state: AppState())
+        let next = makeManager(folder)
+        defer { stop(next) }
+        let restarted = await next.start()
+        XCTAssertTrue(restarted)
+        XCTAssertEqual(next.profiles.count, 2)
+        XCTAssertEqual(next.sessions.count, 1)
+        XCTAssertEqual(next.activeSession?.entry.isDataFolder, true)
+        XCTAssertNil(next.sessions[copiedID])
+        // With only the data folder profile open there is still nothing to record.
+        await quit(next)
+        XCTAssertFalse(exists(ProfileIndex.filename, in: folder))
+    }
+
+    func testKeepOpenAfterPartialQuitFailureKeepsEveryProfileWritable() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        let workNote = work.store.addNote("Synthetic work note")
+        let workSaved = await work.store.flush()
+        XCTAssertTrue(workSaved)
+        // Work's notes folder turns read-only, so its final save fails while the first profile's succeeds.
+        let workNotes = work.store.notesDirectory
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: workNotes.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workNotes.path) }
+        work.store.editNote(workNote, markdown: "Synthetic work edit kept in memory")
+        let mainNote = try XCTUnwrap(main.store.state.notes.first)
+        main.store.editNote(mainNote.id, markdown: "Synthetic edit saved at quit")
+
+        let results = await manager.terminationSave().value
+        XCTAssertEqual(results, [main.entry.id: true, workEntry.id: false])
+        let savedAtQuit = try await StateRepository(url: main.store.stateURL).load()
+        XCTAssertEqual(savedAtQuit.notes.first { $0.id == mainNote.id }?.markdown, "Synthetic edit saved at quit")
+        manager.cancelTermination()
+        XCTAssertFalse(main.store.isTerminating)
+        XCTAssertFalse(work.store.isTerminating)
+
+        // The first profile's final save closed its repository, and it still saves afterwards.
+        let added = main.store.addNote("Synthetic note written after Keep open")
+        let flushed = await main.store.flush()
+        XCTAssertTrue(flushed)
+        let mainState = try await StateRepository(url: main.store.stateURL).load()
+        XCTAssertEqual(mainState.notes.first { $0.id == added }?.markdown, "Synthetic note written after Keep open")
+        // Later edits save on their own again, without a flush.
+        main.store.editNote(mainNote.id, markdown: "Synthetic edit saved after a pause")
+        let mainFile = main.store.notesDirectory.appendingPathComponent("\(mainNote.id.uuidString).md")
+        let savedAfterPause = await waitUntil {
+            (try? String(contentsOf: mainFile, encoding: .utf8)) == "Synthetic edit saved after a pause"
+        }
+        XCTAssertTrue(savedAfterPause)
+
+        // Work keeps its edit in memory and saves once its folder is writable again.
+        XCTAssertEqual(work.store.note(workNote)?.markdown, "Synthetic work edit kept in memory")
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workNotes.path)
+        let workFlushed = await work.store.flush()
+        XCTAssertTrue(workFlushed)
+        let workState = try await StateRepository(url: work.store.stateURL).load()
+        XCTAssertEqual(workState.notes.first { $0.id == workNote }?.markdown, "Synthetic work edit kept in memory")
+    }
+
+    func testRelaunchLeavesAProfileOpenElsewhereClosed() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let catalog = ProfileCatalog(dataFolder: folder)
+        let listed = try await catalog.load().profiles
+        let stowID = try XCTUnwrap(listed.first(where: \.isDataFolder)).id
+        // Work was the only profile on screen at quit, and another copy of Stow holds it now.
+        try await catalog.recordSession(
+            open: [.init(id: stowID, isHidden: true), .init(id: workEntry.id, isHidden: false)],
+            lastActiveID: workEntry.id)
+        let workState = workEntry.folder.appendingPathComponent("state.json")
+        guard case .acquired(let held) = StateLock.acquire(forStateAt: workState) else {
+            return XCTFail("The test could not take the profile lock")
+        }
+        defer { held.release() }
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportOpenElsewhere = { reports.names.append($0.name) }
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        XCTAssertNil(manager.sessions[workEntry.id])
+        XCTAssertEqual(reports.names, ["Work"])
+        // Nothing else would show, so the first profile shows although it was hidden.
+        let stow = try XCTUnwrap(manager.sessions[stowID])
+        XCTAssertFalse(stow.isHidden)
+        assertForward(stow, in: manager)
+    }
+
     // MARK: helpers
 
     /// A manager whose questions fail the test instead of opening a modal alert.
@@ -881,6 +1123,15 @@ final class ProfileTests: XCTestCase {
     /// Closes each session's windows and releases its lock.
     private func stop(_ manager: ProfileManager) {
         for session in manager.sessions.values { session.stop() }
+    }
+
+    /// Quits as the app does: records the open profiles, saves each one for the last time, then releases the locks.
+    private func quit(_ manager: ProfileManager, file: StaticString = #filePath, line: UInt = #line) async {
+        await manager.recordSession().value
+        let results = await manager.terminationSave().value
+        XCTAssertEqual(Set(results.keys), Set(manager.sessions.keys), file: file, line: line)
+        XCTAssertTrue(results.values.allSatisfy { $0 }, "Every profile saves at quit", file: file, line: line)
+        stop(manager)
     }
 
     /// The board, then detached notes in a stable order, then Settings when it exists.

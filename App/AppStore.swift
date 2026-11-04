@@ -68,6 +68,10 @@ final class AppStore {
     @ObservationIgnored private var persistenceTask: Task<Bool, Never>?
     @ObservationIgnored private var restoreTask: Task<Bool, Never>?
     @ObservationIgnored private var recoveryTask: Task<Void, Never>?
+    /// The final save of the quit in progress.
+    @ObservationIgnored private var terminationTask: Task<Bool, Never>?
+    /// Reopens the repository after a quit the person cancelled. Writes wait for it.
+    @ObservationIgnored private var reopenTask: Task<Void, Never>?
     @ObservationIgnored private var notesPresenter: NotesFolderPresenter?
     @ObservationIgnored private var notesWatcher: NotesFolderWatcher?
     @ObservationIgnored private var changeRevision: UInt64 = 0
@@ -622,6 +626,8 @@ final class AppStore {
             guard let self else { return false }
             defer { persistenceTask = nil }
             repeat {
+                // A repository closed by a quit the person cancelled opens again before the next write.
+                if let reopenTask { await reopenTask.value }
                 // A store stopped between writes leaves the rest to its final save.
                 guard !isStopped else { return false }
                 let revision = changeRevision
@@ -685,18 +691,39 @@ final class AppStore {
         }
     }
 
+    /// The final save at quit, from the state in memory now. From here on edits schedule no saves. A save that
+    /// succeeds closes the repository, so a save still running cannot write an older state over it.
     func terminationSave() -> Task<Bool, Never> {
+        isTerminating = true
         saveTask?.cancel()
         let snapshot = state
         let deletions = deletedNoteIDs
         let writer = repository
-        let blocked = storageNeedsRecovery || isRestoringBackup || isStopped
-        return Task.detached {
+        let reopening = reopenTask
+        // An empty state saved before the profile loads would delete its notes.
+        let blocked = !isLoaded || storageNeedsRecovery || isRestoringBackup || isStopped
+        let save = Task.detached {
             guard !blocked else { return false }
+            // A quit cancelled before this one may still be reopening the repository.
+            await reopening?.value
             do {
                 try await writer.saveAndClose(snapshot, deletedNoteIDs: deletions)
                 return true
             } catch { return false }
+        }
+        terminationTask = save
+        return save
+    }
+
+    /// Undoes a quit the person cancelled: edits schedule saves again, and a repository the final save closed
+    /// opens again before the next write, so the profile never silently stops saving.
+    func cancelTermination() {
+        isTerminating = false
+        guard let save = terminationTask else { return }
+        terminationTask = nil
+        let writer = repository
+        reopenTask = Task.detached {
+            if await save.value { await writer.reopen() }
         }
     }
 
@@ -711,6 +738,7 @@ final class AppStore {
         if let restoreTask { _ = await restoreTask.value }
         if let recoveryTask { await recoveryTask.value }
         if let persistenceTask { _ = await persistenceTask.value }
+        if let reopenTask { await reopenTask.value }
         guard isStopped, isLoaded, !storageNeedsRecovery, !isRestoringBackup else { return false }
         do {
             try await repository.saveAndClose(state, deletedNoteIDs: deletedNoteIDs)

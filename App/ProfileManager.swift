@@ -78,18 +78,52 @@ final class ProfileManager {
         sessions.values.first { !$0.isStopped && $0.owns(window) }
     }
 
-    /// Opens the data folder profile, or the first listed profile when the data folder holds none. Without any
-    /// profile, as in a new installation, the data folder becomes the first profile when it first saves.
-    /// Returns false when that profile is open in another process.
+    /// Reopens the profiles that were open at quit, each hidden or shown as it was. If none would show, the most
+    /// recently active profile shows, else the first one reopened, else the data folder profile (the first listed
+    /// one when the data folder holds none), which is all that opens without an index, as after the upgrade.
+    /// Without any profile, as in a new installation, the data folder becomes the first profile when it first
+    /// saves. A profile another process holds stays closed, and Stow says so once another profile is open.
+    /// Returns false when no profile could open.
     func start() async -> Bool {
         // When the catalog cannot read the folder, the data folder opens and its store reports the problem.
         let snapshot = try? await catalog.load()
         alwaysShowsProfileName = snapshot?.index.alwaysShowProfileName ?? false
         profiles = snapshot?.profiles ?? []
         if profiles.isEmpty { profiles = [await catalog.dataFolderEntry()] }
-        let first = profiles.first(where: \.isDataFolder) ?? profiles[0]
-        // When another process holds this profile, the caller hands over to it, so nothing is said here.
-        return await serialized(first.id) { await self.openSession(first) }
+        // An absent index, or one that needs a reset, records no open profiles.
+        let recorded = snapshot?.index ?? ProfileIndex()
+        var openElsewhere: [ProfileEntry] = []
+        for entry in profiles {
+            guard let item = recorded.open.first(where: { $0.id == entry.id }) else { continue }
+            let opened = await serialized(entry.id) { await self.openSession(entry, hidden: item.isHidden) }
+            if !opened { openElsewhere.append(entry) }
+        }
+        if !sessions.values.contains(where: { !$0.isHidden }) {
+            let candidates = [
+                profiles.first { $0.id == recorded.lastActiveID },
+                profiles.first { sessions[$0.id] != nil },
+                profiles.first(where: \.isDataFolder) ?? profiles.first,
+            ]
+            for entry in candidates.compactMap({ $0 }) where !openElsewhere.contains(where: { $0.id == entry.id }) {
+                if let session = sessions[entry.id] {
+                    session.show()
+                    break
+                }
+                // A profile tried here was not open at quit, so a refusal goes unsaid; if none opens, the caller
+                // hands over to the process holding them.
+                let opened = await serialized(entry.id) { await self.openSession(entry) }
+                if opened { break }
+            }
+        }
+        let shown = profiles.compactMap { sessions[$0.id] }.filter { !$0.isHidden }
+        guard let front = shown.first(where: { $0.entry.id == recorded.lastActiveID }) ?? shown.first else {
+            return false
+        }
+        lastActiveID = front.entry.id
+        // The most recently active profile on screen comes forward, as it was at quit.
+        if shown.count > 1 { front.show() }
+        for entry in openElsewhere { reportOpenElsewhere(entry) }
+        return true
     }
 
     /// Opens a profile, or brings its windows forward when it is already open. Returns false, after saying so,
@@ -149,8 +183,46 @@ final class ProfileManager {
         }
     }
 
-    /// Takes the profile's lock and opens its windows. Returns false when another process holds the lock.
-    private func openSession(_ entry: ProfileEntry) async -> Bool {
+    /// Saves every open profile for the last time, each on its own, and gives each one's result by profile ID.
+    /// Every profile's state is captured before this returns, and the saves need nothing from the main actor,
+    /// which AppKit can keep waiting while it decides whether to quit. A profile still loading has nothing to save.
+    func terminationSave() -> Task<[UUID: Bool], Never> {
+        let saves = sessions.values.filter { !$0.isStopped && $0.store.isLoaded }
+            .map { ($0.entry.id, $0.store.terminationSave()) }
+        return Task.detached {
+            var results: [UUID: Bool] = [:]
+            for (id, save) in saves { results[id] = await save.value }
+            return results
+        }
+    }
+
+    /// Keeps Stow running after a quit that could not save every profile. Every open profile saves again,
+    /// including one whose final save already closed its repository.
+    func cancelTermination() {
+        for session in sessions.values where !session.isStopped { session.store.cancelTermination() }
+    }
+
+    /// Writes which profiles are open, which of them are hidden, and the most recently active profile, for the
+    /// next launch. With no index and only the data folder profile open there is nothing to record, so nothing is
+    /// written; an index that needs a reset is left as it is. The work needs nothing from the main actor.
+    @discardableResult
+    func recordSession() -> Task<Void, Never> {
+        let open = profiles.compactMap { entry -> ProfileIndex.OpenProfile? in
+            guard let session = sessions[entry.id], !session.isStopped else { return nil }
+            return ProfileIndex.OpenProfile(id: entry.id, isHidden: session.isHidden)
+        }
+        let needsIndex = sessions.values.contains { !$0.isStopped && !$0.entry.isDataFolder }
+        let lastActiveID = lastActiveID
+        let catalog = catalog
+        return Task.detached {
+            if !needsIndex, (try? await catalog.load())?.indexStatus != .loaded { return }
+            try? await catalog.recordSession(open: open, lastActiveID: lastActiveID)
+        }
+    }
+
+    /// Takes the profile's lock and opens its windows, out of sight when it reopens hidden. Returns false when
+    /// another process holds the lock.
+    private func openSession(_ entry: ProfileEntry, hidden: Bool = false) async -> Bool {
         // A profile open here already holds its lock, and a second lock on the same file would be refused.
         if sessions[entry.id] != nil { return true }
         guard
@@ -161,8 +233,8 @@ final class ProfileManager {
         session.showsName = showsProfileNames
         session.onActivate = { [weak self] in self?.lastActiveID = entry.id }
         sessions[entry.id] = session
-        lastActiveID = entry.id
-        await session.start()
+        if !hidden { lastActiveID = entry.id }
+        await session.start(hidden: hidden)
         // Seen only once its arrival settings are on disk; otherwise the copied settings would apply next time.
         let store = session.store
         if entry.isArrival, !session.isStopped, store.saveError == nil, !store.storageNeedsRecovery {
