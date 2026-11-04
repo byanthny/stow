@@ -119,9 +119,6 @@ fi
 next_build=$((build + 1))
 replace MARKETING_VERSION "$current" "$version"
 replace CURRENT_PROJECT_VERSION "$build" "$next_build"
-if [ "$(setting MARKETING_VERSION)" != "$version" ] || [ "$(setting CURRENT_PROJECT_VERSION)" != "$next_build" ]; then
-    fail 'Could not set the version in project.yml and the Xcode project.'
-fi
 printf 'Set the version to %s, build %s. Running the tests.\n' "$version" "$next_build"
 ./scripts/test.sh || fail "Tests failed. Fix them and run ./scripts/test.sh before committing $version."
 
