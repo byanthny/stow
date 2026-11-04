@@ -7,6 +7,10 @@
         func runSmokeTest() async {
             var checks: [String: Bool] = [:]
             let directory = store.stateURL.deletingLastPathComponent()
+            // The launch holds the data folder's instance lock and the open profile's lock while it runs.
+            checks["launchHoldsLocks"] =
+                isHeld(StateLock.acquire(named: StateLock.instanceFilename, in: directory))
+                && isHeld(StateLock.acquire(forStateAt: store.stateURL))
             try? await Task.sleep(for: .milliseconds(500))
             // README captures use this same fresh synthetic state, before any acceptance mutations.
             store.toggleSection(AttentionSection.waiting.rawValue)
@@ -67,9 +71,21 @@
                     to: directory.appendingPathComponent("note.png"))
             }
             _ = await store.flush()
+            // A single profile looks as it did before profiles: no index or identity file is written.
+            checks["singleProfileWritesNoIndex"] =
+                manager?.sessions.count == 1
+                && [ProfileIndex.filename, ProfileIdentity.filename].allSatisfy {
+                    !FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
+                }
             let data = try? JSONSerialization.data(withJSONObject: checks, options: [.prettyPrinted, .sortedKeys])
             try? data?.write(to: directory.appendingPathComponent("smoke-results.json"))
             DispatchQueue.main.async { NSApp.terminate(nil) }
+        }
+
+        /// A second lock on the same file is refused even within one process, so a lock held here reads as held.
+        private func isHeld(_ outcome: StateLock.Outcome) -> Bool {
+            if case .heldByAnotherProcess = outcome { return true }
+            return false
         }
 
         private func capture(_ content: NSView?, to url: URL) {

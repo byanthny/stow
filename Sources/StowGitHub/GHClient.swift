@@ -354,10 +354,10 @@ public actor GHClient: GitHubClient {
         guard let login = first.data["viewer"]["login"].string, let viewerID = first.data["viewer"]["id"].string else {
             throw GitHubError.invalidResponse
         }
-        // Discard the prior account's cache before resolving old refs, constructing unavailable
-        // fallbacks, retaining absent cards or carrying lazy details into new snapshots.
-        let safePrevious =
-            expectedViewerLogin.map { $0.caseInsensitiveCompare(login) == .orderedSame } == false ? [] : previous
+        // Another account's answer is never used: stop before resolving old refs or fetching more.
+        if let expectedViewerLogin, expectedViewerLogin.caseInsensitiveCompare(login) != .orderedSame {
+            throw GitHubError.accountMismatch(actualLogin: login)
+        }
         var complete = !first.hasErrors
         var nodes: [String: (GraphQLValue, Bool)] = [:]
         func collect(_ values: [GraphQLValue], valid: Bool, authored: Bool = false) {
@@ -414,7 +414,7 @@ public actor GHClient: GitHubClient {
             } while true
 
             let references = Dictionary(
-                (pins + safePrevious.map(\.reference)).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }
+                (pins + previous.map(\.reference)).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }
             ).values.sorted { $0.id < $1.id }
             for start in stride(from: 0, to: references.count, by: 25) {
                 let batch = Array(references[start..<min(start + 25, references.count)])
@@ -448,9 +448,9 @@ public actor GHClient: GitHubClient {
         } catch is CancellationError { throw CancellationError() } catch { complete = false }
 
         var snapshots: [PullRequestSnapshot] = []
-        let oldByID = Dictionary(safePrevious.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let oldByID = Dictionary(previous.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let refsByID = Dictionary(
-            (pins + safePrevious.map(\.reference)).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            (pins + previous.map(\.reference)).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         for id in nodes.keys.sorted() {
             guard let (node, valid) = nodes[id] else { continue }
             if node["_unavailable"].bool == true {
@@ -505,7 +505,7 @@ public actor GHClient: GitHubClient {
         // On an incomplete fetch, absence conveys nothing. Retain previous data, marked stale.
         if !complete {
             let present = Set(snapshots.map(\.id))
-            for var old in safePrevious where !present.contains(old.id) {
+            for var old in previous where !present.contains(old.id) {
                 old.isStale = true
                 old.readinessIsComplete = false
                 snapshots.append(old)

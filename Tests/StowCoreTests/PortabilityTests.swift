@@ -62,6 +62,40 @@ final class PortabilityTests: XCTestCase {
         XCTAssertEqual(try StowBackup.encode(original, createdAt: time), data)
     }
 
+    func testArrivalTurnsOffGitHubAccessoriesAndGHLocation() {
+        var state = fixture()
+        state.githubEnabled = true
+        state.ownerSelection = OwnerSelection(["acme"])
+        let arrived = state.preparedForArrival()
+        XCTAssertFalse(arrived.githubEnabled)
+        XCTAssertNil(arrived.ghExecutablePath)
+        XCTAssertFalse(arrived.extensionInstances.isEmpty)
+        XCTAssertTrue(arrived.extensionInstances.allSatisfy { !$0.isEnabled })
+        var expected = state
+        expected.githubEnabled = false
+        expected.ghExecutablePath = nil
+        expected.extensionInstances[0].isEnabled = false
+        XCTAssertEqual(arrived, expected)
+    }
+
+    func testBackupCarriesOwnerPreferences() throws {
+        var state = fixture()
+        state.ownerSelection = OwnerSelection(["Acme", "beta"])
+        state.keepsOnlySelectedOwners = true
+        state.hideKeepsAlwaysOnTopNotes = true
+        state.hidesWhenSwitchingAway = false
+        state.boardLayout.groupByOwner = true
+        state.boardLayout.ownerOrder = .mostCards
+        state.boardLayout.alwaysShowOwnerControl = true
+        state.boardLayout.hidesNotesForHiddenOwners = true
+        let restored = try StowBackup.decode(StowBackup.encode(state, createdAt: time))
+        XCTAssertEqual(restored.ownerSelection.owners, ["Acme", "beta"])
+        XCTAssertTrue(restored.keepsOnlySelectedOwners)
+        XCTAssertTrue(restored.hideKeepsAlwaysOnTopNotes)
+        XCTAssertFalse(restored.hidesWhenSwitchingAway)
+        XCTAssertEqual(restored.boardLayout, state.boardLayout)
+    }
+
     func testMarkdownExportPreservesExactUTF8WithoutFrontmatterAndStrictImportRoundTrips() throws {
         let note = fixture().notes[0]
         let file = try XCTUnwrap(MarkdownTransfer.files(for: [note]).first)

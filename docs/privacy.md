@@ -2,7 +2,19 @@
 
 ## Local data
 
-Stow stores its local setup in `~/Library/Application Support/Stow/`. `state.json` is a metadata index containing note links, window state, settings, pins, dismissals, the last connected login, accessory configurations, and cached pull-request metadata and expanded details. It points to the current managed notes folder; note bodies are separate plaintext `<UUID>.md` files. New setups use `notes/`; restores can select a versioned `notes-<UUID>/` folder. A private `.stow.lock` file lets only one Stow process write this data at a time; a second copy hands over to the running one.
+Stow stores its local setup in `~/Library/Application Support/Stow/`. `state.json` is a metadata index containing note links, window state, settings, pins, dismissals, the last connected login, accessory configurations, and cached pull-request metadata and expanded details. It points to the current managed notes folder; note bodies are separate plaintext `<UUID>.md` files. New setups use `notes/`; restores can select a versioned `notes-<UUID>/` folder. A private `.stow.lock` file lets only one Stow process write a profile's data at a time. A separate `.stow-app.lock` decides whether a second launch hands over to the running copy.
+
+## Profiles
+
+The folder above is the first profile, named "Stow". Additional profiles live in `profiles/<UUID>/` inside it, each with its own `state.json`, notes, `.stow.lock`, and backups. A profile folder can hold an `identity.json` with its name, color, and optional icon. A small `profiles.json` index records profile order, which profiles were open at quit, and display settings; it holds no notes, cards, or account data. A `.stow-app.lock` file lets only one Stow process run at a time, and each profile has its own lock.
+
+Profiles organize work; they are not a security boundary. Every profile lives in the same macOS account, and anything with access to that account can read all of them. Profile names appear in window titles, which apps with screen-recording or accessibility access can read.
+
+Deleting a profile moves its folder to the Trash, where it stays readable until you empty the Trash. Stow never deletes profile data outright.
+
+A profile's backup contains only that profile, but it includes cached cards from every owner the account can see. Turn on Settings → Board → **Keep only selected owners on disk** to leave other owners' cards out of the profile's files and future backups. Backups saved before you turned it on still contain them. Restoring a backup on another Mac can otherwise carry private pull-request titles there. Dismissals stay either way: `state.json` and backups keep each dismissed pull request's ID, which names its owner and repository, including other owners'. Opening the profile in an older build of Stow turns the setting off.
+
+Every profile uses the account `gh` is signed in as. If a refresh answers as a different account, Stow discards the result, pauses that profile's GitHub use, and asks before clearing its cached cards. A new profile, or a profile folder Stow has not seen before, starts with GitHub and accessories off.
 
 Use Settings → **Show data folder**, **Open notes folder**, or a note's **Show Markdown file** action to reveal the relevant location. Do not manually rename managed note files. Private repository titles, comments, branch names, note contents, and module settings can remain on disk, including in retained backups.
 
@@ -10,7 +22,7 @@ There is no analytics, telemetry, cloud sync, or Stow account. Notes are not sen
 
 The JSON index and Markdown files are not application-encrypted. New storage directories use owner-only permissions, and files are created owner-readable and owner-writable before receiving bytes. Existing directory permissions are preserved. System backups, other software with account access, external editors, and trusted accessories may still access local data.
 
-Turning off GitHub hides cards and stops new refreshes without erasing the cache. Changing accounts clears the previous account's cache after a successful refresh; personal notes remain. Do not share the data folder or state index when reporting a problem.
+Turning off GitHub hides cards and stops new refreshes without erasing the cache. If GitHub answers as a different account, the profile pauses and keeps the old cards marked stale; choosing **Use X here** clears that profile's cached cards, details, and dismissals, and personal notes and pins remain. Do not share the data folder or state index when reporting a problem.
 
 ## Credentials and trusted code
 

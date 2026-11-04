@@ -65,6 +65,8 @@ public enum GitHubError: Error, LocalizedError, Sendable, Equatable {
     case executableNotFound, authenticationRequired, requestFailed, invalidResponse, timedOut, unavailable,
         unsupportedHost
     case rateLimited(until: Date)
+    /// `gh` answered as another account than the profile uses.
+    case accountMismatch(actualLogin: String)
     public var errorDescription: String? {
         switch self {
         case .executableNotFound: "GitHub CLI was not found. Install gh or choose its executable in settings."
@@ -75,6 +77,7 @@ public enum GitHubError: Error, LocalizedError, Sendable, Equatable {
         case .timedOut: "GitHub took too long to respond. Try again later."
         case .unavailable: "This pull request is unavailable or you do not have access."
         case .unsupportedHost: "Stow currently supports github.com pull requests."
+        case .accountMismatch: "GitHub is signed in as a different account than this profile uses."
         case .rateLimited(let date):
             "GitHub requests are paused until \(date.formatted(date: .omitted, time: .standard))."
         }

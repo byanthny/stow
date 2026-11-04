@@ -55,4 +55,22 @@ final class AppearanceIntegrationTests: XCTestCase {
 
         XCTAssertEqual(editor.string, "Synthetic")
     }
+
+    func testThemesDoNotBleedBetweenStores() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = AppStore(stateURL: root.appendingPathComponent("a/state.json"))
+        let b = AppStore(stateURL: root.appendingPathComponent("b/state.json"))
+        var dark = AppearanceSettings.default
+        dark.colorScheme = .dark
+        var light = AppearanceSettings.default
+        light.colorScheme = .light
+
+        XCTAssertTrue(a.applyAppearance(dark))
+        XCTAssertTrue(b.applyAppearance(light))
+
+        XCTAssertEqual(a.theme.snapshot.colorScheme, .dark)
+        XCTAssertEqual(b.theme.snapshot.colorScheme, .light)
+        XCTAssertNotEqual(a.theme.snapshot, b.theme.snapshot)
+    }
 }

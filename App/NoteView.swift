@@ -4,29 +4,40 @@ import SwiftUI
 struct NoteView: View {
     @Bindable var store: AppStore
     let noteID: UUID
+    @Environment(\.stowTheme) private var theme
+    @Environment(\.windowChrome) private var chrome
     var detached = false
+    /// A detached note's profile. Its color shows as a thin accent and its name in the title area once profile
+    /// names show.
+    var profile: ProfileHandle?
     /// Board notes can fold back into a one-line row.
     var onCollapse: (() -> Void)?
     @State private var isPreview = false
+    /// Only a detached note's header shares its window's title bar row.
+    private var headerChrome: WindowChrome { detached ? chrome : WindowChrome() }
 
     var body: some View {
         if let note = store.note(noteID) {
+            let identity = detached ? profile.flatMap { $0.showsIdentity ? $0.entry : nil } : nil
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     if let onCollapse {
                         Button(action: onCollapse) {
-                            Image(systemName: "chevron.down").font(.stow(size: 8, weight: .semibold)).frame(width: 9)
-                        }.buttonStyle(.plain).foregroundStyle(Color.stowMuted)
+                            Image(systemName: "chevron.down").font(theme.font(size: 8, weight: .semibold))
+                                .frame(width: 9)
+                        }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                             .accessibilityLabel("Collapse note").help("Collapse note")
                     }
-                    Label(detached ? "Note" : "Markdown", systemImage: "note.text")
-                        .font(.stow(size: 10, weight: .medium)).foregroundStyle(Color.stowMuted)
+                    Label(identity?.name ?? (detached ? "Note" : "Markdown"), systemImage: "note.text")
+                        .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
                     Spacer(minLength: 0)
                     Button(isPreview ? "Edit" : "Preview") { isPreview.toggle() }
-                        .buttonStyle(.plain).font(.stow(size: 10, weight: .medium)).foregroundStyle(Color.stowMuted)
+                        .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
                         .accessibilityIdentifier("note.previewToggle")
                     if detached {
-                        QuietIconButton(symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top") {
+                        QuietIconButton(
+                            symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top", scale: .small
+                        ) {
                             store.toggleAlwaysOnTop(noteID)
                         }
                     } else {
@@ -36,17 +47,18 @@ struct NoteView: View {
                     }
                     PullDownMenu(
                         symbol: "ellipsis", sections: actions(for: note), label: "Note actions",
-                        identifier: "note.actions", tint: .stowMuted
+                        identifier: "note.actions", tint: theme.color(.muted)
                     ).fixedSize()
                 }
-                .padding(.horizontal, 10).padding(.top, 6)
+                .windowHeaderRow(headerChrome, horizontal: 10, vertical: 0)
+                .padding(.top, headerChrome.isInline ? 0 : 6)
 
                 if let reference = note.pullRequest {
                     Button {
                         AppStore.openLink(reference.url)
                     } label: {
-                        Label(reference.displayName, systemImage: "link").font(.stow(size: 10)).lineLimit(1)
-                    }.buttonStyle(.plain).foregroundStyle(Color.stowMuted)
+                        Label(reference.displayName, systemImage: "link").font(theme.font(size: 10)).lineLimit(1)
+                    }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                         .padding(.horizontal, 12).padding(.top, 3)
                 }
 
@@ -61,16 +73,21 @@ struct NoteView: View {
                         text: Binding(
                             get: { store.note(noteID)?.markdown ?? "" },
                             set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
-                        focusRequestID: store.focusRequestID
+                        focusRequestID: store.focusRequestID, appearance: theme.settings
                     )
                     .frame(minHeight: detached ? 120 : 104, maxHeight: detached ? .infinity : 176)
                     .padding(.horizontal, 8)
                 }
                 AccessoryViews(store: store, noteID: noteID)
             }
-            .background(Color.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
+            .background(.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
             .overlay { if !detached { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) } }
-            .preferredColorScheme(ThemeController.shared.colorScheme)
+            .overlay(alignment: .top) {
+                if let identity {
+                    Rectangle().fill(Color(stowHex: identity.color)).frame(height: 3).accessibilityHidden(true)
+                }
+            }
+            .preferredColorScheme(theme.colorScheme)
             .disabled(store.isRestoringBackup)
         }
     }
@@ -90,24 +107,54 @@ struct NoteView: View {
 
 struct DetachedNoteLauncher: View {
     let note: Note
+    @Environment(\.stowTheme) private var theme
     var action: () -> Void
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "arrow.up.right.square").foregroundStyle(Color.stowMuted)
+                Image(systemName: "arrow.up.right.square").foregroundStyle(.stowMuted)
                 Text(note.markdown.split(separator: "\n").first.map(String.init) ?? "Untitled note")
-                    .font(.stow(size: 12)).lineLimit(1)
+                    .font(theme.font(size: 12)).lineLimit(1)
                 Spacer()
-                Text("Open").font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
-            }.padding(12).background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 8))
+                Text("Open").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
+            }.padding(12).background(.stowSurface, in: RoundedRectangle(cornerRadius: 8))
         }.buttonStyle(.plain).accessibilityLabel("Open detached note")
     }
 }
 
 /// A board note folded into one line: open it inline, or pop it out into its own window.
+/// The Notes area's typing spot: clicking it starts a note with the cursor ready.
+struct NoteComposerRow: View {
+    /// With no notes yet, the row also explains what the area is for.
+    let isEmpty: Bool
+    var start: () -> Void
+    @Environment(\.stowTheme) private var theme
+
+    var body: some View {
+        Button(action: start) {
+            VStack(alignment: .leading, spacing: 4) {
+                if isEmpty {
+                    Text("A little room to think.").font(theme.font(size: 13, weight: .medium))
+                        .foregroundStyle(.stowText)
+                }
+                Text(isEmpty ? "Click here and start typing, or paste a pull request link." : "Start typing a note…")
+                    .font(theme.font(size: isEmpty ? 11 : 12)).foregroundStyle(.stowMuted)
+            }
+            .padding(isEmpty ? 14 : 12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(.stowSurface, in: RoundedRectangle(cornerRadius: isEmpty ? 9 : 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Start a note")
+        .accessibilityHint("Starts a note you can type into right away")
+        .accessibilityIdentifier("notes.composer")
+    }
+}
+
 struct CollapsedNoteRow: View {
     @Bindable var store: AppStore
     let note: Note
+    @Environment(\.stowTheme) private var theme
 
     var body: some View {
         HStack(spacing: 8) {
@@ -115,14 +162,14 @@ struct CollapsedNoteRow: View {
                 store.toggleNoteExpanded(note.id)
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: "chevron.right").font(.stow(size: 8, weight: .semibold)).frame(width: 9)
-                        .foregroundStyle(Color.stowMuted)
+                    Image(systemName: "chevron.right").font(theme.font(size: 8, weight: .semibold)).frame(width: 9)
+                        .foregroundStyle(.stowMuted)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(verbatim: note.boardTitle).font(.stow(size: 12, weight: .medium)).lineLimit(1)
+                        Text(verbatim: note.boardTitle).font(theme.font(size: 12, weight: .medium)).lineLimit(1)
                         HStack(spacing: 6) {
                             if let reference = note.pullRequest { Text(verbatim: reference.displayName) }
                             Text("Edited \(note.updatedAt, style: .relative) ago")
-                        }.font(.stow(size: 10)).foregroundStyle(Color.stowMuted).lineLimit(1)
+                        }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
                 }.contentShape(Rectangle())
@@ -132,7 +179,7 @@ struct CollapsedNoteRow: View {
             QuietIconButton(symbol: "arrow.up.right.square", label: "Detach note") { store.detachNote(note.id) }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
-        .background(Color.stowNote, in: RoundedRectangle(cornerRadius: 9))
+        .background(.stowNote, in: RoundedRectangle(cornerRadius: 9))
         .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) }
     }
 }

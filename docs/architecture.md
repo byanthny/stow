@@ -9,6 +9,7 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 | `StowExtensionSDK` | plain versioned request, descriptor, configuration, and snapshot values plus `AccessoryProvider` |
 | `StowExtensions` | provider registry, validation, timeout, cancellation, cache, and adapters |
 | `StowSampleExtension` | optional synthetic provider with no network or host-state dependency |
+| `StowCore` profiles | profile identity, the index, discovery, deletion to the Trash, and owner selection and grouping |
 | `App` | AppKit lifecycle and panels, SwiftUI rendering, native text editing, and observable orchestration |
 
 ## State and windows
@@ -22,6 +23,20 @@ Quit performs a final merged save before closing the writer. Source versions ado
 The first successful save of legacy JSON storage backs up the old index and migrates its note bodies to Markdown. Full restore writes all replacement sources into a new private `notes-<UUID>` folder, retains the previous folder and raw index, and atomically publishes the new index pointer. The host also saves a complete pre-restore backup. Watchers and file-reveal actions follow the current resolved directory; external editors must reopen files after restore.
 
 The `.stowbackup` codec uses backup format version 1 and encodes a complete in-memory `AppState` snapshot, including note bodies, for explicit transfer and restore. Machine-local settings, the `gh` location and the GitHub switch, are written as defaults and keep this Mac's values on restore; restored accessories start disabled. `GHClient` launches only an absolute path named `gh` that resolves to a regular executable other users cannot write. That envelope is separate from the metadata-only live disk index. The host synchronizes live edits before note exports or backup snapshots and refuses the transfer if synchronization fails. Markdown import validates all selected files before adding new note identities; exports are independent copies. See [portability](portability.md) and [privacy and recovery](privacy.md).
+
+## Profiles
+
+A profile is one state folder with its own `state.json`, notes folder, `.stow.lock`, and retained backups. The first profile is the data folder itself and is named "Stow"; others live in `profiles/<UUID>/`. Each profile folder can hold an `identity.json` with the profile's ID, name, color, and optional icon. `ProfileCatalog` finds profiles by looking at the folders, not at the index. It treats identity files and the index as untrusted input: sizes are limited, IDs must be UUIDs matching their folder, links and folders owned by another user are ignored, and names are sanitized.
+
+`profiles.json` in the data folder is a small index of profile order, which profiles were open or hidden at quit, the most recently active profile, the IDs already seen, and app-wide display settings. It is created only when there is something to record. A corrupt or newer index is preserved, and **Reset profile list** moves it to a backup before writing a new one.
+
+One process opens any number of profiles. `.stow-app.lock` is held for the process lifetime and decides whether a second launch hands over. Each open profile takes its own `.stow.lock`; if another process holds it, such as an older build using the first profile, that profile stays closed. `ProfileManager` owns the open sessions. Each `ProfileSession` has its own store, theme, GitHub client, refresh coordinator, accessory host, watcher, and windows, so nothing in one profile reads another's state. Profiles using the same `gh` location share one client and its rate-limit backoff. Hide, show, close, and switching act on a profile's windows together; hidden and closed profiles do not poll or run accessories.
+
+Deleting a profile moves its folder to the Trash; the first profile is moved into `profiles/<id>/` first, with a journal so an interrupted move is finished or undone at the next launch. Stow never deletes profile data outright.
+
+A profile folder Stow has not seen before opens with GitHub and accessories off and no saved `gh` location. Each profile remembers the login it last refreshed as. A refresh that answers as a different login is discarded and pauses the profile until the user chooses **Use X here**, which clears that profile's cached pull requests, details, and dismissals and keeps pins and notes.
+
+Owners are the repository owners in pull request references, compared ignoring case. Each profile saves an owner selection that changes only what is visible; classification, warnings, pins, and refreshes are unaffected. Grouping and order are per-profile board layout settings. See the [profile design](profiles.md).
 
 ## GitHub reads
 

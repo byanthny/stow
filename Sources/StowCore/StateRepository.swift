@@ -174,6 +174,9 @@ public actor StateRepository {
         isClosed = true
     }
 
+    /// Makes the writer usable again after `saveAndClose`, for a profile that is opened again.
+    public func reopen() { isClosed = false }
+
     private func saveState(_ incoming: AppState, deletedNoteIDs: Set<UUID>) throws -> LiveSaveResult {
         guard !requiresRecovery else { throw StateError.recoveryRequired }
         if !hasLoaded { _ = try loadState() }

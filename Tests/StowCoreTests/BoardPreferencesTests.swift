@@ -71,6 +71,11 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertTrue(layout.notesStartCollapsed)
         XCTAssertTrue(layout.oneNoteOpenAtATime)
         XCTAssertTrue(layout.showsTitle)
+        XCTAssertFalse(layout.groupByOwner)
+        XCTAssertEqual(layout.ownerOrder, .alphabetical)
+        XCTAssertFalse(layout.alwaysShowOwnerControl)
+        XCTAssertFalse(layout.hidesNotesForHiddenOwners)
+        XCTAssertEqual(layout, BoardLayout(), "A missing layout decodes to the layout Reset restores")
     }
 
     func testBoardLayoutKeepsEachKnownSectionOnceInSavedOrder() throws {
@@ -97,12 +102,43 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertEqual(layout.shownPullRequests(of: 8, expanded: true), 8)
     }
 
+    func testUnknownOwnerOrderFallsBackToAlphabetical() throws {
+        let decoder = JSONDecoder()
+        let future = try decoder.decode(BoardLayout.self, from: Data(#"{"ownerOrder":"newestFirst"}"#.utf8))
+        XCTAssertEqual(future.ownerOrder, .alphabetical)
+        let known = try decoder.decode(
+            BoardLayout.self, from: Data(#"{"ownerOrder":"mostCards","groupByOwner":true}"#.utf8))
+        XCTAssertEqual(known.ownerOrder, .mostCards)
+        XCTAssertTrue(known.groupByOwner)
+        var changed = BoardLayout()
+        changed.groupByOwner = true
+        changed.ownerOrder = .mostCards
+        changed.alwaysShowOwnerControl = true
+        changed.hidesNotesForHiddenOwners = true
+        XCTAssertNotEqual(changed, BoardLayout())
+        XCTAssertEqual(try decoder.decode(BoardLayout.self, from: JSONEncoder().encode(changed)), changed)
+    }
+
+    func testOwnerOrderOfAnotherTypeFallsBackToAlphabetical() throws {
+        for value in ["5", "true", "null", "{}", #"["mostCards"]"#] {
+            let json = #"{"ownerOrder":"# + value + #","groupByOwner":true,"visiblePullRequests":4}"#
+            let layout = try JSONDecoder().decode(BoardLayout.self, from: Data(json.utf8))
+            XCTAssertEqual(layout.ownerOrder, .alphabetical, value)
+            XCTAssertTrue(layout.groupByOwner, value)
+            XCTAssertEqual(layout.visiblePullRequests, 4, value)
+        }
+    }
+
     func testBoardLayoutPersistsAndRejectsOutOfRangeCounts() async throws {
         let url = try directory().appendingPathComponent("state.json")
         var original = fixture()
         original.boardLayout = BoardLayout(
             order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true,
-            showsTitle: false)
+            notesStartCollapsed: false, oneNoteOpenAtATime: false, showsTitle: false)
+        original.boardLayout.groupByOwner = true
+        original.boardLayout.ownerOrder = .mostCards
+        original.boardLayout.alwaysShowOwnerControl = true
+        original.boardLayout.hidesNotesForHiddenOwners = true
         try await StateRepository(url: url).save(original)
         let loaded = try await StateRepository(url: url).load()
         XCTAssertEqual(loaded.boardLayout, original.boardLayout)
