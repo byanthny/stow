@@ -27,4 +27,4 @@ Out of scope: attacks that already require running code as your macOS user, phys
 
 ## Builds
 
-Packages from `./scripts/package.sh` are signed ad hoc for your own Mac. No signed and notarized public builds exist yet, so do not run Stow builds from other people.
+Release DMGs are unsigned while Stow is in alpha. GitHub Actions builds each one from its release tag and attaches its SHA-256 and a build provenance attestation; check one with `gh attestation verify Stow-<version>.dmg --repo byanthny/stow`. Use builds only from this repository's Releases. Packages from `./scripts/package.sh` are signed ad hoc for your own Mac, so don't share them, and don't run Stow builds from anywhere else.

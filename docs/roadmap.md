@@ -36,8 +36,8 @@ Work through this queue in order. These are future tasks, not authorization to p
 
 ## 5. Make installation deliberate
 
-- [ ] Add a DMG with a drag-to-Applications layout if it makes installation clearer. Keep the ZIP available. Use a PKG installer only if a concrete requirement needs installer behavior or privileged setup.
-- [ ] Publish no binaries before Developer ID signing and notarization; until then Stow is source-only. Confirm enrollment requirements and actual cost before committing to paid distribution.
+- [x] Ship an unsigned alpha DMG with a drag-to-Applications layout, built by GitHub Actions from each release tag with its SHA-256 and a build provenance attestation (owner's call, 2026-11-04). Keep the ZIP for local packages. Use a PKG installer only if a concrete requirement needs installer behavior or privileged setup.
+- [ ] Replace the unsigned DMG with Developer ID signed and notarized builds. Confirm enrollment requirements and actual cost first.
 - [ ] Protect signing credentials and notarization access in a maintainer-approved release environment. Import them only in trusted release jobs, remove temporary keychains, verify signatures, submit for notarization, and staple and validate the resulting distributable.
 - [ ] Exercise download, installation, launch, upgrade, and rollback on a separate Mac or clean test account. Describe the observed Gatekeeper behavior accurately.
 
