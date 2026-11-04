@@ -73,7 +73,13 @@ Once the site has an address, set `site` to it and make it the repository's home
 gh repo edit "$repo" --homepage "$site"
 ```
 
-Publish no binaries until Developer ID signing and notarization are in place; see the [roadmap](roadmap.md).
+## Releases
+
+1. Set `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml` and the Xcode project, and merge that change.
+2. Push a signed `vX.Y.Z` tag on the merge commit, then publish its release, marked as a pre-release while Stow is in alpha.
+3. Publishing starts the `release` workflow. It builds the unsigned DMG from the tag and attaches it with its SHA-256 and a build provenance attestation. To build an existing release again, run the workflow by hand with its tag.
+
+Builds stay unsigned until Developer ID signing and notarization are in place; see the [roadmap](roadmap.md). Attestations need the repository to be public.
 
 ## Acceptance runs
 
