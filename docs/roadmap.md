@@ -24,7 +24,7 @@ Work through this queue in order. These are future tasks, not authorization to p
 - [x] Review tracked files and history for private data, credentials, machine paths, fixtures, screenshots, and dependency provenance. Keep demos synthetic. Audited 2026-11-03; no history rewrite needed.
 - [x] Add concise contribution and security-reporting guidance and supported-platform expectations.
 - [ ] Add a small release checklist. Keep routine maintenance practical for one maintainer and eventual outside contributors.
-- [ ] Before making the repository public, apply the reviewed settings: private vulnerability reporting, secret scanning with push protection, Dependabot alerts, a `main` ruleset, GitHub-owned actions only, and approval for outside contributors' workflows.
+- [ ] Before making the repository public, apply the reviewed settings: private vulnerability reporting, secret scanning with push protection, Dependabot alerts, a `main` ruleset, GitHub-owned actions only, and approval for outside contributors' workflows. The exact commands are in [maintaining](maintaining.md).
 
 ## 4. establish versioned releases
 
