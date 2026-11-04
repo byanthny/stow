@@ -70,4 +70,4 @@ Publish no binaries until Developer ID signing and notarization are in place; se
 
 ## acceptance runs
 
-Add the `acceptance` label to a pull request, or run the `acceptance` workflow by hand once it is on `main`, to build a universal Debug app and run its synthetic smoke checks on an Intel runner. Record results in [verification](verification.md).
+Add the `acceptance` label to a pull request, or run the `acceptance` workflow by hand once it is on `main`, to build a universal Debug app and run its synthetic smoke checks on an Intel runner. The same run audits accessibility on an Apple silicon runner with `scripts/accessibility.sh`; add the label to pull requests that change the UI. Record results in [verification](verification.md).
