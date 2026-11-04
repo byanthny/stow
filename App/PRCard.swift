@@ -63,7 +63,7 @@ struct PRCard: View {
                             ? "Approved" : review == "CHANGES_REQUESTED" ? "Changes requested" : "Review pending")
                 }
                 if pr.mergeStateStatus == "BEHIND" { Text("Behind base") }
-            }.font(.stow(size: 9)).foregroundStyle(Color.stowMuted).lineLimit(1)
+            }.font(.stow(size: 10)).foregroundStyle(Color.stowMuted).lineLimit(1)
             if expanded { details }
         }.padding(12).background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 9))
             .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) }
@@ -97,7 +97,7 @@ struct PRCard: View {
                     }
                     Spacer(minLength: 4)
                     Text(check.state.lowercased().replacingOccurrences(of: "_", with: " "))
-                        .font(.stow(size: 9)).lineLimit(1)
+                        .font(.stow(size: 10)).lineLimit(1)
                 }.font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
             }
             ForEach(Array(details.reviews.enumerated()), id: \.offset) { _, review in
@@ -122,8 +122,8 @@ struct PRCard: View {
             if let created = pr.createdAt { Text("Opened \(created, style: .relative) ago") }
             Spacer(minLength: 0)
             if let updated = pr.updatedAt { Text("Active \(updated, style: .relative) ago") }
-        }.font(.stow(size: 9)).foregroundStyle(Color.stowMuted)
-        Text("State observed \(pr.observedStateSince, style: .relative) ago").font(.stow(size: 9)).foregroundStyle(
+        }.font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+        Text("State observed \(pr.observedStateSince, style: .relative) ago").font(.stow(size: 10)).foregroundStyle(
             Color.stowMuted)
         HStack {
             Button("Add personal note") { store.addNote(reference: pr.reference) }

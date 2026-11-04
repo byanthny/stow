@@ -69,6 +69,16 @@ extension Font {
     }
 }
 
+extension NSFont {
+    /// The AppKit counterpart of `Font.stow`, for AppKit controls inside SwiftUI views.
+    @MainActor static func stow(size: CGFloat = 13) -> NSFont {
+        let settings = ThemeController.shared.settings
+        let adjustedSize = max(8, size + settings.interfaceFontSize - 13)
+        return settings.interfaceFontName.flatMap { NSFont(name: $0, size: adjustedSize) }
+            ?? .systemFont(ofSize: adjustedSize)
+    }
+}
+
 struct QuietIconButton: View {
     let symbol: String
     let label: String

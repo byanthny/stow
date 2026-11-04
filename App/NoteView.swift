@@ -34,20 +34,10 @@ struct NoteView: View {
                             store.detachNote(noteID)
                         }
                     }
-                    Menu {
-                        Button(
-                            store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
-                        ) { store.toggleSample(noteID: noteID) }
-                        Divider()
-                        Button("Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) }
-                        Button("Export Markdown…") { DataTransferActions.exportNote(note, store: store) }
-                        Divider()
-                        Button("Delete note", role: .destructive) { store.deleteNote(noteID) }
-                    } label: {
-                        Image(systemName: "ellipsis").frame(width: 18, height: 20)
-                    }
-                    .menuStyle(.borderlessButton).fixedSize().help("Note actions")
-                    .accessibilityIdentifier("note.actions")
+                    PullDownMenu(
+                        symbol: "ellipsis", sections: actions(for: note), label: "Note actions",
+                        identifier: "note.actions", tint: .stowMuted
+                    ).fixedSize()
                 }
                 .padding(.horizontal, 10).padding(.top, 6)
 
@@ -83,6 +73,18 @@ struct NoteView: View {
             .preferredColorScheme(ThemeController.shared.colorScheme)
             .disabled(store.isRestoringBackup)
         }
+    }
+
+    private func actions(for note: Note) -> [[PullDownMenu.Item]] {
+        let sample = store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
+        return [
+            [.init(title: sample) { store.toggleSample(noteID: noteID) }],
+            [
+                .init(title: "Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) },
+                .init(title: "Export Markdown…") { DataTransferActions.exportNote(note, store: store) },
+            ],
+            [.init(title: "Delete note") { store.deleteNote(noteID) }],
+        ]
     }
 }
 

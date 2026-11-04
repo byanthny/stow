@@ -197,8 +197,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         board = makePanel(frame: frame, title: "Stow")
         applyBoardLevel()
         board.minSize = NSSize(width: 320, height: 348)
-        board.contentView = NSHostingView(
-            rootView: BoardView(store: store, showSettings: { [weak self] in self?.showSettings() }))
+        board.contentView = describedHost(
+            BoardView(store: store, showSettings: { [weak self] in self?.showSettings() }), label: "Board")
+    }
+
+    /// SwiftUI leaves the hosting view's accessibility group without a description.
+    private func describedHost<Content: View>(_ view: Content, label: String) -> NSHostingView<Content> {
+        let host = NSHostingView(rootView: view)
+        host.setAccessibilityLabel(label)
+        return host
     }
 
     private func makePanel(frame: NSRect, title: String) -> StowPanel {
@@ -258,7 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel = makePanel(frame: frame, title: "Stow note")
             panel.noteID = id
             panel.minSize = NSSize(width: 260, height: 208)
-            panel.contentView = NSHostingView(rootView: NoteView(store: store, noteID: id, detached: true))
+            panel.contentView = describedHost(NoteView(store: store, noteID: id, detached: true), label: "Note")
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
@@ -296,7 +303,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.isReleasedWhenClosed = false
             // Reopening Settings brings it to the current desktop instead of switching to its last one.
             window.collectionBehavior = [.moveToActiveSpace]
-            window.contentView = NSHostingView(rootView: SettingsView(store: store))
+            window.contentView = describedHost(SettingsView(store: store), label: "Settings")
             window.center()
             settingsWindow = window
         }

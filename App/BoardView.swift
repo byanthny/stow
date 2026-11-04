@@ -46,7 +46,7 @@ struct BoardView: View {
                                 .padding(.horizontal, 14).padding(.bottom, 14)
                         }
                         AccessoryViews(store: store)
-                    }.padding(.bottom, 14)
+                    }.accessibilityElement(children: .contain).accessibilityLabel("Board contents").padding(.bottom, 14)
                 }
                 .onChange(of: store.focusRequestID) { _, _ in
                     guard let id = store.focusNoteID else { return }

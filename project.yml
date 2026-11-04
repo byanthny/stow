@@ -61,6 +61,20 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.byanthny.stow.tests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Stow.app/Contents/MacOS/Stow"
         BUNDLE_LOADER: "$(TEST_HOST)"
+  StowUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: Stow
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.byanthny.stow.uitests
+        TEST_TARGET_NAME: Stow
+        # Library validation in a hardened, ad-hoc-signed runner rejects the ad-hoc-signed test bundle.
+        ENABLE_HARDENED_RUNTIME: NO
 schemes:
   Stow:
     build:
@@ -70,4 +84,14 @@ schemes:
     test:
       targets:
         - StowAppTests
+      gatherCoverageData: false
+  # UI automation drives the real app and needs Automation Mode, so it stays out of the Stow scheme's tests.
+  StowUITests:
+    build:
+      targets:
+        Stow: all
+        StowUITests: [test]
+    test:
+      targets:
+        - StowUITests
       gatherCoverageData: false

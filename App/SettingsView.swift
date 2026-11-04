@@ -139,7 +139,7 @@ private struct BoardSettingsView: View {
                 if ![0, 3, 5, 10].contains(layout.visiblePullRequests) {
                     Text(verbatim: "\(layout.visiblePullRequests)").tag(layout.visiblePullRequests)
                 }
-            }.font(.stow(size: 12))
+            }.pickerStyle(.segmented).font(.stow(size: 12))
             Toggle(
                 "Let Notes collapse",
                 isOn: Binding(get: { layout.notesCanCollapse }, set: { store.setNotesCanCollapse($0) }))
