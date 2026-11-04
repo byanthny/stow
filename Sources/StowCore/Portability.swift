@@ -20,6 +20,23 @@ public enum PortabilityError: Error, LocalizedError, Equatable, Sendable {
     }
 }
 
+extension AppState {
+    /// Settings that describe this Mac rather than the portable setup, taken from `local`.
+    ///
+    /// Backups are written with `AppState()` defaults in these fields, and a restore keeps the values
+    /// this Mac already uses. A received backup therefore cannot choose which program Stow launches
+    /// or turn GitHub access or accessories on, and backups never carry a machine-specific path.
+    public func keepingMachineLocalSettings(from local: AppState) -> AppState {
+        var result = self
+        // Only the person at this Mac turns things on; a backup never does.
+        result.ghExecutablePath = local.ghExecutablePath
+        result.githubEnabled = local.githubEnabled
+        // Accessory configuration travels, but each one comes back off until it is enabled here.
+        for index in result.extensionInstances.indices { result.extensionInstances[index].isEnabled = false }
+        return result
+    }
+}
+
 /// An in-memory snapshot codec. Reading, writing, and explicit restore decisions belong to the host.
 public enum StowBackup {
     public static let formatVersion = 1
@@ -31,10 +48,11 @@ public enum StowBackup {
         var state: AppState
     }
 
-    public static func encode(_ state: AppState, createdAt: Date = .now) throws -> Data {
-        guard state.schemaVersion == AppState.currentVersion else {
-            throw PortabilityError.unsupportedStateVersion(state.schemaVersion)
+    public static func encode(_ snapshot: AppState, createdAt: Date = .now) throws -> Data {
+        guard snapshot.schemaVersion == AppState.currentVersion else {
+            throw PortabilityError.unsupportedStateVersion(snapshot.schemaVersion)
         }
+        let state = snapshot.keepingMachineLocalSettings(from: AppState())
         try validateNotes(state)
         guard createdAt.timeIntervalSinceReferenceDate.isFinite else { throw PortabilityError.invalidBackup }
         let data: Data

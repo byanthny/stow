@@ -630,7 +630,8 @@ final class AppStore {
                 attributes: [.posixPermissions: 0o700])
             let backup = folder.appendingPathComponent("pre-restore-\(UUID().uuidString).stowbackup")
             try DataTransferFiles.writePrivateAtomically(StowBackup.encode(state), to: backup)
-            var restored = replacement
+            // A received backup never chooses this Mac's GitHub CLI or turns GitHub access on.
+            var restored = replacement.keepingMachineLocalSettings(from: state)
             for index in restored.pullRequests.indices {
                 restored.pullRequests[index].isStale = true
                 restored.pullRequests[index].readinessIsComplete = false

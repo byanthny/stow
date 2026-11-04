@@ -52,7 +52,9 @@ final class PortabilityTests: XCTestCase {
         let original = fixture()
         let data = try StowBackup.encode(original, createdAt: time)
         let restored = try StowBackup.decode(data)
-        XCTAssertEqual(restored, original)
+        // Everything round-trips except settings that describe the source Mac.
+        XCTAssertEqual(restored, original.keepingMachineLocalSettings(from: AppState()))
+        XCTAssertNil(restored.ghExecutablePath)
         XCTAssertEqual(Data(restored.notes[0].markdown.utf8), Data(markdown.utf8))
         let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(envelope["formatVersion"] as? Int, 1)
@@ -177,6 +179,42 @@ final class PortabilityTests: XCTestCase {
                 XCTAssertEqual($0 as? PortabilityError, .invalidBackup)
             }
         }
+    }
+
+    func testBackupsNeverCarryTheSourceMacsGitHubCLILocation() throws {
+        let data = try StowBackup.encode(fixture(), createdAt: time)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("/synthetic/bin/gh"))
+        XCTAssertNil(try StowBackup.decode(data).ghExecutablePath)
+    }
+
+    func testRestoreKeepsThisMacsGitHubSettingsFromACraftedBackup() throws {
+        // Another tool can write any value into a backup; the codec still accepts the envelope.
+        let valid = try StowBackup.encode(fixture(), createdAt: time)
+        var envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: valid) as? [String: Any])
+        var state = try XCTUnwrap(envelope["state"] as? [String: Any])
+        state["ghExecutablePath"] = "/bin/sh"
+        state["githubEnabled"] = true
+        var instances = try XCTUnwrap(state["extensionInstances"] as? [[String: Any]])
+        for index in instances.indices { instances[index]["isEnabled"] = true }
+        state["extensionInstances"] = instances
+        envelope["state"] = state
+        let crafted = try StowBackup.decode(JSONSerialization.data(withJSONObject: envelope))
+        XCTAssertEqual(crafted.ghExecutablePath, "/bin/sh")
+
+        var local = AppState()
+        local.ghExecutablePath = "/synthetic/local/gh"
+        local.githubEnabled = false
+        let restored = crafted.keepingMachineLocalSettings(from: local)
+        XCTAssertEqual(restored.ghExecutablePath, "/synthetic/local/gh")
+        XCTAssertFalse(restored.githubEnabled)
+        // Accessories keep their configuration but stay off until enabled on this Mac.
+        XCTAssertTrue(crafted.extensionInstances.contains { $0.isEnabled })
+        XCTAssertFalse(restored.extensionInstances.contains { $0.isEnabled })
+        XCTAssertEqual(restored.extensionInstances.map(\.configuration), crafted.extensionInstances.map(\.configuration))
+        // The portable setup itself still comes from the backup.
+        XCTAssertEqual(restored.notes, crafted.notes)
+        XCTAssertEqual(restored.pins, crafted.pins)
+        XCTAssertEqual(restored.appearance, crafted.appearance)
     }
 
     func testBackupEncodingRejectsOversizeOutput() throws {

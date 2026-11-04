@@ -145,7 +145,7 @@ struct DataTransferView: View {
         alert.alertStyle = .warning
         alert.messageText = "Replace current notes and settings?"
         alert.informativeText =
-            "“\(url.lastPathComponent)” contains \(restored.notes.count) notes and \(restored.pullRequests.count) cached pull requests. Restoring replaces current notes and settings. Your current data and old notes folder are kept as backups. Reopen the new notes folder in external editors afterward; the old folder will no longer be watched."
+            "“\(url.lastPathComponent)” contains \(restored.notes.count) notes and \(restored.pullRequests.count) cached pull requests. Restoring replaces current notes and settings. This Mac's GitHub settings stay as they are, and accessories come back turned off. Your current data and old notes folder are kept as backups. Reopen the new notes folder in external editors afterward; the old folder will no longer be watched."
         alert.addButton(withTitle: "Cancel")
         alert.addButton(withTitle: "Replace and restore")
         guard alert.runModal() == .alertSecondButtonReturn else { return }

@@ -144,9 +144,15 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         replacement.appearance = .paper
         replacement.pins = [reference]
         replacement.notes = [restoredNote]
-        let portable = try StowBackup.decode(StowBackup.encode(replacement))
+        var portable = try StowBackup.decode(StowBackup.encode(replacement))
+        // A crafted backup must not choose this Mac's GitHub CLI or turn GitHub access on.
+        app.store.state.ghExecutablePath = "/synthetic/local/gh"
+        portable.ghExecutablePath = "/bin/sh"
+        portable.githubEnabled = true
         let restored = await app.store.restoreBackup(portable)
         XCTAssertTrue(restored)
+        XCTAssertEqual(app.store.state.ghExecutablePath, "/synthetic/local/gh")
+        XCTAssertFalse(app.store.state.githubEnabled)
         XCTAssertNotEqual(app.store.notesDirectory, oldDirectory)
         XCTAssertEqual(try Data(contentsOf: oldFile), oldBytes)
         XCTAssertTrue(FileManager.default.fileExists(atPath: oldDirectory.path))
