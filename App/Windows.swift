@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private(set) var noteWindows: [UUID: StowPanel] = [:]
     private var settingsWindow: NSWindow?
     private var isRestoring = false
+    /// Held for the process lifetime; another Stow writing the same state would revert its changes.
+    private var stateLock: StateLock?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hosted unit tests construct their own app delegate with temporary state.
@@ -65,6 +67,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 return
             }
         #endif
+        switch StateLock.acquire(forStateAt: stateURL) {
+        case .acquired(let lock): stateLock = lock
+        case .unavailable: break
+        case .heldByAnotherProcess:
+            // Another Stow already writes this state. Hand over to it instead of competing.
+            Self.activateRunningCopy()
+            NSApp.terminate(nil)
+            return
+        }
         Task {
             await prepare(stateURL: stateURL, isDemo: demo)
             #if DEBUG
@@ -105,8 +116,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard board != nil else { return false }
         showBoard()
         return true
+    }
+
+    private static func activateRunningCopy() {
+        let current = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .filter { $0.processIdentifier != current }
+        // Prefer the same installed copy; a development build may share the bundle identifier.
+        if let other = others.first(where: { $0.bundleURL == Bundle.main.bundleURL }) ?? others.first {
+            other.activate(options: [])
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "Stow is already open"
+            alert.informativeText = "Another Stow process is using this data. Quit it, then open Stow again."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
