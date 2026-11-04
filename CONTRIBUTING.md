@@ -19,6 +19,7 @@ XcodeGen is only needed when changing targets or dependencies in `project.yml`; 
 - Read [AGENTS.md](AGENTS.md) for the project's invariants. Notes are canonical `<UUID>.md` files. GitHub readiness stays conservative. Stow never reads the `gh` token. Accessories are trusted code.
 - Use conventional commit subjects, such as `feat(notes): restore detached windows` or `fix: keep cached cards on partial refresh`.
 - Add or update tests. For UI, persistence, or platform changes, also run the relevant checks in [verification](docs/verification.md) and say which macOS version and hardware you used.
+- For UI changes, and before a release, run `./scripts/accessibility.sh` locally. CI doesn't run it. It audits the Debug app through UI automation, needs Automation Mode approval, and moves the pointer while it runs.
 - Use synthetic data only. Do not commit real notes, pull request data, logs, local state, credentials, machine paths, or internal hosts, and keep them out of issues and screenshots too.
 - Report security problems privately; see [SECURITY.md](SECURITY.md).
 

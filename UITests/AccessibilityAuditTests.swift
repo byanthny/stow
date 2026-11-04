@@ -75,8 +75,9 @@ final class AccessibilityAuditTests: XCTestCase {
 
     /// Records each issue Stow owns, logging the element so a run says what to fix.
     ///
-    /// Contrast is measured from screen pixels. On a 1x display, such as a CI runner's, small anti-aliased text
-    /// measures lower and passes or fails with its letters, so contrast is logged there and enforced on Retina.
+    /// Contrast is measured from screen pixels. On a 1x display, such as a non-Retina external monitor, small
+    /// anti-aliased text measures lower and passes or fails with its letters, so contrast is logged there and
+    /// enforced on Retina.
     @MainActor
     private func audit(_ window: XCUIElement, in app: XCUIApplication) throws {
         // A tooltip under a resting pointer is a transient AppKit window; park the pointer on the titlebar.
