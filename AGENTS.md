@@ -1,13 +1,13 @@
-# working in stow
+# Working in Stow
 
-## scope and conventions
+## Scope and conventions
 
 - Target macOS 14 or later and Swift 6. Keep the native app small and the package modules testable without launching it.
-- Use short, direct prose. README headings use title case; other documentation keeps lowercase headings. Use conventional commit subjects such as `feat(notes): restore detached windows`.
+- Use short, direct prose. README headings use title case; other documentation uses sentence case, capitalizing the first word and proper names. Use conventional commit subjects such as `feat(notes): restore detached windows`.
 - Preserve the existing Git identity, signing setup, configuration, and hooks. Build and test commands must not modify them.
 - Keep `project.yml` and the checked-in Xcode project in sync when changing app targets or dependencies. Preserve pinned package resolution.
 
-## invariants
+## Invariants
 
 - Managed UTF-8 `<UUID>.md` files are the canonical note sources; `state.json` holds metadata without duplicating note bodies. Preserve both versions of detected external-edit conflicts. Closing a window must not delete a note. Flush the final edit before quitting and preserve data when saving fails.
 - Preserve corrupt, unreadable, or newer saved state. Only the explicit recovery action may move it to a backup before creating replacement state.
@@ -18,11 +18,11 @@
 - Accessories are optional trusted code. Disabled providers must not run. Cancellation, timeout, stale-result rejection, unavailable-provider handling, and configuration preservation belong in the host.
 - Keep the sample provider synthetic, disabled by default, and free of network access. There is no weather feature.
 
-## privacy
+## Privacy
 
 Use synthetic notes, pull requests, fixtures, and screenshots. Do not commit real notes, cached API responses, credentials, internal domains, network addresses, machine-specific absolute paths, live logs, or local state. Review staged files before committing. Do not upload local app data or raw logs as CI artifacts.
 
-## checks
+## Checks
 
 Run from the repository root with Xcode 16.4 or later selected:
 

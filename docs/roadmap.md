@@ -1,8 +1,8 @@
-# roadmap
+# Roadmap
 
 Work through this queue in order. These are future tasks, not authorization to publish, purchase a domain, enroll in paid services, or distribute a release.
 
-## 1. finish native acceptance
+## 1. Finish native acceptance
 
 - [x] Automated and synthetic workflow coverage is in place for final-edit persistence, detached notes, independent window levels, board reopening, appearance, theme import/export, and section restoration.
 - [x] Check real Spaces, full-screen apps, and Dock/focus on macOS 26.5 (2026-11-03). Stow windows stay out of other apps' full-screen spaces by design.
@@ -11,14 +11,14 @@ Work through this queue in order. These are future tasks, not authorization to p
 - [x] Record current test, build, packaging, and synthetic workflow evidence in `verification.md`.
 - [ ] Finish hands-on acceptance and resolve any data-loss or window-lifecycle problems before release automation.
 
-## 2. plan profiles and organization views
+## 2. Plan profiles and organization views
 
 - [ ] Design Work/Personal profiles and repository-owner grouping/sorting using the [profile proposal](profiles.md).
 - [ ] Cover multiple profiles on one Mac, enforce one writer per profile, and keep another Mac independent by default.
 - [ ] Resolve safe per-profile GitHub account context before claiming simultaneous work/personal account support. Do not switch the user's global CLI account or copy credentials.
 - [ ] Review safe setup transfer separately from private note/cache migration or any future sync. Keep this increment local and optional.
 
-## 3. prepare for public development
+## 3. Prepare for public development
 
 - [x] Choose the project license and retain dependency notices before making the repository public: GPL-3.0-or-later, chosen 2026-11-03.
 - [x] Review tracked files and history for private data, credentials, machine paths, fixtures, screenshots, and dependency provenance. Keep demos synthetic. Audited 2026-11-03; no history rewrite needed.
@@ -26,27 +26,27 @@ Work through this queue in order. These are future tasks, not authorization to p
 - [ ] Add a small release checklist. Keep routine maintenance practical for one maintainer and eventual outside contributors.
 - [ ] Before making the repository public, apply the reviewed settings: private vulnerability reporting, secret scanning with push protection, Dependabot alerts, a `main` ruleset, GitHub-owned actions only, and approval for outside contributors' workflows. The exact commands are in [maintaining](maintaining.md).
 
-## 4. establish versioned releases
+## 4. Establish versioned releases
 
 - [ ] Choose one lightweight release tool or pinned action that proposes semantic versions and a changelog from conventional commits. Default to a release PR against `main`, reviewed by a maintainer; avoid direct automated releases from every commit.
 - [ ] Keep the app version, build number, tag, changelog, and release notes consistent. Define `feat`, `fix`, and breaking-change behavior, including expectations while the app remains pre-1.0.
 - [ ] Run release packaging only for an approved release PR or an approved version tag. Verify the tag refers to the intended commit on `main`. Give release jobs only the permissions they need, at job scope.
 - [ ] Publish the universal `.app` in a ZIP with a checksum and short installation notes. Keep build evidence tied to that exact version. Retain the current local ad-hoc package path for development.
 
-## 5. make installation deliberate
+## 5. Make installation deliberate
 
 - [ ] Add a DMG with a drag-to-Applications layout if it makes installation clearer. Keep the ZIP available. Use a PKG installer only if a concrete requirement needs installer behavior or privileged setup.
 - [ ] Publish no binaries before Developer ID signing and notarization; until then Stow is source-only. Confirm enrollment requirements and actual cost before committing to paid distribution.
 - [ ] Protect signing credentials and notarization access in a maintainer-approved release environment. Import them only in trusted release jobs, remove temporary keychains, verify signatures, submit for notarization, and staple and validate the resulting distributable.
 - [ ] Exercise download, installation, launch, upgrade, and rollback on a separate Mac or clean test account. Describe the observed Gatekeeper behavior accurately.
 
-## 6. add a small public home
+## 6. Add a small public home
 
 - [ ] Check the app name for conflicts and current domain availability and renewal prices before registration. Candidate research is recorded in the private local handoff, dated 2026-11-03. Prefer an existing domain or a free static-hosting address until a new domain has an approved budget.
 - [ ] Prepare the one-page mockup during public-release preparation, then build a small static page with synthetic screenshots, requirements, download links, documentation, and the source link. Default to no backend, account system, analytics, or paid build service.
 - [ ] Point downloads at versioned repository releases instead of duplicating large binaries on the site. Publish and purchase only after explicit approval.
 
-## resource defaults
+## Resource defaults
 
 - [x] Keep user data and GitHub access local. Use the user's existing `gh` login; provide no Stow server, hosted token store, or credential proxy. Never extract a token.
 - [x] Disable unnecessary work: no GitHub polling when integration is off, no disabled-provider execution, and no new hosted scheduler or always-on service.
@@ -55,7 +55,7 @@ Work through this queue in order. These are future tasks, not authorization to p
 - [x] Do not upload large app packages or raw logs on PRs. Store distributables for approved releases, use short retention for necessary temporary artifacts, and avoid caching private state.
 - [ ] Review actual CI minutes, artifact storage, hosting, domain renewals, and developer-program costs before enabling recurring spend. Current account allowances and billing have not been established. Set explicit limits before adding paid services.
 
-## after profiles, in order
+## After profiles, in order
 
 Ideas taken from Zed, Ghostty, and Zen, queued until profiles land because they touch the theme, menus, and board code that profiles restructure. Each is opt-in or a setting with a default.
 
@@ -65,7 +65,7 @@ Ideas taken from Zed, Ghostty, and Zen, queued until profiles land because they 
 - [ ] A command palette listing every action, as in Zed.
 - [ ] One text config for all settings with the defaults shown, as in Ghostty and Zed. It never contains notes, pull requests, account data, or machine paths, so it stays safe to share.
 
-## later ideas
+## Later ideas
 
 - [ ] Improve the bundled optional-module experience and document source-based provider reuse before designing installable plugins.
 - [ ] Define installable-module packaging, discovery, API compatibility, signing, updates, permissions, and failure isolation before accepting third-party binaries. Keep trusted in-process code clearly identified. Prefer a sandbox that grants each extension only declared capabilities, like Zed's WebAssembly extensions, over loading outside code into the app.

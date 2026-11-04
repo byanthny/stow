@@ -1,8 +1,8 @@
-# notes, configs, and backups
+# Notes, configs, and backups
 
 Stow keeps live notes as Markdown, offers independent exports, and can back up the complete local setup. Theme configs share appearance separately.
 
-## live markdown files
+## Live Markdown files
 
 New setups store notes in `~/Library/Application Support/Stow/notes/<UUID>.md` as ordinary UTF-8 source, without added frontmatter. After a restore, the current folder can be a versioned `notes-<UUID>` folder. `state.json` points to that folder, indexes note metadata, and stores window, pull-request, appearance, and accessory settings without duplicating Markdown bodies.
 
@@ -14,7 +14,7 @@ You can edit a managed note in another editor. Stow reloads external changes. Wh
 
 Use Stow's import action for arbitrary external Markdown files instead of dropping them into the managed folder. Deleting a note in Stow removes both the note and its managed file. A clean external file deletion removes the note from Stow; pending unsaved changes are preserved instead of silently discarded.
 
-## import and export
+## Import and export
 
 - **Export Markdown…** saves one note as ordinary UTF-8 `.md` source, without adding Stow metadata.
 - Bulk export creates a new folder with safe, unique filenames and never overwrites an existing folder.
@@ -23,11 +23,11 @@ Use Stow's import action for arbitrary external Markdown files instead of droppi
 
 Before exporting notes or saving a full backup, Stow synchronizes live edits. If synchronization fails, the transfer is refused. Markdown copies do not preserve window placement, linked pull-request metadata, or accessory settings. Keep them private when their contents are private.
 
-## appearance configs
+## Appearance configs
 
 Use **Copy config**, **Edit config…**, or `.conf` import/export to share short `key = value` appearance settings. These configs contain no notes or cached pull requests. See [appearance](appearance.md).
 
-## full backup and restore
+## Full backup and restore
 
 **Save backup…** creates a versioned `.stowbackup` JSON snapshot containing note contents and the complete local setup: cached pull requests and details, pins, dismissals, settings, module configuration, appearance, and window state. It does not extract GitHub CLI credentials. Settings that describe the Mac rather than your setup stay local: a backup omits the chosen `gh` location, and a restore keeps this Mac's GitHub settings, so a backup from someone else cannot pick a program for Stow to run or turn GitHub on. Accessories keep their configuration but come back turned off.
 
@@ -39,6 +39,6 @@ After restoring, reopen notes in external editors using **Show Markdown file**. 
 
 For unreadable normal state, use the separate flow in [privacy and recovery](privacy.md). Resolve unsaved-change errors before relying on a backup or transfer.
 
-## limits
+## Limits
 
 Only managed note files are live. Exported notes and configs remain copies; full backups are snapshots, not merges. Choosing a different managed folder and automatic cloud or cross-device synchronization are not implemented. External editing support is not a cloud-sync guarantee.

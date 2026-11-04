@@ -1,6 +1,6 @@
 # Stow
 
-A small native macOS board for Markdown notes and GitHub pull requests. Requires macOS 14 or later; hands-on testing so far covers macOS 26 on Apple silicon (see [verification](docs/verification.md)).
+A small native macOS board for Markdown notes and GitHub pull requests. Requires macOS 14 or later; hands-on testing so far covers macOS 26 on Apple silicon, and automated smoke checks pass on Intel with macOS 15 (see [verification](docs/verification.md)).
 
 Keep notes on the board or detach them into separate windows. Each detached note has its own always-on-top setting. Closing a note window keeps the note; deleting it is explicit. The board groups pull requests into “Needs you” and “Waiting” using observed GitHub state, and keeps cached cards when a refresh is incomplete.
 

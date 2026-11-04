@@ -1,8 +1,8 @@
-# verification
+# Verification
 
 Record the toolchain, macOS version, commands, and observed result for each validation run. Keep logs and screenshots local, using synthetic data. Do not publish real state or API responses.
 
-## automated checks
+## Automated checks
 
 ```sh
 ./scripts/test.sh
@@ -18,7 +18,7 @@ The package suite covers classification, paste parsing, persistence and recovery
 
 CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and builds universal Release. The hosted test step already builds Debug, so a duplicate Debug build is omitted. Hosted tests use ad-hoc signing without a development team or signing credential. A Linux job scans history and files with Gitleaks 8.30.1. Native checks run after it only for code, project, dependency, script, or workflow changes, plus explicit manual runs. Push builds cover `main`; feature branches run through their PR, avoiding duplicate push/PR builds. It does not sign for distribution, notarize, authenticate with GitHub as a user, or upload app data. CI doesn't run the accessibility audit; it's a local check before a release.
 
-## manual acceptance
+## Manual acceptance
 
 - Start with synthetic state. Create, edit, preview, detach, close, reopen, and explicitly delete notes. Verify selection, undo, copy/paste, Markdown links, and the last edit after quit and restart.
 - Keep multiple detached notes open. Change each note’s always-on-top setting. Hide and reopen the board through the Dock and Command-0. Confirm window restoration on one display and after disconnecting another display.
@@ -31,13 +31,14 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 - Verify appearance changes, theme import/export, opacity, Reduce transparency, and text-editing preservation using the [appearance checklist](appearance.md#manual-checks). Collapse and expand Needs you and Waiting, then relaunch to check persistence. In Settings → Board, reorder sections, change the cards shown before Show more, and allow Notes to collapse; creating a note should expand Notes again. Scroll a long board and confirm section titles stay pinned. Open and close board notes, check one-at-a-time and the start-collapsed setting, and pop a note out from its row.
 - Run on macOS 14 and a current macOS version. A newer build host does not prove minimum-version runtime behavior. Test Intel hardware when available; a universal binary alone does not prove its runtime behavior.
 
-## evidence
+## Evidence
 
 Local validation on macOS 26.5 (Apple silicon), using Xcode 26.6:
 
-- `./scripts/test.sh` passed 138 tests: 60 core XCTest cases, 45 Swift Testing cases for themes/GitHub/accessories, and 33 hosted AppKit cases. Coverage includes saved section state, live font changes preserving source/selection/undo, background-only opacity, independent persisted board/note pinning, the Markdown image-network tripwire, legacy storage migration, live Markdown reloads from in-place and atomic external saves, conflicts and deletion handling, fresh export snapshots, private transfer files, and backup restoration with window reconstruction. It also covers restores that keep this Mac's GitHub settings and turn restored accessories off, `gh` path checks, bounded lazy details, the single-writer lock, and the first-launch GitHub opt-in.
+- `./scripts/test.sh` passed 145 tests: 64 core XCTest cases, 46 Swift Testing cases for themes/GitHub/accessories, and 35 hosted AppKit cases. Coverage includes saved section state, live font changes preserving source/selection/undo, background-only opacity, independent persisted board/note pinning, the Markdown image-network tripwire, legacy storage migration, live Markdown reloads from in-place and atomic external saves, conflicts and deletion handling, fresh export snapshots, private transfer files, and backup restoration with window reconstruction. It also covers restores that keep this Mac's GitHub settings and turn restored accessories off, `gh` path checks, bounded lazy details, the single-writer lock, the first-launch GitHub opt-in, board layout preferences, collapsible board notes, and deterministic refresh coordination.
 - A fresh synthetic Debug launch passed 12 workflow checks and exited normally after flushing the last edit. These exercise detachment, close-without-deletion, independent window level, board reopening through the application delegate, paste, accessories, notes-only use, and persisted restoration data. Hosted tests reconstruct windows; these are not physical desktop interaction checks.
 - On 2026-11-03 a universal Debug build (arm64 and x86_64) passed the same 12 smoke checks on this Mac. A second launch against the same synthetic state exited at once, brought the running copy forward, and left `state.json` unchanged.
+- On 2026-11-04 the `acceptance` workflow ([run 41762637542](https://github.com/byanthny/stow/actions/runs/41762637542)) built the universal Debug app and passed all 12 smoke checks on a `macos-15-intel` runner: macOS 15.7.9, x86_64. This is automated runtime evidence for Intel, not a hands-on check.
 - A Finder-style launch with the ordinary application search path found the installed `gh` and reused its authentication. Three real pull requests matched independent API checks for title, state, draft, mergeability, merge state, review decision, and checks summary. Live state and responses stayed outside Git. Cached restart/offline behavior and pin retention also have synthetic coverage.
 - The universal Release build and local ZIP passed architecture, ad-hoc signature, and SHA256 checks. Synthetic board and settings captures were visually inspected before inclusion in the README.
 
@@ -61,4 +62,4 @@ Accessibility audit on 2026-11-03, macOS 26.5 on Apple silicon with Xcode 26.6 a
 - Exempt as system UI: the virtual Touch Bar that UI testing adds, and a group inside the macOS 26 titlebar zoom button. A low-battery notification over the board once failed a contrast check, because the audit measures what is on screen. After the Mac slept, Automation Mode needed approval again, and unapproved runs timed out. A separately running copy of Stow kept running through a test run.
 - A one-off trial on a GitHub `macos-15` runner with Xcode 16.4 (a 1024-point 1x display, Reduce Transparency on) passed every check except contrast. It flagged 10-point muted text on pull request cards ("Approved", a check state, a review line, a timestamp), the 9-point board footer, and the Reduce Transparency caption. Other text in the same style passed. The muted color's nominal contrast on Stow's backgrounds is 5.5–6.5:1, above the 4.5:1 WCAG minimum for small text. A brighter muted color or larger text would also pass on 1x displays; that is a design decision.
 
-Still pending: monitor changes with an external display, Intel runtime behavior (hardware is available, and the on-demand `acceptance` workflow runs the smoke checks on x86_64), keyboard navigation, VoiceOver and display accessibility settings, and extended idle/typing measurements. macOS 14 runtime behavior is untested: GitHub retired its `macos-14` runners on 2026-11-02, and no macOS 14 machine is available. The current machine and hosted tests do not establish those results.
+Still pending: monitor changes with an external display, a hands-on pass on Intel hardware (the automated x86_64 smoke run passed), keyboard navigation, VoiceOver and display accessibility settings, and extended idle/typing measurements. macOS 14 runtime behavior is untested: GitHub retired its `macos-14` runners on 2026-11-02, and no macOS 14 machine is available. The current machine and hosted tests do not establish those results.
