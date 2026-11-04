@@ -21,7 +21,7 @@
 - New profiles start with GitHub off and the existing offer. Profiles not seen before start with GitHub and accessories off and no saved `gh` location. Restores keep each profile's machine-local GitHub settings.
 - Tests use synthetic data in temporary folders. They never touch `~/Library/Application Support/Stow/` or the user's Trash; inject the trash operation.
 - New app files go into the checked-in project with XcodeGen 2.45.4 (`xcodegen generate`). XcodeGen names the local package reference after the checkout folder, so restore the name `stow`; the project diff must contain only the new files.
-- Documentation uses lowercase headings and short, direct prose. Commits use conventional subjects and the existing signing setup; never bypass signing.
+- Documentation headings use sentence case (capital first word, proper names such as GitHub kept as they are; README stays in title case), with short, direct prose. Commits use conventional subjects and the existing signing setup; never bypass signing.
 - Core tests: `swift test --filter <TestClass>`. Hosted tests: the `xcodebuild … test` command from `scripts/test.sh`, with `-only-testing:StowAppTests/<TestClass>` appended. Full check: `./scripts/test.sh`, `./scripts/build.sh Debug`, `./scripts/build.sh Release`.
 
 ## Review focus
