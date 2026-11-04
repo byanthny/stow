@@ -176,8 +176,8 @@ public actor ProfileCatalog {
         try writeIndex(index, after: snapshot)
     }
 
-    /// Moves the unusable index aside, byte for byte, and starts a new one. Profiles found now count as seen,
-    /// because the old list of seen profiles is gone and a reset must not clear their settings.
+    /// Moves the unusable index aside, byte for byte, and starts a new one. The seen list starts empty, so every
+    /// profile outside the data folder is an arrival again and opens once with GitHub and accessories off.
     public func resetIndex() throws -> URL {
         let snapshot = try load()
         guard snapshot.indexStatus == .needsReset else { throw ProfileError.notFound }
@@ -190,7 +190,6 @@ public actor ProfileCatalog {
         guard moved == 0 else { throw ProfileError.unwritable }
         var index = ProfileIndex()
         index.order = snapshot.profiles.map(\.id)
-        index.seenIDs = snapshot.profiles.map(\.id)
         do {
             var absent = snapshot
             absent.indexStatus = .absent
@@ -331,7 +330,7 @@ public actor ProfileCatalog {
         guard isOwnedDirectory(profilesURL) else { return [] }
         let names: [String]
         do { names = try FileManager.default.contentsOfDirectory(atPath: profilesURL.path) } catch {
-            throw StateError.unreadable
+            return []
         }
         var result: [(UUID, URL)] = []
         for name in names.sorted() {

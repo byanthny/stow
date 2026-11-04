@@ -221,6 +221,15 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertTrue(snapshot.profiles.contains { $0.id == good })
     }
 
+    func testUnlistableProfilesFolderStillLoadsDataFolderProfile() async throws {
+        try write("{}", "state.json")
+        try addProfile(name: "Hidden")
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o000], ofItemAtPath: root.appendingPathComponent("profiles").path)
+        let snapshot = try await catalog().load()
+        XCTAssertEqual(snapshot.profiles.map(\.name), ["Main"])
+    }
+
     func testIdenticalDuplicateNamesDisplayNumbered() async throws {
         let first = try addProfile(name: "Work")
         let second = try addProfile(name: "Work")
@@ -303,7 +312,8 @@ final class ProfileCatalogTests: XCTestCase {
         let snapshot = try await catalog.load()
         XCTAssertEqual(snapshot.indexStatus, .loaded)
         XCTAssertEqual(snapshot.profiles.map(\.name), ["Home"])
-        XCTAssertFalse(try XCTUnwrap(snapshot.profiles.first).isArrival)
+        XCTAssertTrue(snapshot.index.seenIDs.isEmpty)
+        XCTAssertTrue(try XCTUnwrap(snapshot.profiles.first).isArrival)
     }
 
     func testIndexWriteFailureLeavesProfilesUsable() async throws {
