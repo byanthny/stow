@@ -1047,3 +1047,51 @@ p kbd {
     font-size: 13px;
   }
 }
+
+/* Each command starts with a prompt, so separate commands read as separate lines. The prompt isn't copied. */
+.line::before {
+  content: "$ ";
+  content: "$ " / "";
+  color: var(--muted-2);
+  user-select: none;
+}
+
+/* Copy buttons, added by copy.js. */
+.code.has-copy {
+  position: relative;
+  padding-right: 52px;
+}
+
+.copy-button {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.copy-button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.copy-button.is-done {
+  color: var(--green);
+}
+
+@media (max-width: 480px) {
+  /* Too narrow to give the button its own column, so the code starts below it. */
+  .code.has-copy,
+  .install-grid .code.has-copy {
+    padding-top: 44px;
+    padding-right: 12px;
+  }
+}

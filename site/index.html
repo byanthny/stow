@@ -23,6 +23,7 @@
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="styles.css">
   <script src="demo.js" defer></script>
+  <script src="copy.js" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
@@ -254,7 +255,7 @@ npm test -- --grep upload
         <h2 id="theme-title">Share a theme like a terminal config</h2>
         <p>Start from a preset, change what you like, and copy it as text. Import and export use plain <code>.conf</code> files.</p>
       </div>
-      <pre class="code code-lg" translate="no"><code><span class="tok-key">preset</span> <span class="tok-mark">=</span> <span class="tok-value">graphite</span>
+      <pre class="code code-lg" translate="no" data-copy="Copy theme config"><code><span class="tok-key">preset</span> <span class="tok-mark">=</span> <span class="tok-value">graphite</span>
 <span class="tok-key">font-family</span> <span class="tok-mark">=</span> <span class="tok-value">Menlo</span>
 <span class="tok-key">font-size</span> <span class="tok-mark">=</span> <span class="tok-value">14</span>
 <span class="tok-key">background-opacity</span> <span class="tok-mark">=</span> <span class="tok-value">0.85</span></code></pre>
@@ -266,13 +267,13 @@ npm test -- --grep upload
         <article class="card card-wide" aria-labelledby="build-title">
           <h3 id="build-title">Build from source</h3>
           <p>Needs Xcode 16.4 or later, which runs on macOS 15.3 or later. Unzip <code>build/Stow.zip</code> and move Stow.app to Applications. The package is for your own Mac.</p>
-          <pre class="code" translate="no"><code><span class="line">git clone <span class="cont" aria-hidden="true">\
+          <pre class="code" translate="no" data-copy="Copy commands"><code><span class="line">git clone <span class="cont" aria-hidden="true">\
 </span>https://github.com/<wbr>byanthny/stow.git</span><span class="line">cd stow</span><span class="line">./scripts/package.sh</span></code></pre>
         </article>
         <article class="card" aria-labelledby="github-title">
           <h3 id="github-title">Connect GitHub, if you want</h3>
           <p>Install the <a href="https://cli.github.com/">GitHub CLI</a> and sign in once. Stow asks before using it, and notes work without it.</p>
-          <pre class="code" translate="no"><code><span class="line">gh auth login --hostname github.com</span></code></pre>
+          <pre class="code" translate="no" data-copy="Copy command"><code><span class="line">gh auth login --hostname github.com</span></code></pre>
         </article>
         <article class="card" id="download" aria-labelledby="download-title">
           <h3 id="download-title">Download</h3>
