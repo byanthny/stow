@@ -77,7 +77,7 @@ final class ProfileTests: XCTestCase {
         let board = try XCTUnwrap(session.board)
         let noteWindow = try XCTUnwrap(session.noteWindows[note.id])
         XCTAssertTrue(noteWindow.isVisible)
-        XCTAssertEqual(noteWindow.title, "Stow note")
+        XCTAssertEqual(noteWindow.title, "Synthetic profile note")
 
         session.stop()
         XCTAssertNil(session.board)
@@ -114,7 +114,7 @@ final class ProfileTests: XCTestCase {
         let mainNote = main.store.addNote("Synthetic note kept in Stow")
         let workNote = work.store.addNote("Synthetic note kept in Work")
         work.store.detachNote(workNote)
-        XCTAssertEqual(work.noteWindows[workNote]?.title, "Work note")
+        XCTAssertEqual(work.noteWindows[workNote]?.title, "Synthetic note kept in Work — Work")
         work.showSettings()
         XCTAssertEqual(work.settingsWindow?.title, "Work settings")
         let mainSaved = await main.store.flush()
@@ -2118,13 +2118,13 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(header(of: main).title, "Home")
         XCTAssertNil(header(of: main).tint)
         XCTAssertEqual(main.board.title, "Stow")
-        XCTAssertEqual(note.title, "Stow note")
+        XCTAssertEqual(note.title, "Synthetic profile note")
 
         try await manager.setAlwaysShowProfileName(true)
         XCTAssertTrue(manager.alwaysShowsProfileName)
         XCTAssertTrue(manager.showsProfileNames)
         XCTAssertEqual(main.board.title, "Home")
-        XCTAssertEqual(note.title, "Home note")
+        XCTAssertEqual(note.title, "Synthetic profile note — Home")
         XCTAssertEqual(header(of: main).tint, "#FF375F")
 
         try await manager.setAlwaysShowProfileName(false)

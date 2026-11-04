@@ -307,6 +307,12 @@ final class AppearanceIntegrationTests: XCTestCase {
         return (window, buttons(in: hosting))
     }
 
+    func testDetachedNoteWindowsAreNamedAfterTheirNotes() {
+        XCTAssertEqual(Note(markdown: "# Groceries\n- synthetic").windowTitle(profileName: nil), "Groceries")
+        XCTAssertEqual(Note(markdown: "Standup\nnotes").windowTitle(profileName: "Work"), "Standup — Work")
+        XCTAssertEqual(Note(markdown: "").windowTitle(profileName: nil), "Untitled note")
+    }
+
     func testThemesDoNotBleedBetweenStores() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

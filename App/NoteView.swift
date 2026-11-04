@@ -89,6 +89,9 @@ struct NoteView: View {
             }
             .preferredColorScheme(theme.colorScheme)
             .disabled(store.isRestoringBackup)
+            .background {
+                if detached { WindowTitle(title: note.windowTitle(profileName: identity?.name)) }
+            }
         }
     }
 
@@ -202,7 +205,25 @@ struct CollapsedNoteRow: View {
     }
 }
 
+/// Names the hosting window, for the Window menu, Mission Control, and VoiceOver.
+private struct WindowTitle: NSViewRepresentable {
+    let title: String
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ view: NSView, context: Context) {
+        let title = title
+        // The view joins its window after its first update.
+        DispatchQueue.main.async {
+            if let window = view.window, window.title != title { window.title = title }
+        }
+    }
+}
+
 extension Note {
+    /// A detached note's window title: its title line, with the profile's name once names show.
+    func windowTitle(profileName: String?) -> String {
+        profileName.map { "\(boardTitle) — \($0)" } ?? boardTitle
+    }
+
     /// The first non-empty line without Markdown heading marks, for one-line rows.
     var boardTitle: String {
         let line = markdown.split(whereSeparator: \.isNewline)
