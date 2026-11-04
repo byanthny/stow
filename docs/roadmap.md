@@ -5,7 +5,8 @@ Work through this queue in order. These are future tasks, not authorization to p
 ## 1. finish native acceptance
 
 - [x] Automated and synthetic workflow coverage is in place for final-edit persistence, detached notes, independent window levels, board reopening, appearance, theme import/export, and section restoration.
-- [ ] Check real Spaces, full-screen apps, physical displays, keyboard navigation, and accessibility. Test macOS 14 and Intel runtime behavior when hardware is available; keep unavailable checks explicit.
+- [x] Check real Spaces, full-screen apps, and Dock/focus on macOS 26.5 (2026-11-03). Stow windows stay out of other apps' full-screen spaces by design.
+- [ ] Check physical displays, keyboard navigation, and accessibility, and test Intel runtime behavior. macOS 14 is untested because no runner or machine is available; keep unavailable checks explicit.
 - [x] Keep notes as live Markdown files with conflict preservation, independent Markdown import/export, and validated full backup/restore. Managed folder selection and cloud sync remain separate future work.
 - [x] Record current test, build, packaging, and synthetic workflow evidence in `verification.md`.
 - [ ] Finish hands-on acceptance and resolve any data-loss or window-lifecycle problems before release automation.

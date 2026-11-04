@@ -32,8 +32,9 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 Local validation on macOS 26.5 (Apple silicon), using Xcode 26.6:
 
-- `./scripts/test.sh` passed 129 tests: 54 core XCTest cases, 43 Swift Testing cases for themes/GitHub/accessories, and 32 hosted AppKit cases. Coverage includes saved section state, live font changes preserving source/selection/undo, background-only opacity, independent persisted board/note pinning, the Markdown image-network tripwire, legacy storage migration, live Markdown reloads from in-place and atomic external saves, conflicts and deletion handling, fresh export snapshots, private transfer files, and backup restoration with window reconstruction.
+- `./scripts/test.sh` passed 138 tests: 60 core XCTest cases, 45 Swift Testing cases for themes/GitHub/accessories, and 33 hosted AppKit cases. Coverage includes saved section state, live font changes preserving source/selection/undo, background-only opacity, independent persisted board/note pinning, the Markdown image-network tripwire, legacy storage migration, live Markdown reloads from in-place and atomic external saves, conflicts and deletion handling, fresh export snapshots, private transfer files, and backup restoration with window reconstruction. It also covers restores that keep this Mac's GitHub settings and turn restored accessories off, `gh` path checks, bounded lazy details, the single-writer lock, and the first-launch GitHub opt-in.
 - A fresh synthetic Debug launch passed 12 workflow checks and exited normally after flushing the last edit. These exercise detachment, close-without-deletion, independent window level, board reopening through the application delegate, paste, accessories, notes-only use, and persisted restoration data. Hosted tests reconstruct windows; these are not physical desktop interaction checks.
+- On 2026-11-03 a universal Debug build (arm64 and x86_64) passed the same 12 smoke checks on this Mac. A second launch against the same synthetic state exited at once, brought the running copy forward, and left `state.json` unchanged.
 - A Finder-style launch with the ordinary application search path found the installed `gh` and reused its authentication. Three real pull requests matched independent API checks for title, state, draft, mergeability, merge state, review decision, and checks summary. Live state and responses stayed outside Git. Cached restart/offline behavior and pin retention also have synthetic coverage.
 - The universal Release build and local ZIP passed architecture, ad-hoc signature, and SHA256 checks. Synthetic board and settings captures were visually inspected before inclusion in the README.
 
@@ -41,4 +42,12 @@ One packaged Release launch with two synthetic notes, three cached PR cards, a f
 
 The initial native commit also passed the pinned Xcode 16.4 CI run: package and hosted tests, Debug, universal Release, and secret scans. CI checks for later commits are recorded on the PR.
 
-Still pending: macOS 14 runtime behavior, Intel runtime behavior, physical desktop switching and monitor changes, actual Dock/focus interaction, full-screen behavior, complete VoiceOver/accessibility acceptance, and extended idle/typing measurements. Full-screen behavior must be checked separately from ordinary desktops. The current machine and hosted tests do not establish those results.
+Hands-on acceptance on 2026-11-03, macOS 26.5 on Apple silicon with the built-in display, using the universal Debug build and synthetic state:
+
+- Spaces: the board follows desktop switches. Passed.
+- Full-screen apps: Stow windows stay out of other apps' full-screen spaces. That is the intended behavior, so windows no longer request full-screen auxiliary placement.
+- Dock and focus: the board reopens from the Dock and Command-0, and a note takes focus again after switching apps. Passed.
+- First-launch GitHub prompt: fresh state without demo data shows the card and it behaves as designed. Passed.
+- Skipped by the maintainer for now: keyboard navigation, VoiceOver, Reduce transparency and Increase contrast, and minimum widths.
+
+Still pending: monitor changes with an external display, Intel runtime behavior (hardware is available, and the on-demand `acceptance` workflow runs the smoke checks on x86_64), keyboard navigation, VoiceOver and display accessibility settings, and extended idle/typing measurements. macOS 14 runtime behavior is untested: GitHub retired its `macos-14` runners on 2026-11-02, and no macOS 14 machine is available. The current machine and hosted tests do not establish those results.
