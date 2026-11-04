@@ -1,4 +1,5 @@
 import AppKit
+import StowCore
 import StowGitHub
 import SwiftUI
 
@@ -8,6 +9,8 @@ struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 AppearanceView(store: store)
+                Divider()
+                BoardSettingsView(store: store)
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
                     Text("GitHub").font(.stow(size: 14, weight: .semibold))
@@ -99,5 +102,53 @@ struct SettingsView: View {
             return
         }
         store.setExecutablePath(url.path)
+    }
+}
+
+/// Board layout preferences. Each has a default; nothing here is required.
+private struct BoardSettingsView: View {
+    @Bindable var store: AppStore
+    private var layout: BoardLayout { store.state.boardLayout }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Board").font(.stow(size: 14, weight: .semibold))
+            Text("Section order").font(.stow(size: 11)).foregroundStyle(.secondary)
+            ForEach(Array(layout.order.enumerated()), id: \.element) { index, section in
+                HStack(spacing: 6) {
+                    Text(section.title).font(.stow(size: 12))
+                    Spacer()
+                    Button {
+                        store.moveBoardSection(section, by: -1)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                    }.disabled(index == 0).accessibilityLabel("Move \(section.title) up")
+                    Button {
+                        store.moveBoardSection(section, by: 1)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                    }.disabled(index == layout.order.count - 1).accessibilityLabel("Move \(section.title) down")
+                }
+            }
+            Picker(
+                "Pull requests before Show more",
+                selection: Binding(get: { layout.visiblePullRequests }, set: { store.setVisiblePullRequests($0) })
+            ) {
+                ForEach([3, 5, 10], id: \.self) { count in Text(verbatim: "\(count)").tag(count) }
+                Text("All").tag(0)
+                if ![0, 3, 5, 10].contains(layout.visiblePullRequests) {
+                    Text(verbatim: "\(layout.visiblePullRequests)").tag(layout.visiblePullRequests)
+                }
+            }.font(.stow(size: 12))
+            Toggle(
+                "Let Notes collapse",
+                isOn: Binding(get: { layout.notesCanCollapse }, set: { store.setNotesCanCollapse($0) }))
+            HStack {
+                Text("Defaults: Needs you, Notes, Waiting; 3 pull requests per section; Notes always open.")
+                    .font(.stow(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Reset") { store.resetBoardLayout() }.disabled(layout == BoardLayout())
+            }
+        }
     }
 }

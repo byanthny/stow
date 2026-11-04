@@ -136,6 +136,30 @@ final class AppStore {
 
     func sectionIsCollapsed(_ section: String) -> Bool { state.collapsedSections.contains(section) }
 
+    func moveBoardSection(_ section: BoardLayout.Section, by offset: Int) {
+        state.boardLayout.move(section, by: offset)
+        changed()
+    }
+
+    func setVisiblePullRequests(_ count: Int) {
+        guard BoardLayout.visiblePullRequestRange.contains(count) else { return }
+        state.boardLayout.visiblePullRequests = count
+        changed()
+    }
+
+    func setNotesCanCollapse(_ allowed: Bool) {
+        state.boardLayout.notesCanCollapse = allowed
+        // Turning collapsing off must never leave Notes hidden.
+        if !allowed { state.collapsedSections.removeAll { $0 == BoardLayout.Section.notes.rawValue } }
+        changed()
+    }
+
+    func resetBoardLayout() {
+        state.boardLayout = BoardLayout()
+        state.collapsedSections.removeAll { $0 == BoardLayout.Section.notes.rawValue }
+        changed()
+    }
+
     private func cancelDetails() {
         for task in detailTasks.values { task.cancel() }
         detailTasks.removeAll()

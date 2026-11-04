@@ -55,6 +55,64 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertEqual(decoded, original)
     }
 
+    private func decoded(_ object: [String: Any]) throws -> AppState {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(AppState.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    func testBoardLayoutDefaultsToNeedsYouNotesWaitingWithThreeCards() throws {
+        var legacy = try encodedObject(fixture())
+        legacy.removeValue(forKey: "boardLayout")
+        let layout = try decoded(legacy).boardLayout
+        XCTAssertEqual(layout.order, [.needsYou, .notes, .waiting])
+        XCTAssertEqual(layout.visiblePullRequests, 3)
+        XCTAssertFalse(layout.notesCanCollapse)
+    }
+
+    func testBoardLayoutKeepsEachKnownSectionOnceInSavedOrder() throws {
+        var object = try encodedObject(fixture())
+        object["boardLayout"] = [
+            "order": ["waiting", "future-section", "waiting"], "visiblePullRequests": 0, "notesCanCollapse": true,
+        ]
+        let layout = try decoded(object).boardLayout
+        XCTAssertEqual(layout.order, [.waiting, .needsYou, .notes])
+        XCTAssertEqual(layout.shownPullRequests(of: 40, expanded: false), 40, "0 shows every card")
+        XCTAssertTrue(layout.notesCanCollapse)
+    }
+
+    func testBoardLayoutMovesOnePlaceAndCapsCardsUntilExpanded() {
+        var layout = BoardLayout()
+        layout.move(.notes, by: -1)
+        XCTAssertEqual(layout.order, [.notes, .needsYou, .waiting])
+        layout.move(.notes, by: -1)
+        XCTAssertEqual(layout.order, [.notes, .needsYou, .waiting], "The first section cannot move up")
+        layout.move(.needsYou, by: 5)
+        XCTAssertEqual(layout.order, [.notes, .waiting, .needsYou], "Moves go one place at a time")
+        XCTAssertEqual(layout.shownPullRequests(of: 8, expanded: false), 3)
+        XCTAssertEqual(layout.shownPullRequests(of: 2, expanded: false), 2)
+        XCTAssertEqual(layout.shownPullRequests(of: 8, expanded: true), 8)
+    }
+
+    func testBoardLayoutPersistsAndRejectsOutOfRangeCounts() async throws {
+        let url = try directory().appendingPathComponent("state.json")
+        var original = fixture()
+        original.boardLayout = BoardLayout(
+            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true)
+        try await StateRepository(url: url).save(original)
+        let loaded = try await StateRepository(url: url).load()
+        XCTAssertEqual(loaded.boardLayout, original.boardLayout)
+
+        let damagedURL = try directory().appendingPathComponent("state.json")
+        var damaged = try encodedObject(fixture())
+        damaged["boardLayout"] = ["visiblePullRequests": 500]
+        try JSONSerialization.data(withJSONObject: damaged).write(to: damagedURL)
+        do {
+            _ = try await StateRepository(url: damagedURL).load()
+            XCTFail("An out-of-range card count must reject the state")
+        } catch { XCTAssertEqual(error as? StateError, .corrupt) }
+    }
+
     func testMalformedBoardPreferencePreservesSavedBytesAndBlocksReplacement() async throws {
         let url = try directory().appendingPathComponent("state.json")
         var damaged = try encodedObject(fixture())

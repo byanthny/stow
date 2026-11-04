@@ -199,11 +199,13 @@ public struct AppState: Codable, Equatable, Sendable {
     public var extensionInstances: [ExtensionInstanceState] = []
     public var appearance: AppearanceSettings = .default
     public var collapsedSections: [String] = []
+    public var boardLayout = BoardLayout()
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion, notes, pins, dismissedIDs, pullRequests, boardFrame, boardAlwaysOnTop, githubEnabled
         case ghExecutablePath, viewerLogin, lastRefreshAt, extensionInstances, appearance, collapsedSections
+        case boardLayout
     }
 
     public init(from decoder: any Decoder) throws {
@@ -223,5 +225,6 @@ public struct AppState: Codable, Equatable, Sendable {
         extensionInstances = try container.decode([ExtensionInstanceState].self, forKey: .extensionInstances)
         appearance = try container.decodeIfPresent(AppearanceSettings.self, forKey: .appearance) ?? .default
         collapsedSections = try container.decodeIfPresent([String].self, forKey: .collapsedSections) ?? []
+        boardLayout = try container.decodeIfPresent(BoardLayout.self, forKey: .boardLayout) ?? BoardLayout()
     }
 }

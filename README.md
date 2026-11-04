@@ -49,7 +49,7 @@ For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [
 - Paste a canonical `https://github.com/example/project/pull/42` URL outside the editor to pin a pull request. Text following one URL becomes an attached note. Other or ambiguous text stays intact as a note.
 - Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note from its actions menu. Use **Command-0** or the Dock icon to reopen the board.
-- Click **Needs you**, **Waiting**, or **Notes** to collapse or expand that section. Stow remembers the choice; creating a note expands Notes again.
+- The board shows **Needs you**, **Notes**, then **Waiting**. Section titles stay visible while you scroll, and each pull request section shows three cards before **Show more**. Click **Needs you** or **Waiting** to collapse it; Stow remembers the choice. Change the order, the card count, and whether Notes can collapse in Settings → **Board**.
 - On first launch, Stow asks before using GitHub; change it later in Settings. Install [GitHub CLI](https://cli.github.com/) and authenticate outside Stow with `gh auth login --hostname github.com`. Stow uses that existing login; it does not extract or save a token. Use **Choose gh…** if automatic discovery fails.
 - Click a pull request to load details. Stow reads GitHub state; it does not merge, review, or modify pull requests.
 
