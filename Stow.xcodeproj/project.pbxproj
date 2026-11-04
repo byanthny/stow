@@ -38,6 +38,7 @@
 		B3229A89A09AD8625F8F4F74 /* StowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 09974DE403FDD0CD305FC757 /* StowCore */; };
 		C16E5DDD28C4A1722F6E5A38 /* StowExtensions in Frameworks */ = {isa = PBXBuildFile; productRef = A9615F1E5AF51033548B75D8 /* StowExtensions */; };
 		CAB304A94A725CD8285465DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 201C19CDEAD22A1FC05D10B0 /* Assets.xcassets */; };
+		D62D71EDC45E41812C9D74E0 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67424E6FD595173BC1EC7C20 /* ProfilesSettingsView.swift */; };
 		E0F46F83696043853EA7CF36 /* MarkdownPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ED6C264979A01D79F5855BF /* MarkdownPreview.swift */; };
 		E2639633E61BC409B0873B48 /* LiveMarkdownIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */; };
 		E47FF48B8EBAE6F9F80398EC /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 6E7F283B04E70711EF7043B1 /* MarkdownUI */; };
@@ -80,6 +81,7 @@
 		60BB03D3C6E9C1CA520FBF29 /* AppearanceIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceIntegrationTests.swift; sourceTree = "<group>"; };
 		65FE07DEE8B707F6F7A3E21A /* NativeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEditor.swift; sourceTree = "<group>"; };
 		6648BF0294A445DFDF63BC88 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		67424E6FD595173BC1EC7C20 /* ProfilesSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfilesSettingsView.swift; sourceTree = "<group>"; };
 		7A0A8CCC99137DDF9D649E5C /* AccessibilityAuditTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityAuditTests.swift; sourceTree = "<group>"; };
 		7A23F5051D12BE7F3E8D686F /* PullDownMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PullDownMenu.swift; sourceTree = "<group>"; };
 		8351104FE09C8908E1BC4682 /* stow */ = {isa = PBXFileReference; lastKnownFileType = folder; name = stow; path = .; sourceTree = SOURCE_ROOT; };
@@ -177,6 +179,7 @@
 				15A0A36E778F7188CF52838D /* PRCard.swift */,
 				568BD814954ADC74850E3880 /* ProfileManager.swift */,
 				A2504016B8A69BAA7774CCD3 /* ProfileSession.swift */,
+				67424E6FD595173BC1EC7C20 /* ProfilesSettingsView.swift */,
 				7A23F5051D12BE7F3E8D686F /* PullDownMenu.swift */,
 				6648BF0294A445DFDF63BC88 /* SettingsView.swift */,
 				F76A3454156CA963AB6500C3 /* SmokeTest.swift */,
@@ -373,6 +376,7 @@
 				3522BC83D67633EA0C9FE636 /* PRCard.swift in Sources */,
 				F5ED1C9F5985FC52D537F1E0 /* ProfileManager.swift in Sources */,
 				1C0BEB775F084C612B0AD961 /* ProfileSession.swift in Sources */,
+				D62D71EDC45E41812C9D74E0 /* ProfilesSettingsView.swift in Sources */,
 				45EFD5F122C8EDDD967B7DAB /* PullDownMenu.swift in Sources */,
 				4F2CB3CEB19D67B2697FB4BB /* SettingsView.swift in Sources */,
 				F420C40DCE76CA1AA9CD0B6F /* SmokeTest.swift in Sources */,

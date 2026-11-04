@@ -71,6 +71,50 @@ final class ProfileTests: XCTestCase {
         }
     }
 
+    func testIconValidation() {
+        for valid in [ProfileIcon.symbol("star.fill"), .emoji("😀"), .symbol("1.circle"), .emoji("👨‍👩‍👧")] {
+            XCTAssertEqual(ProfileIcon.validated(valid), valid, "\(valid)")
+        }
+        let longest = String(repeating: "a", count: 64)
+        XCTAssertEqual(ProfileIcon.validated(.symbol(longest)), .symbol(longest))
+        // One character of 32 UTF-8 bytes: a 4-byte emoji with fourteen 2-byte combining marks.
+        let largest = "😀" + String(repeating: "\u{0301}", count: 14)
+        XCTAssertEqual(largest.count, 1)
+        XCTAssertEqual(largest.utf8.count, 32)
+        XCTAssertEqual(ProfileIcon.validated(.emoji(largest)), .emoji(largest))
+        let invalid: [ProfileIcon] = [
+            .symbol("star fill"), .symbol(""), .symbol(String(repeating: "a", count: 65)), .symbol("star/fill"),
+            .symbol("ſtar"), .emoji("😀😀"), .emoji("a"), .emoji(""), .emoji(" 😀"), .emoji(largest + "\u{0301}"),
+        ]
+        for icon in invalid { XCTAssertNil(ProfileIcon.validated(icon), "\(icon)") }
+    }
+
+    func testIdentityRoundTripsItsIcon() throws {
+        let id = UUID()
+        for icon in [ProfileIcon.symbol("star.fill"), .emoji("😀"), nil] {
+            let identity = ProfileIdentity(id: id, name: "Work", color: "#1A2B3C", icon: icon)
+            XCTAssertEqual(try ProfileIdentity.decode(JSONEncoder().encode(identity), folderID: id), identity)
+        }
+        let smiling = ProfileIdentity(id: id, name: "Work", color: "#1A2B3C", icon: .emoji("😀"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(smiling)) as? [String: Any])
+        XCTAssertEqual(object["icon"] as? [String: String], ["emoji": "😀"])
+        let bare = try JSONEncoder().encode(ProfileIdentity(id: id, name: "Work", color: "#1A2B3C"))
+        XCTAssertNil(try XCTUnwrap(JSONSerialization.jsonObject(with: bare) as? [String: Any])["icon"])
+    }
+
+    func testInvalidIconDecodesAsNil() throws {
+        let id = UUID()
+        let icons = [
+            #"{"symbol":"star fill"}"#, #"{"symbol":""}"#, #"{"emoji":"😀😀"}"#, #"{"emoji":"a"}"#, #"{"symbol":5}"#,
+            #""star.fill""#, #"{"symbol":"star.fill","emoji":"😀"}"#, #"{"badge":"star.fill"}"#, "{}", "null", "[]",
+        ]
+        for icon in icons {
+            let json = ##"{"id":"\##(id.uuidString)","name":"Work","color":"#1A2B3C","icon":\##(icon)}"##
+            let decoded = try ProfileIdentity.decode(Data(json.utf8), folderID: id)
+            XCTAssertEqual(decoded, ProfileIdentity(id: id, name: "Work", color: "#1A2B3C"), icon)
+        }
+    }
+
     func testIndexRoundTripsAndFillsMissingOptionalFields() throws {
         let a = UUID(), b = UUID()
         var index = ProfileIndex()

@@ -1091,9 +1091,6 @@ final class ProfileTests: XCTestCase {
         assertForward(stow, in: manager)
     }
 
-    // MARK: helpers
-
-    /// A manager whose questions fail the test instead of opening a modal alert.
     func testNewNoteGoesToKeyWindowProfile() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -1124,7 +1121,7 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(newNoteTitle(app), "New note")
 
         let workEntry = try await addProfile("Work", in: folder)
-        await manager.reloadProfiles()
+        try await manager.reloadProfiles()
         let opened = await manager.open(workEntry.id)
         XCTAssertTrue(opened)
         XCTAssertEqual(newNoteTitle(app), "New note in Work")
@@ -1205,8 +1202,7 @@ final class ProfileTests: XCTestCase {
             profiles.items.filter { $0.keyEquivalent == "]" || $0.keyEquivalent == "[" }.map(\.title),
             ["Next profile", "Previous profile"])
 
-        try await ProfileCatalog(dataFolder: folder).move(work.id, by: 1)
-        await app.manager?.reloadProfiles()
+        try await XCTUnwrap(app.manager).move(work.id, by: 1)
         let reordered = menu("Profiles", in: app).items.filter { $0.representedObject is UUID }
         XCTAssertEqual(reordered.map(\.title), ["Stow", "Play", "Work"])
         XCTAssertEqual(reordered.map(\.keyEquivalent), ["1", "2", "3"])
@@ -1273,6 +1269,522 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(main.board.isVisible)
     }
 
+    // MARK: managing profiles
+
+    func testNewProfileStartsEmptyWithGitHubOffer() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder) { state in
+            state.appearance = .paper
+            state.extensionInstances = [
+                ExtensionInstanceState(moduleID: "org.stow.sample", slot: .boardAccessory, isEnabled: true)
+            ]
+        }
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+
+        let entry = try await manager.createProfile(name: "  Work ", color: "#336699")
+        XCTAssertEqual(entry.name, "Work")
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+        XCTAssertTrue(manager.showsProfileNames)
+        XCTAssertTrue(main.showsName, "Names show on open profiles once a second profile exists")
+        XCTAssertEqual(main.board.title, "Stow")
+        let opened = await manager.open(entry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[entry.id])
+        XCTAssertTrue(work.store.offersGitHubSetup)
+        XCTAssertFalse(work.store.state.githubEnabled)
+        XCTAssertTrue(work.store.state.notes.isEmpty)
+        XCTAssertEqual(work.store.state.appearance, .default)
+        XCTAssertTrue(work.store.state.extensionInstances.isEmpty, "Nothing is copied from another profile")
+        XCTAssertEqual(work.board.title, "Work")
+        XCTAssertEqual(main.store.state.notes.map(\.markdown), ["Synthetic profile note"])
+        XCTAssertEqual(main.store.state.appearance, .paper)
+    }
+
+    func testNewProfileColorIsTheFirstUnusedPaletteColor() {
+        let palette = ProfilePalette.colors
+        XCTAssertGreaterThan(palette.count, 3)
+        XCTAssertTrue(palette.allSatisfy(ProfileIdentity.isValidColor))
+        XCTAssertEqual(ProfilePalette.firstUnused(among: []), palette[0])
+        XCTAssertEqual(ProfilePalette.firstUnused(among: ["#8E8E93", palette[0].lowercased()]), palette[1])
+        XCTAssertEqual(ProfilePalette.firstUnused(among: [palette[1]]), palette[0])
+        XCTAssertEqual(ProfilePalette.firstUnused(among: palette), palette[0])
+    }
+
+    func testNewProfileRequestShowsTheSheetInSettings() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let main = try XCTUnwrap(manager.activeSession)
+
+        menu("File", in: app).items.first { $0.title == "New profile…" }.map { item in
+            _ = NSApp.sendAction(item.action!, to: item.target, from: item)
+        }
+        XCTAssertEqual(manager.newProfileRequest, main.entry.id)
+        let settings = try XCTUnwrap(main.settingsWindow)
+        XCTAssertTrue(settings.isVisible)
+        let presented = await waitUntil { settings.attachedSheet != nil }
+        XCTAssertTrue(presented, "The New profile sheet opens on the profile's Settings")
+        // The sheet follows the request, which is how Cancel and Create close it.
+        manager.newProfileRequest = nil
+        let dismissed = await waitUntil { settings.attachedSheet == nil }
+        XCTAssertTrue(dismissed)
+        manager.requestNewProfile(from: main.entry.id)
+        let presentedAgain = await waitUntil { settings.attachedSheet != nil }
+        XCTAssertTrue(presentedAgain)
+
+        // Closing the profile drops its request, so the sheet does not come back when it reopens.
+        let closed = await manager.close(main.entry.id)
+        XCTAssertTrue(closed)
+        XCTAssertNil(manager.newProfileRequest)
+        // With every profile closed, the most recently active one opens to hold the sheet.
+        manager.requestNewProfile()
+        let reopened = await waitUntil {
+            manager.sessions[main.entry.id]?.settingsWindow?.isVisible == true
+                && manager.newProfileRequest == main.entry.id
+        }
+        XCTAssertTrue(reopened)
+    }
+
+    func testRenameRejectsDuplicateName() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder, detached: true)
+        let workEntry = try await addProfile("Work", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        work.showSettings()
+        let identityURL = workEntry.folder.appendingPathComponent(ProfileIdentity.filename)
+        let identity = try Data(contentsOf: identityURL)
+
+        for (name, expected) in [("stow", ProfileError.duplicateName), ("  ", .emptyName), ("\u{200B}", .emptyName)] {
+            do {
+                try await manager.rename(workEntry.id, to: name)
+                XCTFail("Renaming to \(name) should fail")
+            } catch {
+                XCTAssertEqual(error as? ProfileError, expected, name)
+            }
+        }
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+        XCTAssertEqual(work.entry.name, "Work")
+        XCTAssertEqual(work.board.title, "Work")
+        XCTAssertEqual(try Data(contentsOf: identityURL), identity)
+
+        try await manager.rename(workEntry.id, to: "Office")
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Office"])
+        XCTAssertEqual(work.entry.name, "Office")
+        XCTAssertEqual(work.board.title, "Office")
+        XCTAssertEqual(work.settingsWindow?.title, "Office settings")
+        let profiles = menu("Profiles", in: app)
+        XCTAssertEqual(profiles.items.filter { $0.representedObject is UUID }.map(\.title), ["Stow", "Office"])
+        // Changing only the case of its own name is allowed.
+        try await manager.rename(workEntry.id, to: "office")
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "office"])
+    }
+
+    func testIdentityChangesHoldTheProfileLock() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let identityURL = workEntry.folder.appendingPathComponent(ProfileIdentity.filename)
+        let identity = try Data(contentsOf: identityURL)
+        let workState = workEntry.folder.appendingPathComponent("state.json")
+
+        // A closed profile whose lock another process holds is left alone.
+        guard case .acquired(let held) = StateLock.acquire(forStateAt: workState) else {
+            return XCTFail("The test could not take the profile lock")
+        }
+        let changes: [(String, @MainActor () async throws -> Void)] = [
+            ("rename", { try await manager.rename(workEntry.id, to: "Office") }),
+            ("color", { try await manager.setColor(workEntry.id, to: "#AABBCC") }),
+            ("icon", { try await manager.setIcon(workEntry.id, to: .symbol("star")) }),
+        ]
+        for (label, change) in changes {
+            do {
+                try await change()
+                XCTFail("\(label) should be refused while another process holds the profile")
+            } catch {
+                XCTAssertEqual(error as? ProfileError, .inUse, label)
+            }
+        }
+        XCTAssertEqual(try Data(contentsOf: identityURL), identity)
+        held.release()
+
+        // Once the lock is free, the change takes the lock only while it writes.
+        try await manager.rename(workEntry.id, to: "Office")
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Office"])
+        XCTAssertFalse(isHeld(StateLock.acquire(forStateAt: workState)))
+        // An open profile already holds its own lock.
+        try await manager.setColor(main.entry.id, to: "#AABBCC")
+        try await manager.setIcon(main.entry.id, to: .emoji("😀"))
+        XCTAssertEqual(manager.profiles.first?.color, "#AABBCC")
+        XCTAssertEqual(manager.profiles.first?.icon, .emoji("😀"))
+        XCTAssertTrue(isHeld(StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))))
+        XCTAssertFalse(main.isStopped)
+    }
+
+    func testDeleteClosesAndMovesProfileToTrash() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder, catalog: catalog(folder, trash: bin))
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        let note = work.store.addNote("Synthetic note saved before the move")
+        work.store.detachNote(note)
+        work.showSettings()
+        let workWindows = windows(of: work)
+        XCTAssertEqual(workWindows.count, 3)
+
+        try await manager.delete(workEntry.id)
+        XCTAssertNil(manager.sessions[workEntry.id])
+        XCTAssertTrue(work.isStopped)
+        XCTAssertTrue(workWindows.allSatisfy { !$0.isVisible })
+        XCTAssertFalse(exists("profiles/\(workEntry.id.uuidString)", in: folder))
+        let trashed = bin.appendingPathComponent(workEntry.id.uuidString)
+        let saved = try await StateRepository(url: trashed.appendingPathComponent("state.json")).load()
+        XCTAssertEqual(saved.notes.map(\.markdown), ["Synthetic note saved before the move"])
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow"])
+        let index = try await ProfileCatalog(dataFolder: folder).load().index
+        XCTAssertFalse(index.order.contains(workEntry.id))
+        XCTAssertFalse(manager.showsProfileNames)
+        XCTAssertFalse(main.showsName)
+        XCTAssertFalse(main.isHidden)
+
+        // The last profile cannot be deleted, and stays open.
+        do {
+            try await manager.delete(main.entry.id)
+            XCTFail("The last profile must not be deleted")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .lastProfile)
+        }
+        XCTAssertTrue(manager.sessions[main.entry.id] === main)
+        XCTAssertFalse(main.isStopped)
+        XCTAssertTrue(main.board.isVisible)
+        XCTAssertTrue(exists("state.json", in: folder))
+    }
+
+    func testDeleteRefusesAProfileOpenElsewhere() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder, catalog: catalog(folder, trash: bin))
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let workState = workEntry.folder.appendingPathComponent("state.json")
+        guard case .acquired(let held) = StateLock.acquire(forStateAt: workState) else {
+            return XCTFail("The test could not take the profile lock")
+        }
+        defer { held.release() }
+        do {
+            try await manager.delete(workEntry.id)
+            XCTFail("A profile another process holds must not be deleted")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .inUse)
+        }
+        XCTAssertTrue(exists("profiles/\(workEntry.id.uuidString)/identity.json", in: folder))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: bin.path), [])
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+    }
+
+    func testNamesAppearOnlyWithTwoProfilesOrSetting() async throws {
+        let folder = try makeDirectory()
+        let bin = try makeDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: folder)
+            try? FileManager.default.removeItem(at: bin)
+        }
+        try await seed(folder, detached: true)
+        let manager = makeManager(folder, catalog: catalog(folder, trash: bin))
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let note = try XCTUnwrap(main.noteWindows.values.first)
+        try await manager.rename(main.entry.id, to: "Home")
+        try await manager.setColor(main.entry.id, to: "#FF375F")
+
+        // One profile: the board's title is its name, but windows and colors read as before.
+        XCTAssertFalse(manager.showsProfileNames)
+        XCTAssertEqual(header(of: main).title, "Home")
+        XCTAssertNil(header(of: main).tint)
+        XCTAssertEqual(main.board.title, "Stow")
+        XCTAssertEqual(note.title, "Stow note")
+
+        try await manager.setAlwaysShowProfileName(true)
+        XCTAssertTrue(manager.alwaysShowsProfileName)
+        XCTAssertTrue(manager.showsProfileNames)
+        XCTAssertEqual(main.board.title, "Home")
+        XCTAssertEqual(note.title, "Home note")
+        XCTAssertEqual(header(of: main).tint, "#FF375F")
+
+        try await manager.setAlwaysShowProfileName(false)
+        XCTAssertFalse(manager.showsProfileNames)
+        XCTAssertEqual(main.board.title, "Stow")
+        XCTAssertNil(header(of: main).tint)
+
+        // A second profile shows names without the setting, and deleting it hides them again.
+        let work = try await manager.createProfile(name: "Work", color: "#336699")
+        XCTAssertTrue(manager.showsProfileNames)
+        XCTAssertEqual(main.board.title, "Home")
+        XCTAssertEqual(header(of: main).tint, "#FF375F")
+        try await manager.delete(work.id)
+        XCTAssertFalse(manager.showsProfileNames)
+        XCTAssertEqual(main.board.title, "Stow")
+    }
+
+    func testRestoreReplacesOnlyItsProfile() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder, detached: true)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        work.store.addNote("Synthetic note replaced by the restore")
+        let mainSaved = await main.store.flush()
+        let workSaved = await work.store.flush()
+        XCTAssertTrue(mainSaved)
+        XCTAssertTrue(workSaved)
+        let workPath = "/profiles/\(workEntry.id.uuidString)"
+        let outsideWork = { (tree: [String: Data?]) in tree.filter { !$0.key.hasPrefix(workPath) } }
+        let before = try outsideWork(tree(folder))
+        XCTAssertNotNil(before["/state.json"] ?? nil)
+        XCTAssertNotNil(before["/\(ProfileIndex.filename)"] ?? nil)
+
+        var backup = AppState()
+        backup.githubEnabled = false
+        backup.notes = [Note(markdown: "Synthetic restored note")]
+        let restored = await work.store.restoreBackup(backup)
+        XCTAssertTrue(restored)
+        XCTAssertEqual(work.store.state.notes.map(\.markdown), ["Synthetic restored note"])
+        XCTAssertEqual(try outsideWork(tree(folder)), before)
+        XCTAssertEqual(main.store.state.notes.map(\.markdown), ["Synthetic profile note"])
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Work"])
+    }
+
+    func testBoardHeaderShowsIconWhenSet() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let button = try await switcher(in: main)
+        XCTAssertEqual(button.accessibilityLabel(), "Stow")
+        XCTAssertEqual(button.accessibilityIdentifier(), "board.profileMenu")
+        XCTAssertNil(header(of: main).icon, "Without an icon the header keeps the tray")
+
+        let icons: [(set: ProfileIcon?, shown: ProfileIcon?)] = [
+            (.symbol("star.fill"), .symbol("star.fill")), (.emoji("😀"), .emoji("😀")),
+            // A symbol this Mac does not have shows as no icon, so the tray stays.
+            (.symbol("stow.synthetic.missing"), nil), (nil, nil),
+        ]
+        for (icon, shown) in icons {
+            try await manager.setIcon(main.entry.id, to: icon)
+            XCTAssertEqual(manager.profiles.first?.icon, icon)
+            XCTAssertEqual(header(of: main).icon, shown, "\(String(describing: icon))")
+            // The menu button stays over the icon and keeps the profile's name.
+            let current = try await switcher(in: main)
+            XCTAssertEqual(current.accessibilityLabel(), "Stow")
+        }
+    }
+
+    func testHeaderTitleIsProfileName() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let button = try await switcher(in: main)
+        XCTAssertEqual(header(of: main).title, "Stow")
+        XCTAssertEqual(header(of: main).name, "Stow")
+
+        try await manager.rename(main.entry.id, to: "Home")
+        XCTAssertEqual(header(of: main).title, "Home")
+        let relabeled = await waitUntil {
+            main.board.contentView?.layoutSubtreeIfNeeded()
+            return button.accessibilityLabel() == "Home"
+        }
+        XCTAssertTrue(relabeled)
+    }
+
+    func testHidingTitleKeepsIconSwitcher() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        main.store.setShowsBoardTitle(false)
+        XCTAssertNil(header(of: main).title)
+        XCTAssertEqual(header(of: main).name, "Stow")
+        let button = try await switcher(in: main)
+        XCTAssertEqual(button.accessibilityLabel(), "Stow")
+        XCTAssertEqual(menuTitles(button), ["New profile…", "Profile settings…"])
+
+        _ = try await manager.createProfile(name: "Work", color: "#336699")
+        XCTAssertNil(header(of: main).title)
+        XCTAssertEqual(
+            menuTitles(button), ["Work", "", "Hide profile", "Close profile", "", "New profile…", "Profile settings…"])
+        perform("Profile settings…", in: button)
+        XCTAssertEqual(main.settingsWindow?.isVisible, true)
+    }
+
+    func testHeaderMenuSwitchesHidesAndCloses() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let playEntry = try await addProfile("Play", in: folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let mainButton = try await switcher(in: main)
+        XCTAssertEqual(menuTitles(mainButton).prefix(2), ["Work", "Play"])
+        XCTAssertEqual(mainButton.menu?.items.dropFirst().prefix(2).map(\.state), [.off, .off])
+
+        perform("Work", in: mainButton)
+        let switched = await waitUntil { manager.sessions[workEntry.id]?.isHidden == false && main.isHidden }
+        XCTAssertTrue(switched)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        let workButton = try await switcher(in: work)
+        XCTAssertEqual(menuTitles(workButton).prefix(2), ["Stow", "Play"])
+        XCTAssertEqual(workButton.menu?.items.dropFirst().prefix(2).map(\.state), [.mixed, .off])
+
+        perform("Hide profile", in: workButton)
+        XCTAssertTrue(work.isHidden)
+        XCTAssertFalse(work.board.isVisible)
+        perform("Close profile", in: workButton)
+        let closed = await waitUntil { manager.sessions[workEntry.id] == nil }
+        XCTAssertTrue(closed)
+        XCTAssertTrue(work.isStopped)
+        XCTAssertNil(manager.sessions[playEntry.id])
+    }
+
+    func testResetProfileListIsOfferedOnlyWhileNeeded() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let corrupt = Data("not json".utf8)
+        try corrupt.write(to: folder.appendingPathComponent(ProfileIndex.filename))
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        XCTAssertTrue(manager.indexNeedsReset)
+        do {
+            try await manager.rename(workEntry.id, to: "Office")
+            XCTFail("Changes wait for the reset")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .indexNeedsReset)
+        }
+
+        let backup = try await manager.resetIndex()
+        XCTAssertFalse(manager.indexNeedsReset)
+        XCTAssertEqual(try Data(contentsOf: backup), corrupt)
+        try await manager.rename(workEntry.id, to: "Office")
+        XCTAssertEqual(manager.profiles.map(\.name), ["Stow", "Office"])
+    }
+
+    func testQuitRecordsProfilesClosedSinceLastRecord() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        await manager.recordSession().value
+        let recorded = try await ProfileCatalog(dataFolder: folder).load().index.open
+        XCTAssertEqual(recorded.count, 2)
+
+        // Closing every profile leaves nothing to save, but the quit still records that nothing is open.
+        for id in [workEntry.id, main.entry.id] {
+            let closed = await manager.close(id)
+            XCTAssertTrue(closed)
+        }
+        let quitting = try XCTUnwrap(manager.prepareToQuit())
+        let results = await quitting.value
+        XCTAssertTrue(results.isEmpty)
+        let index = try await ProfileCatalog(dataFolder: folder).load().index
+        XCTAssertEqual(index.open, [])
+        XCTAssertEqual(index.lastActiveID, workEntry.id)
+
+        // The next launch shows only the most recently active profile.
+        let next = makeManager(folder)
+        defer { stop(next) }
+        let restarted = await next.start()
+        XCTAssertTrue(restarted)
+        XCTAssertEqual(Set(next.sessions.keys), [workEntry.id])
+
+        // A launch that opened nothing records nothing at quit.
+        guard case .acquired(let held) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
+        else { return XCTFail("The test could not take the profile lock") }
+        defer { held.release() }
+        stop(next)
+        let blocked = makeManager(folder)
+        blocked.reportOpenElsewhere = { _ in }
+        try await ProfileCatalog(dataFolder: folder).recordSession(open: [], lastActiveID: main.entry.id)
+        let blockedStart = await blocked.start()
+        XCTAssertFalse(blockedStart)
+        XCTAssertNil(blocked.prepareToQuit())
+    }
+
+    // MARK: helpers
+
     private func makeApp(_ folder: URL) async throws -> AppDelegate {
         let app = AppDelegate()
         let started = await app.prepare(stateURL: folder.appendingPathComponent("state.json"), isDemo: false)
@@ -1298,12 +1810,15 @@ final class ProfileTests: XCTestCase {
         return file.items.first { $0.action == #selector(AppDelegate.newNote) }?.title
     }
 
+    /// A manager whose questions fail the test instead of opening a modal alert.
     private func makeManager(
-        _ folder: URL, githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
+        _ folder: URL, catalog: ProfileCatalog? = nil,
+        githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
     ) -> ProfileManager {
         let manager = ProfileManager(
-            dataFolder: folder, isDemo: false, githubOverride: githubOverride, accessoryProviders: accessoryProviders)
+            dataFolder: folder, isDemo: false, catalog: catalog, githubOverride: githubOverride,
+            accessoryProviders: accessoryProviders)
         manager.confirmClosingWithoutSaving = { entry in
             XCTFail("Unexpected question about closing \(entry.name) without saving")
             return false
@@ -1365,6 +1880,54 @@ final class ProfileTests: XCTestCase {
 
     private func addProfile(_ name: String, in folder: URL) async throws -> ProfileEntry {
         try await ProfileCatalog(dataFolder: folder).createProfile(name: name, color: "#336699")
+    }
+
+    /// A catalog whose Trash is `bin`, so tests never touch the user's Trash.
+    private func catalog(_ folder: URL, trash bin: URL) -> ProfileCatalog {
+        ProfileCatalog(dataFolder: folder) { url in
+            try FileManager.default.moveItem(at: url, to: bin.appendingPathComponent(url.lastPathComponent))
+        }
+    }
+
+    /// What the profile's board header shows, from the same state the board renders.
+    private func header(of session: ProfileSession) -> BoardHeader {
+        BoardHeader(profile: session.profile, layout: session.store.state.boardLayout)
+    }
+
+    /// The board header's profile menu button, once SwiftUI has laid out the board.
+    private func switcher(
+        in session: ProfileSession, file: StaticString = #filePath, line: UInt = #line
+    ) async throws -> ProfileSwitcherButton {
+        var found: ProfileSwitcherButton?
+        _ = await waitUntil {
+            session.board.contentView?.layoutSubtreeIfNeeded()
+            found = self.subviews(of: ProfileSwitcherButton.self, in: session.board.contentView).first
+            return found != nil
+        }
+        return try XCTUnwrap(found, "The board header has no profile menu button", file: file, line: line)
+    }
+
+    private func subviews<View: NSView>(of type: View.Type, in root: NSView?) -> [View] {
+        guard let root else { return [] }
+        return ((root as? View).map { [$0] } ?? []) + root.subviews.flatMap { subviews(of: type, in: $0) }
+    }
+
+    /// The profile menu's items as it opens, after the button's own face item; separators read "".
+    private func menuTitles(_ button: NSPopUpButton) -> [String] {
+        guard let menu = button.menu else { return [] }
+        menu.delegate?.menuNeedsUpdate?(menu)
+        return menu.items.dropFirst().map(\.title)
+    }
+
+    private func perform(
+        _ title: String, in button: NSPopUpButton, file: StaticString = #filePath, line: UInt = #line
+    ) {
+        guard let menu = button.menu else { return XCTFail("The button has no menu", file: file, line: line) }
+        menu.delegate?.menuNeedsUpdate?(menu)
+        guard let index = menu.items.firstIndex(where: { $0.title == title }) else {
+            return XCTFail("The menu has no item \(title)", file: file, line: line)
+        }
+        menu.performActionForItem(at: index)
     }
 
     /// Writes a profile folder with its identity and state but no index entry, as if copied from another Mac.

@@ -1,23 +1,32 @@
 import AppKit
+import Observation
 import StowCore
 import StowExtensionSDK
 import StowGitHub
 import StowSampleExtension
 
 /// Keeps track of the profiles and which of them are open. Each open profile is a session with its own lock,
-/// store, and windows.
-@MainActor
+/// store, and windows. Views observe the profile list, so Settings and each board follow its changes.
+@MainActor @Observable
 final class ProfileManager {
     private(set) var profiles: [ProfileEntry] = [] {
         didSet { onProfilesChange?() }
     }
     /// Called when the profile list, its order, or a name changes, so menus can rebuild their shortcuts.
-    var onProfilesChange: (() -> Void)?
+    @ObservationIgnored var onProfilesChange: (() -> Void)?
     private(set) var sessions: [UUID: ProfileSession] = [:]
     /// The profile that menus act on when no Stow window is key.
     private(set) var lastActiveID: UUID?
+    /// Settings → Profiles → Always show profile name, which the index keeps for every profile.
+    private(set) var alwaysShowsProfileName = false
+    /// The index cannot be read. Settings offers Reset profile list, and profile changes wait for it.
+    private(set) var indexNeedsReset = false
+    /// The profile whose Settings shows the New profile sheet.
+    var newProfileRequest: UUID?
+    /// Set once `start()` has shown a profile. From then on a quit records which profiles are open, even none.
+    @ObservationIgnored private(set) var hasStarted = false
     /// Asks whether to close a profile whose changes could not be saved. True closes it without saving.
-    var confirmClosingWithoutSaving: @MainActor (ProfileEntry) -> Bool = { entry in
+    @ObservationIgnored var confirmClosingWithoutSaving: @MainActor (ProfileEntry) -> Bool = { entry in
         let alert = NSAlert()
         alert.messageText = "Some changes in \(entry.name) could not be saved"
         alert.informativeText =
@@ -27,7 +36,7 @@ final class ProfileManager {
         return alert.runModal() == .alertSecondButtonReturn
     }
     /// Says that a profile someone asked to open is open in another copy of Stow.
-    var reportOpenElsewhere: @MainActor (ProfileEntry) -> Void = { entry in
+    @ObservationIgnored var reportOpenElsewhere: @MainActor (ProfileEntry) -> Void = { entry in
         let alert = NSAlert()
         alert.messageText = "\(entry.name) is open in another copy of Stow"
         alert.informativeText = "Quit the other copy, then open the profile here."
@@ -40,10 +49,9 @@ final class ProfileManager {
     private let githubOverride: @MainActor (ProfileEntry) -> (any GitHubClient)?
     /// The accessory providers every profile's store runs. Tests replace them.
     private let accessoryProviders: [any AccessoryProvider]
-    private var alwaysShowsProfileName = false
-    /// The newest lifecycle request for each profile. Each request waits for the one before it, so opens, closes,
-    /// hides, and shows made in quick succession apply in order and never interleave.
-    private var requests: [UUID: Request] = [:]
+    /// The newest request for each profile. Each request waits for the one before it, so opens, closes, hides,
+    /// shows, and changes to the profile's folder made in quick succession apply in order and never interleave.
+    @ObservationIgnored private var requests: [UUID: Request] = [:]
 
     private struct Request {
         let token: UUID
@@ -61,7 +69,7 @@ final class ProfileManager {
         self.accessoryProviders = accessoryProviders
     }
 
-    /// Names show once a second profile exists, or always when the user turns that on.
+    /// Names and colors show once a second profile exists, or always when the user turns that on.
     var showsProfileNames: Bool { profiles.count > 1 || alwaysShowsProfileName }
 
     /// Whether any open, close, hide, or show is still running or waiting for one before it.
@@ -92,6 +100,7 @@ final class ProfileManager {
         // When the catalog cannot read the folder, the data folder opens and its store reports the problem.
         let snapshot = try? await catalog.load()
         alwaysShowsProfileName = snapshot?.index.alwaysShowProfileName ?? false
+        indexNeedsReset = snapshot?.indexStatus == .needsReset
         profiles = snapshot?.profiles ?? []
         if profiles.isEmpty { profiles = [await catalog.dataFolderEntry()] }
         // An absent index, or one that needs a reset, records no open profiles.
@@ -124,6 +133,7 @@ final class ProfileManager {
             return false
         }
         lastActiveID = front.entry.id
+        hasStarted = true
         // The most recently active profile on screen comes forward, as it was at quit.
         if shown.count > 1 { front.show() }
         for entry in openElsewhere { reportOpenElsewhere(entry) }
@@ -164,9 +174,10 @@ final class ProfileManager {
     }
 
     /// Opens a profile if needed and brings its windows forward, then hides the profile it leaves unless that
-    /// profile turned off Hide when switching away. Windows move at once, with no animation to wait for.
-    func switchTo(_ id: UUID) async {
-        let source = activeSession
+    /// profile turned off Hide when switching away. The profile left is `sourceID`'s when given, as for a board's
+    /// profile menu, else the active one. Windows move at once, with no animation to wait for.
+    func switchTo(_ id: UUID, from sourceID: UUID? = nil) async {
+        let source = sourceID.flatMap { sessions[$0] } ?? activeSession
         guard await open(id), let source, source.entry.id != id, sessions[source.entry.id] === source,
             source.store.state.hidesWhenSwitchingAway
         else { return }
@@ -193,30 +204,203 @@ final class ProfileManager {
         }
     }
 
-    /// Where New profile… goes. Until the profile editor exists it opens the active profile's Settings.
-    func requestNewProfile() {
-        activeSession?.showSettings()
+    /// Shows the New profile sheet in a profile's Settings: the given profile's, else the active one's. With no
+    /// profile open, the most recently active one opens to hold it.
+    func requestNewProfile(from id: UUID? = nil) {
+        if let session = id.flatMap({ sessions[$0] }) ?? activeSession, !session.isStopped {
+            return presentNewProfile(in: session)
+        }
+        guard let target = profiles.first(where: { $0.id == lastActiveID }) ?? profiles.first else { return }
+        Task {
+            guard await open(target.id), let session = sessions[target.id] else { return }
+            presentNewProfile(in: session)
+        }
     }
 
-    /// Reads the profile list again, so a new profile, a new order, or a new name reaches the menus.
-    func reloadProfiles() async {
-        guard let snapshot = try? await catalog.load() else { return }
-        alwaysShowsProfileName = snapshot.index.alwaysShowProfileName
-        if !snapshot.profiles.isEmpty { profiles = snapshot.profiles }
-        for session in sessions.values { session.showsName = showsProfileNames }
+    private func presentNewProfile(in session: ProfileSession) {
+        session.showSettings()
+        newProfileRequest = session.entry.id
     }
+
+    /// The board header's profile menu for a profile: the other profiles to switch to, Hide and Close, then New
+    /// profile… and Profile settings…. With one profile, only the last two.
+    func profileMenu(for id: UUID) -> [[ProfileMenuItem]] {
+        var sections: [[ProfileMenuItem]] = []
+        if profiles.count > 1 {
+            sections.append(
+                profiles.filter { $0.id != id }.map { entry in
+                    ProfileMenuItem(title: entry.name, state: menuState(of: entry.id)) { [weak self] in
+                        Task { await self?.switchTo(entry.id, from: id) }
+                    }
+                })
+            sections.append([
+                ProfileMenuItem(title: "Hide profile") { [weak self] in self?.hide(id) },
+                ProfileMenuItem(title: "Close profile") { [weak self] in Task { _ = await self?.close(id) } },
+            ])
+        }
+        sections.append([
+            ProfileMenuItem(title: "New profile…") { [weak self] in self?.requestNewProfile(from: id) },
+            ProfileMenuItem(title: "Profile settings…") { [weak self] in self?.sessions[id]?.showSettings() },
+        ])
+        return sections
+    }
+
+    /// A profile's mark in profile menus: on while it shows, mixed while hidden, off while closed.
+    func menuState(of id: UUID) -> NSControl.StateValue {
+        guard let session = sessions[id], !session.isStopped else { return .off }
+        return session.isHidden ? .mixed : .on
+    }
+
+    /// Reads the profile list again, so a new profile, order, name, color, or icon, or the display setting,
+    /// reaches the menus, the open profiles' windows, and Settings. When the list cannot be read it stays as it
+    /// was and the error is thrown.
+    func reloadProfiles() async throws {
+        let snapshot = try await catalog.load()
+        alwaysShowsProfileName = snapshot.index.alwaysShowProfileName
+        indexNeedsReset = snapshot.indexStatus == .needsReset
+        // Before the data folder profile first saves, the folder lists nothing; the open profile stays listed.
+        if !snapshot.profiles.isEmpty, snapshot.profiles != profiles { profiles = snapshot.profiles }
+        for session in sessions.values {
+            if let entry = profiles.first(where: { $0.id == session.entry.id }) { session.entry = entry }
+            session.showsName = showsProfileNames
+        }
+    }
+
+    // MARK: changing profiles
+
+    /// Makes a new, empty profile with GitHub and accessories off, and lists it last. It does not open.
+    @discardableResult
+    func createProfile(name: String, color: String) async throws -> ProfileEntry {
+        let entry = try await catalog.createProfile(name: name, color: color)
+        try await reloadProfiles()
+        return profiles.first { $0.id == entry.id } ?? entry
+    }
+
+    func rename(_ id: UUID, to name: String) async throws {
+        try await changeIdentity(of: id) { try await self.catalog.rename(id, to: name) }
+    }
+
+    func setColor(_ id: UUID, to color: String) async throws {
+        try await changeIdentity(of: id) { try await self.catalog.setColor(id, to: color) }
+    }
+
+    func setIcon(_ id: UUID, to icon: ProfileIcon?) async throws {
+        try await changeIdentity(of: id) { try await self.catalog.setIcon(id, to: icon) }
+    }
+
+    /// Moves a profile by `offset` places in the list, which also renumbers the ⌃⌥ shortcuts.
+    func move(_ id: UUID, by offset: Int) async throws {
+        try await catalog.move(id, by: offset)
+        try await reloadProfiles()
+    }
+
+    func setAlwaysShowProfileName(_ value: Bool) async throws {
+        try await catalog.setAlwaysShowProfileName(value)
+        try await reloadProfiles()
+    }
+
+    /// Moves the unreadable index to the returned backup and starts a new one.
+    @discardableResult
+    func resetIndex() async throws -> URL {
+        let backup = try await catalog.resetIndex()
+        try await reloadProfiles()
+        return backup
+    }
+
+    /// Closes the profile if it is open, then moves its folder to the Trash, where it stays recoverable. Refuses
+    /// the last profile and one another process holds. Throws `CancellationError` when the person keeps the
+    /// profile open after its changes could not be saved. If the move fails, a profile that was open opens again.
+    func delete(_ id: UUID) async throws {
+        let outcome: Result<Void, any Error> = await serialized(id) {
+            do {
+                // Checked first, so a deletion that cannot happen never closes the profile.
+                let snapshot = try await self.catalog.load()
+                if snapshot.indexStatus == .needsReset { throw ProfileError.indexNeedsReset }
+                guard snapshot.profiles.contains(where: { $0.id == id }) else { throw ProfileError.notFound }
+                guard snapshot.profiles.count > 1 else { throw ProfileError.lastProfile }
+                let reopening = self.sessions[id].map { (entry: $0.entry, hidden: $0.isHidden) }
+                // The move takes the profile's lock itself, so an open profile closes and releases it first.
+                guard await self.closeNow(id) else { throw CancellationError() }
+                do {
+                    try await self.catalog.trash(id)
+                } catch {
+                    if let reopening { _ = await self.openSession(reopening.entry, hidden: reopening.hidden) }
+                    throw error
+                }
+                if self.lastActiveID == id { self.lastActiveID = nil }
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+        try outcome.get()
+        try await reloadProfiles()
+    }
+
+    /// Writes the profile's identity file while holding its lock, then reloads the list. An open profile already
+    /// holds its lock. A closed one is locked for the write, and refused while another process holds it.
+    private func changeIdentity(of id: UUID, _ change: @escaping @MainActor () async throws -> Void) async throws {
+        let outcome: Result<Void, any Error> = await serialized(id) {
+            do {
+                let lock = try self.lockUnlessOpen(id)
+                defer { lock?.release() }
+                try await change()
+                return .success(())
+            } catch {
+                return .failure(error)
+            }
+        }
+        try outcome.get()
+        try await reloadProfiles()
+    }
+
+    /// The profile's lock for a write to its folder, or nil when an open session here holds it already or the
+    /// folder cannot be locked. Throws `.inUse` while another process holds it.
+    private func lockUnlessOpen(_ id: UUID) throws -> StateLock? {
+        if let session = sessions[id], !session.isStopped { return nil }
+        guard let entry = profiles.first(where: { $0.id == id }) else { throw ProfileError.notFound }
+        switch StateLock.acquire(forStateAt: entry.folder.appendingPathComponent("state.json")) {
+        case .acquired(let lock): return lock
+        case .unavailable: return nil
+        case .heldByAnotherProcess: throw ProfileError.inUse
+        }
+    }
+
+    // MARK: closing and quitting
 
     /// Saves a profile, then closes its windows, stops its refreshes, accessories, and watchers, and releases its
     /// lock. Its data stays on disk. When the save fails, the person can keep the profile open, which returns
     /// false, or close it without saving.
     func close(_ id: UUID) async -> Bool {
-        await serialized(id) {
-            guard let session = self.sessions[id] else { return true }
-            if !(await session.store.flush()), !self.confirmClosingWithoutSaving(session.entry) { return false }
-            // Menus and other requests stop finding the profile before it stops.
-            self.sessions[id] = nil
-            await session.close()
-            return true
+        await serialized(id) { await self.closeNow(id) }
+    }
+
+    /// `close(_:)` for a caller that already waits its turn among the profile's requests.
+    private func closeNow(_ id: UUID) async -> Bool {
+        guard let session = sessions[id] else { return true }
+        if !(await session.store.flush()), !confirmClosingWithoutSaving(session.entry) { return false }
+        // Menus and other requests stop finding the profile before it stops.
+        sessions[id] = nil
+        // A New profile sheet waiting in its Settings must not reappear when the profile opens again.
+        if newProfileRequest == id { newProfileRequest = nil }
+        await session.close()
+        return true
+    }
+
+    /// What a quit waits for: every open profile's final save, then the record of which profiles are open for the
+    /// next launch, giving each profile's save result. The record is written even when every profile is closed,
+    /// so the next launch does not reopen them. Nil when there is nothing to save or record, as when no profile
+    /// has opened.
+    func prepareToQuit() -> Task<[UUID: Bool], Never>? {
+        guard hasStarted || sessions.values.contains(where: { !$0.isStopped && $0.store.isLoaded }) else {
+            return nil
+        }
+        let finalSave = terminationSave()
+        let recording = recordSession()
+        return Task.detached {
+            let results = await finalSave.value
+            await recording.value
+            return results
         }
     }
 
@@ -264,8 +448,8 @@ final class ProfileManager {
         if sessions[entry.id] != nil { return true }
         guard
             let session = ProfileSession(
-                entry: entry, isDemo: isDemo, githubClient: githubOverride(entry),
-                accessoryProviders: accessoryProviders)
+                entry: entry, profile: ProfileHandle(id: entry.id, manager: self), isDemo: isDemo,
+                githubClient: githubOverride(entry), accessoryProviders: accessoryProviders)
         else { return false }
         session.showsName = showsProfileNames
         session.onActivate = { [weak self] in self?.lastActiveID = entry.id }
@@ -314,4 +498,24 @@ final class ProfileManager {
                 if self.requests[id]?.token == token { self.requests[id] = nil }
             })
     }
+}
+
+/// What one profile's windows read about their profile, and the profile actions they offer. It holds the manager
+/// weakly, because the manager owns those windows.
+@MainActor
+struct ProfileHandle {
+    let id: UUID
+    weak var manager: ProfileManager?
+
+    /// The profile as listed now, following renames and color and icon changes.
+    var entry: ProfileEntry? { manager?.profiles.first { $0.id == id } }
+    /// Colors and names show once a second profile exists, or always when the user turns that on.
+    var showsIdentity: Bool { manager?.showsProfileNames ?? false }
+}
+
+/// An item in a board's profile menu.
+struct ProfileMenuItem {
+    let title: String
+    var state: NSControl.StateValue = .off
+    let action: @MainActor () -> Void
 }

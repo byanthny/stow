@@ -2,24 +2,95 @@ import Foundation
 
 public enum ProfileError: Error, Equatable, Sendable {
     case invalidIdentity, invalidIndex, newerIndex(Int), indexNeedsReset
-    case emptyName, duplicateName, invalidColor, inUse, lastProfile, notFound, unwritable
+    case emptyName, duplicateName, invalidColor, invalidIcon, inUse, lastProfile, notFound, unwritable
 }
 
-/// A profile's name and color, stored in the profile folder as `identity.json`.
+/// A profile's optional icon: an SF Symbol name or a single emoji, stored as `{"symbol": …}` or `{"emoji": …}`.
+public enum ProfileIcon: Codable, Equatable, Sendable {
+    case symbol(String)
+    case emoji(String)
+
+    public static let maximumSymbolNameLength = 64
+    public static let maximumEmojiBytes = 32
+
+    /// The icon when it is well formed, else nil. A symbol name is 1 to 64 ASCII letters, digits, and dots. An emoji
+    /// is exactly one character of at most 32 UTF-8 bytes, with at least one emoji scalar. Whether macOS has a
+    /// symbol of that name is for the app to check.
+    public static func validated(_ icon: ProfileIcon) -> ProfileIcon? {
+        switch icon {
+        case .symbol(let name):
+            let bytes = Array(name.utf8)
+            guard (1...maximumSymbolNameLength).contains(bytes.count),
+                bytes.allSatisfy({ isASCIIAlphanumeric($0) || $0 == UInt8(ascii: ".") })
+            else { return nil }
+        case .emoji(let text):
+            guard text.count == 1, text.utf8.count <= maximumEmojiBytes,
+                text.unicodeScalars.contains(where: \.properties.isEmoji)
+            else { return nil }
+        }
+        return icon
+    }
+
+    private static func isASCIIAlphanumeric(_ byte: UInt8) -> Bool {
+        (0x30...0x39).contains(byte) || (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case symbol, emoji
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let symbol = try container.decodeIfPresent(String.self, forKey: .symbol)
+        let emoji = try container.decodeIfPresent(String.self, forKey: .emoji)
+        switch (symbol, emoji) {
+        case (let name?, nil): self = .symbol(name)
+        case (nil, let text?): self = .emoji(text)
+        default:
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "An icon is one symbol or one emoji."))
+        }
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .symbol(let name): try container.encode(name, forKey: .symbol)
+        case .emoji(let text): try container.encode(text, forKey: .emoji)
+        }
+    }
+}
+
+/// A profile's name, color, and optional icon, stored in the profile folder as `identity.json`.
 /// Folders can be copied in from elsewhere, so decoding treats the bytes as untrusted.
 public struct ProfileIdentity: Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var color: String
+    /// An icon that is malformed reads as none, without rejecting the identity.
+    public var icon: ProfileIcon?
 
     public static let filename = "identity.json"
     public static let maximumBytes = 16 * 1024
     public static let maximumNameLength = 80
 
-    public init(id: UUID, name: String, color: String) {
+    public init(id: UUID, name: String, color: String, icon: ProfileIcon? = nil) {
         self.id = id
         self.name = name
         self.color = color
+        self.icon = icon
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, color, icon
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        color = try container.decode(String.self, forKey: .color)
+        icon = (try? container.decodeIfPresent(ProfileIcon.self, forKey: .icon)).flatMap(ProfileIcon.validated)
     }
 
     /// Removes control, bidirectional formatting, and invisible characters, trims, and limits the length.

@@ -5,10 +5,14 @@ import SwiftUI
 
 struct SettingsView: View {
     @Bindable var store: AppStore
+    /// The profile these settings belong to, for Settings → Profiles.
+    let profile: ProfileHandle
     @Environment(\.stowTheme) private var theme
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                ProfilesSettingsView(store: store, profile: profile)
+                Divider()
                 AppearanceView(store: store)
                 Divider()
                 BoardSettingsView(store: store)
@@ -171,7 +175,7 @@ private struct BoardSettingsView: View {
 }
 
 /// A setting's label on the left with its checkbox on the right, in line with the other Settings controls.
-private struct SettingsToggle: View {
+struct SettingsToggle: View {
     let title: String
     @Binding var isOn: Bool
 

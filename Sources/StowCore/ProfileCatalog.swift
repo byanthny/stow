@@ -8,6 +8,7 @@ public struct ProfileEntry: Equatable, Sendable {
     /// for display only; the identity file is untouched.
     public var name: String
     public var color: String
+    public var icon: ProfileIcon?
     /// Not in `seenIDs`. Always false for the data folder profile.
     public var isArrival: Bool
 }
@@ -74,7 +75,7 @@ public actor ProfileCatalog {
                 ProfileEntry(
                     id: id, folder: folder, isDataFolder: false,
                     name: identity?.name ?? Self.unnamedName,
-                    color: identity?.color ?? Self.fallbackColor, isArrival: !seen.contains(id)))
+                    color: identity?.color ?? Self.fallbackColor, icon: identity?.icon, isArrival: !seen.contains(id)))
         }
 
         let profiles = Self.numbered(Self.ordered(found, by: index.order))
@@ -91,7 +92,7 @@ public actor ProfileCatalog {
         return ProfileEntry(
             id: identity?.id ?? mintedDataFolderID(), folder: dataFolder, isDataFolder: true,
             name: identity?.name ?? Self.dataFolderName,
-            color: identity?.color ?? Self.fallbackColor, isArrival: false)
+            color: identity?.color ?? Self.fallbackColor, icon: identity?.icon, isArrival: false)
     }
 
     // MARK: changes
@@ -122,7 +123,7 @@ public actor ProfileCatalog {
         }
         let created = try load().profiles.first { $0.id == id }
         return created ?? ProfileEntry(
-            id: id, folder: folder, isDataFolder: false, name: clean, color: color, isArrival: false)
+            id: id, folder: folder, isDataFolder: false, name: clean, color: color, icon: nil, isArrival: false)
     }
 
     public func rename(_ id: UUID, to name: String) throws {
@@ -130,7 +131,8 @@ public actor ProfileCatalog {
         let entry = try entry(id, in: snapshot)
         let clean = try Self.validName(name)
         try requireUnique(clean, among: snapshot.profiles, excluding: id)
-        try writeIdentity(ProfileIdentity(id: id, name: clean, color: entry.color), in: entry.folder)
+        try writeIdentity(
+            ProfileIdentity(id: id, name: clean, color: entry.color, icon: entry.icon), in: entry.folder)
     }
 
     public func setColor(_ id: UUID, to color: String) throws {
@@ -139,7 +141,16 @@ public actor ProfileCatalog {
         guard ProfileIdentity.isValidColor(color) else { throw ProfileError.invalidColor }
         // The stored name is the profile's own, not a number added for display.
         let name = try storedName(of: entry)
-        try writeIdentity(ProfileIdentity(id: id, name: name, color: color), in: entry.folder)
+        try writeIdentity(ProfileIdentity(id: id, name: name, color: color, icon: entry.icon), in: entry.folder)
+    }
+
+    /// Sets or clears the profile's icon. Like `setColor`, it refuses to replace an identity file it cannot read.
+    public func setIcon(_ id: UUID, to icon: ProfileIcon?) throws {
+        let snapshot = try writableSnapshot()
+        let entry = try entry(id, in: snapshot)
+        if let icon, ProfileIcon.validated(icon) == nil { throw ProfileError.invalidIcon }
+        let name = try storedName(of: entry)
+        try writeIdentity(ProfileIdentity(id: id, name: name, color: entry.color, icon: icon), in: entry.folder)
     }
 
     /// Moves a profile by `offset` places in the list, stopping at either end. Profiles skipped right now,

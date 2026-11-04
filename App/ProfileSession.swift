@@ -7,7 +7,12 @@ import SwiftUI
 /// One open profile: its lock, store, and windows. Nothing here reads another profile's state.
 @MainActor
 final class ProfileSession: NSObject, NSWindowDelegate {
-    let entry: ProfileEntry
+    /// The profile as last listed. A new name reaches the window titles.
+    var entry: ProfileEntry {
+        didSet { if entry.name != oldValue.name { applyTitles() } }
+    }
+    /// What the profile's views read about it and the profile actions they offer.
+    let profile: ProfileHandle
     let store: AppStore
     private(set) var board: StowPanel!
     private(set) var noteWindows: [UUID: StowPanel] = [:]
@@ -33,7 +38,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     /// Takes the profile's `.stow.lock`, or returns nil when another holder has it. Callers check their own open
     /// sessions first, because a second lock on the same file fails even within one process.
     init?(
-        entry: ProfileEntry, isDemo: Bool, githubClient: (any GitHubClient)?,
+        entry: ProfileEntry, profile: ProfileHandle, isDemo: Bool, githubClient: (any GitHubClient)?,
         accessoryProviders: [any AccessoryProvider]
     ) {
         let stateURL = entry.folder.appendingPathComponent("state.json")
@@ -44,6 +49,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         case .heldByAnotherProcess: return nil
         }
         self.entry = entry
+        self.profile = profile
         store = AppStore(
             stateURL: stateURL, isDemo: isDemo, githubClient: githubClient, accessoryProviders: accessoryProviders,
             arrival: entry.isArrival)
@@ -171,7 +177,8 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             panel.noteID = id
             panel.minSize = NSSize(width: 260, height: 208)
             panel.contentView = describedHost(
-                NoteView(store: store, noteID: id, detached: true).themed(by: store.theme), label: "Note")
+                NoteView(store: store, noteID: id, detached: true, profile: profile).themed(by: store.theme),
+                label: "Note")
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
@@ -189,7 +196,8 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             window.isReleasedWhenClosed = false
             // Reopening Settings brings it to the current desktop instead of switching to its last one.
             window.collectionBehavior = [.moveToActiveSpace]
-            window.contentView = describedHost(SettingsView(store: store).themed(by: store.theme), label: "Settings")
+            window.contentView = describedHost(
+                SettingsView(store: store, profile: profile).themed(by: store.theme), label: "Settings")
             window.center()
             window.delegate = self
             settingsWindow = window
@@ -264,7 +272,8 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         applyBoardLevel()
         board.minSize = NSSize(width: 320, height: 348)
         board.contentView = describedHost(
-            BoardView(store: store, showSettings: { [weak self] in self?.showSettings() }).themed(by: store.theme),
+            BoardView(store: store, profile: profile, showSettings: { [weak self] in self?.showSettings() })
+                .themed(by: store.theme),
             label: "Board")
     }
 

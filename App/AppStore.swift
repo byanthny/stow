@@ -388,6 +388,12 @@ final class AppStore {
         changed()
     }
 
+    /// Settings → Profiles → Hide when switching away, read from this profile when a switch leaves it.
+    func setHidesWhenSwitchingAway(_ hides: Bool) {
+        state.hidesWhenSwitchingAway = hides
+        changed()
+    }
+
     func setNotesStartCollapsed(_ collapsed: Bool) {
         state.boardLayout.notesStartCollapsed = collapsed
         changed()

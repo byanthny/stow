@@ -6,12 +6,16 @@ struct NoteView: View {
     let noteID: UUID
     @Environment(\.stowTheme) private var theme
     var detached = false
+    /// A detached note's profile. Its color shows as a thin accent and its name in the title area once profile
+    /// names show.
+    var profile: ProfileHandle?
     /// Board notes can fold back into a one-line row.
     var onCollapse: (() -> Void)?
     @State private var isPreview = false
 
     var body: some View {
         if let note = store.note(noteID) {
+            let identity = detached ? profile.flatMap { $0.showsIdentity ? $0.entry : nil } : nil
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     if let onCollapse {
@@ -21,8 +25,8 @@ struct NoteView: View {
                         }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                             .accessibilityLabel("Collapse note").help("Collapse note")
                     }
-                    Label(detached ? "Note" : "Markdown", systemImage: "note.text")
-                        .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
+                    Label(identity?.name ?? (detached ? "Note" : "Markdown"), systemImage: "note.text")
+                        .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
                     Spacer(minLength: 0)
                     Button(isPreview ? "Edit" : "Preview") { isPreview.toggle() }
                         .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
@@ -72,6 +76,11 @@ struct NoteView: View {
             }
             .background(.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
             .overlay { if !detached { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) } }
+            .overlay(alignment: .top) {
+                if let identity {
+                    Rectangle().fill(Color(stowHex: identity.color)).frame(height: 3).accessibilityHidden(true)
+                }
+            }
             .preferredColorScheme(theme.colorScheme)
             .disabled(store.isRestoringBackup)
         }

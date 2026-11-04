@@ -162,11 +162,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         item.target = self
         item.representedObject = entry.id
         if shortcut != nil { item.keyEquivalentModifierMask = [.control, .option] }
-        if let session = manager.sessions[entry.id], !session.isStopped {
-            item.state = session.isHidden ? .mixed : .on
-        } else {
-            item.state = .off
-        }
+        item.state = manager.menuState(of: entry.id)
         return item
     }
 
@@ -224,14 +220,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let manager, manager.sessions.values.contains(where: { !$0.isStopped && $0.store.isLoaded }) else {
-            return .terminateNow
-        }
-        let finalSave = manager.terminationSave()
-        let recording = manager.recordSession()
+        // With every profile closed there is nothing to save, but the quit still records that none is open.
+        guard let manager, let quitting = manager.prepareToQuit() else { return .terminateNow }
         Task.detached {
-            let results = await finalSave.value
-            await recording.value
+            let results = await quitting.value
             // AppKit waits in a nested run loop during termination; a main-queue Task
             // can be blocked there. Deliver the reply as a run-loop source instead.
             RunLoop.main.perform(inModes: [.common]) {

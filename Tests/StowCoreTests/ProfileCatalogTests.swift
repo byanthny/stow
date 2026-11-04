@@ -374,6 +374,64 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertTrue(snapshot.profiles.contains { $0.id == other && $0.name == "Home" })
     }
 
+    func testSetIconPersistsAndClears() async throws {
+        let id = try addProfile(name: "Work")
+        let identityURL = root.appendingPathComponent("profiles/\(id.uuidString)/identity.json")
+        let catalog = catalog()
+        try await catalog.setIcon(id, to: .symbol("star.fill"))
+        let starred = try await catalog.load().profiles.first { $0.id == id }
+        XCTAssertEqual(starred?.icon, .symbol("star.fill"))
+        XCTAssertEqual(
+            try ProfileIdentity.decode(Data(contentsOf: identityURL), folderID: id),
+            ProfileIdentity(id: id, name: "Work", color: "#336699", icon: .symbol("star.fill")))
+        // Renaming and recoloring keep the icon.
+        try await catalog.rename(id, to: "Office")
+        try await catalog.setColor(id, to: "#AABBCC")
+        XCTAssertEqual(
+            try ProfileIdentity.decode(Data(contentsOf: identityURL), folderID: id),
+            ProfileIdentity(id: id, name: "Office", color: "#AABBCC", icon: .symbol("star.fill")))
+        try await catalog.setIcon(id, to: .emoji("😀"))
+        let smiling = try await catalog.load().profiles.first { $0.id == id }
+        XCTAssertEqual(smiling?.icon, .emoji("😀"))
+        await assertThrows(.invalidIcon) { try await catalog.setIcon(id, to: .emoji("😀😀")) }
+        await assertThrows(.notFound) { try await catalog.setIcon(UUID(), to: .emoji("😀")) }
+        try await catalog.setIcon(id, to: nil)
+        let cleared = try await catalog.load().profiles.first { $0.id == id }
+        XCTAssertNil(cleared?.icon)
+        XCTAssertEqual(
+            try ProfileIdentity.decode(Data(contentsOf: identityURL), folderID: id),
+            ProfileIdentity(id: id, name: "Office", color: "#AABBCC"))
+
+        // The data folder profile keeps its icon in its own identity file.
+        try write("{}", "state.json")
+        let main = try await catalog.load().profiles.first(where: \.isDataFolder)
+        let mainID = try XCTUnwrap(main?.id)
+        try await catalog.setIcon(mainID, to: .symbol("house"))
+        let reloaded = try await self.catalog().load().profiles.first(where: \.isDataFolder)
+        XCTAssertEqual(reloaded?.id, mainID)
+        XCTAssertEqual(reloaded?.name, "Stow")
+        XCTAssertEqual(reloaded?.icon, .symbol("house"))
+    }
+
+    func testIconChangeKeepsAnIdentityItCannotRead() async throws {
+        let catalog = catalog()
+        for damaged in ["not json", identity(UUID(), "Other")] {
+            let id = UUID()
+            try write("{}", "profiles/\(id.uuidString)/state.json")
+            try write(damaged, "profiles/\(id.uuidString)/identity.json")
+            await assertThrows(.invalidIdentity) { try await catalog.setIcon(id, to: .emoji("😀")) }
+            XCTAssertEqual(
+                try Data(contentsOf: root.appendingPathComponent("profiles/\(id.uuidString)/identity.json")),
+                Data(damaged.utf8))
+        }
+        let bare = try addProfile(name: nil)
+        try await catalog.setIcon(bare, to: .emoji("😀"))
+        let stored = try ProfileIdentity.decode(
+            Data(contentsOf: root.appendingPathComponent("profiles/\(bare.uuidString)/identity.json")), folderID: bare)
+        XCTAssertEqual(
+            stored, ProfileIdentity(id: bare, name: "Unnamed profile", color: "#8E8E93", icon: .emoji("😀")))
+    }
+
     func testMoveReordersAndClamps() async throws {
         let catalog = catalog()
         let a = try await catalog.createProfile(name: "A", color: "#111111").id

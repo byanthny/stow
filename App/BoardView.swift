@@ -1,8 +1,10 @@
+import AppKit
 import StowCore
 import SwiftUI
 
 struct BoardView: View {
     @Bindable var store: AppStore
+    let profile: ProfileHandle
     var showSettings: () -> Void
     @Environment(\.stowTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -10,11 +12,21 @@ struct BoardView: View {
     @State private var expandedSections: Set<AttentionSection> = []
 
     var body: some View {
+        let header = BoardHeader(profile: profile, layout: store.state.boardLayout)
+        let iconStyle = header.tint.map { AnyShapeStyle(Color(stowHex: $0)) } ?? AnyShapeStyle(.stowMuted)
         VStack(spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: "tray").font(theme.font(size: 16, weight: .medium)).foregroundStyle(.stowMuted)
-                if store.state.boardLayout.showsTitle {
-                    Text("Stow").font(theme.font(size: 14, weight: .semibold))
+                // The icon is decorative; the profile menu button over it carries the profile's name.
+                ProfileIconView(icon: header.icon, placeholder: "tray").font(theme.font(size: 16, weight: .medium))
+                    .foregroundStyle(iconStyle).accessibilityHidden(true)
+                    .overlay {
+                        ProfileSwitcher(header: header) { profile.manager?.profileMenu(for: profile.id) ?? [] }
+                            .frame(minWidth: 22, minHeight: 22)
+                    }
+                if let title = header.title {
+                    // VoiceOver reads the name from the profile menu button.
+                    Text(verbatim: title).font(theme.font(size: 14, weight: .semibold)).lineLimit(1)
+                        .accessibilityHidden(true)
                 }
                 Spacer()
                 if store.isRefreshing {
@@ -275,4 +287,100 @@ private struct BoardSectionHeader: View {
             Spacer()
         }.padding(.vertical, 3).contentShape(Rectangle())
     }
+}
+
+/// What the board header shows for its profile.
+struct BoardHeader: Equatable {
+    /// The profile's name, which labels the profile menu button.
+    var name: String
+    /// The title beside the icon: the profile's name, unless Settings → Board → Show board title is off.
+    var title: String?
+    /// The profile's icon when this Mac can show it; nil shows the tray.
+    var icon: ProfileIcon?
+    /// The profile's color for the icon once colors show; nil keeps the muted tray color.
+    var tint: String?
+
+    @MainActor
+    init(profile: ProfileHandle, layout: BoardLayout) {
+        let entry = profile.entry
+        name = entry?.name ?? "Stow"
+        title = layout.showsTitle ? name : nil
+        icon = entry?.icon?.displayable
+        tint = profile.showsIdentity ? entry?.color : nil
+    }
+}
+
+/// The board header's profile menu: other profiles to switch to, Hide, Close, New profile…, and Profile settings….
+/// A transparent AppKit pull-down button over the header's icon, because SwiftUI's `Menu` gives assistive apps no
+/// press action. Its label is the profile's name.
+struct ProfileSwitcher: NSViewRepresentable {
+    let header: BoardHeader
+    let menu: @MainActor () -> [[ProfileMenuItem]]
+
+    func makeNSView(context: Context) -> ProfileSwitcherButton {
+        let button = ProfileSwitcherButton(frame: .zero, pullsDown: true)
+        button.isBordered = false
+        (button.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow
+        // The first item of a pull-down menu is the button's empty face; the rest are built as the menu opens.
+        let items = NSMenu()
+        items.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
+        items.delegate = context.coordinator
+        button.menu = items
+        button.toolTip = "Profiles"
+        button.setAccessibilityIdentifier("board.profileMenu")
+        button.setAccessibilityHelp("Switches profiles and opens profile settings")
+        return button
+    }
+
+    /// Changes only what differs: each AppKit setter can post accessibility notifications to assistive apps.
+    func updateNSView(_ button: ProfileSwitcherButton, context: Context) {
+        context.coordinator.provider = menu
+        if button.accessibilityLabel() != header.name { button.setAccessibilityLabel(header.name) }
+        if button.isEnabled != context.environment.isEnabled { button.isEnabled = context.environment.isEnabled }
+    }
+
+    /// Fills the space over the icon that SwiftUI offers.
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView button: ProfileSwitcherButton, context: Context) -> CGSize? {
+        proposal.replacingUnspecifiedDimensions(by: CGSize(width: 22, height: 22))
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor final class Coordinator: NSObject, NSMenuDelegate {
+        var provider: @MainActor () -> [[ProfileMenuItem]] = { [] }
+        private var actions: [@MainActor () -> Void] = []
+
+        /// Rebuilds the menu as it opens, so it lists the profiles and their states as they are now.
+        func menuNeedsUpdate(_ menu: NSMenu) {
+            while menu.items.count > 1 { menu.removeItem(at: 1) }
+            actions = []
+            for (number, section) in provider().enumerated() {
+                if number > 0 { menu.addItem(.separator()) }
+                for item in section {
+                    let entry = NSMenuItem(title: item.title, action: #selector(choose(_:)), keyEquivalent: "")
+                    entry.target = self
+                    entry.tag = actions.count
+                    entry.state = item.state
+                    actions.append(item.action)
+                    menu.addItem(entry)
+                }
+            }
+        }
+
+        /// The menu has no key equivalents, so key presses never need it rebuilt.
+        func menuHasKeyEquivalent(
+            _ menu: NSMenu, for event: NSEvent, target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
+            action: UnsafeMutablePointer<Selector?>
+        ) -> Bool { false }
+
+        @objc func choose(_ sender: NSMenuItem) {
+            guard actions.indices.contains(sender.tag) else { return }
+            actions[sender.tag]()
+        }
+    }
+}
+
+/// The profile menu button, without a pop-up button's usual insets, so it covers exactly the space SwiftUI gives it.
+final class ProfileSwitcherButton: NSPopUpButton {
+    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 }
