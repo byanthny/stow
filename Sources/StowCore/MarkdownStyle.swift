@@ -1,0 +1,115 @@
+import Foundation
+
+/// Ranges of a note's Markdown to style while it is edited, in UTF-16 offsets as `NSString` counts them.
+public enum MarkdownStyle {
+    public enum Kind: Equatable, Sendable {
+        /// The note's first line, shown as its title.
+        case title
+        case heading(level: Int)
+        case bold, italic, strikethrough
+        /// Inline code or a fenced block.
+        case code
+        /// A link's visible text. Only http and https URLs count.
+        case link(URL)
+        case quote
+        /// Markdown syntax, shown dimmed but kept.
+        case marker
+    }
+
+    public struct Span: Equatable, Sendable {
+        public var kind: Kind
+        public var range: NSRange
+
+        public init(kind: Kind, range: NSRange) {
+            self.kind = kind
+            self.range = range
+        }
+    }
+
+    public static func spans(in source: String) -> [Span] {
+        let text = source as NSString
+        let codeSpans = MarkdownCode.spans(in: source)
+        let blocks = codeSpans.filter { $0.kind == .block }.map(\.range)
+        let code = codeSpans.map(\.range)
+        var spans = code.map { Span(kind: .code, range: $0) }
+
+        func overlaps(_ range: NSRange, _ ranges: [NSRange]) -> Bool {
+            ranges.contains { NSIntersectionRange($0, range).length > 0 }
+        }
+
+        // Line styles: the title, headings, quotes, and list markers. Lines inside fenced blocks stay code.
+        var hasTitle = false
+        text.enumerateSubstrings(
+            in: NSRange(location: 0, length: text.length), options: [.byLines, .substringNotRequired]
+        ) { _, line, _, _ in
+            guard line.length > 0, !overlaps(line, blocks) else { return }
+            let content = text.substring(with: line)
+            if !hasTitle, !content.allSatisfy(\.isWhitespace) {
+                hasTitle = true
+                spans.append(Span(kind: .title, range: line))
+            }
+            if let match = headingPattern.firstMatch(in: source, range: line) {
+                let marks = match.range(at: 1)
+                spans.append(Span(kind: .heading(level: marks.length), range: line))
+                spans.append(Span(kind: .marker, range: marks))
+            } else if let match = quotePattern.firstMatch(in: source, range: line) {
+                spans.append(Span(kind: .quote, range: line))
+                spans.append(Span(kind: .marker, range: match.range(at: 1)))
+            } else if let match = listPattern.firstMatch(in: source, range: line) {
+                spans.append(Span(kind: .marker, range: match.range(at: 1)))
+            }
+        }
+
+        // Inline styles, never inside code: the text between the marks, and the marks.
+        let whole = NSRange(location: 0, length: text.length)
+        func inline(_ pattern: NSRegularExpression, _ kind: Kind) {
+            for match in pattern.matches(in: source, range: whole) where !overlaps(match.range, code) {
+                spans.append(Span(kind: kind, range: match.range(at: 2)))
+                spans.append(Span(kind: .marker, range: match.range(at: 1)))
+                spans.append(Span(kind: .marker, range: match.range(at: 3)))
+            }
+        }
+        inline(boldPattern, .bold)
+        inline(strikePattern, .strikethrough)
+        inline(starItalicPattern, .italic)
+        inline(underscoreItalicPattern, .italic)
+
+        for match in linkPattern.matches(in: source, range: whole) where !overlaps(match.range, code) {
+            guard let url = webURL(text.substring(with: match.range(at: 3))) else { continue }
+            let label = match.range(at: 2)
+            spans.append(Span(kind: .link(url), range: label))
+            spans.append(Span(kind: .marker, range: match.range(at: 1)))
+            // "](url)" after the label.
+            let tail = NSMaxRange(label)
+            spans.append(Span(kind: .marker, range: NSRange(location: tail, length: NSMaxRange(match.range) - tail)))
+        }
+        for match in bareLinkPattern.matches(in: source, range: whole) where !overlaps(match.range, code) {
+            guard let url = webURL(text.substring(with: match.range)) else { continue }
+            spans.append(Span(kind: .link(url), range: match.range))
+        }
+        return spans
+    }
+
+    /// An http or https URL with a host, or nil.
+    private static func webURL(_ string: String) -> URL? {
+        guard let url = URL(string: string), let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+            url.host?.isEmpty == false
+        else { return nil }
+        return url
+    }
+
+    private static func regex(_ pattern: String) -> NSRegularExpression {
+        // The patterns are constants, so a failure here is a programming error caught by the tests.
+        try! NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+    }
+
+    private static let headingPattern = regex(#"^ {0,3}(#{1,6})(?=[ \t]|$)"#)
+    private static let quotePattern = regex(#"^ {0,3}(>)"#)
+    private static let listPattern = regex(#"^[ \t]*([-*+]|\d{1,9}[.)])(?=[ \t])"#)
+    private static let boldPattern = regex(#"(\*\*|__)(?=\S)([^\n]+?)(?<=\S)(\1)"#)
+    private static let strikePattern = regex(#"(~~)(?=\S)([^\n]+?)(?<=\S)(~~)"#)
+    private static let starItalicPattern = regex(#"(?<![*\w])(\*)(?=[^\s*])([^\n*]+?)(?<=[^\s*])(\*)(?![*\w])"#)
+    private static let underscoreItalicPattern = regex(#"(?<![_\w])(_)(?=[^\s_])([^\n_]+?)(?<=[^\s_])(_)(?![_\w])"#)
+    private static let linkPattern = regex(#"(\[)([^\]\n]+)\]\(([^)\s]+)\)"#)
+    private static let bareLinkPattern = regex(#"(?<![\(<\[\w/])https?://[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]"#)
+}
