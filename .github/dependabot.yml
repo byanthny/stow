@@ -1,9 +1,13 @@
 version: 2
 updates:
   # Workflow actions are pinned by commit SHA; Dependabot proposes reviewed updates.
+  # One group keeps it to one pull request a month.
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
     commit-message:
       prefix: ci

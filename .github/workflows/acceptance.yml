@@ -2,7 +2,9 @@ name: acceptance
 
 # Manual runtime evidence on hardware the maintainer may not have. Hosted tests in `checks` cover logic;
 # this launches the real app with synthetic state on another architecture and checks its smoke workflow.
-# Run it manually, or add the `acceptance` label to a pull request (labels need triage access).
+# Run it manually, or add the `acceptance` label to a pull request from a branch in this repository (labels need
+# triage access). Fork pull requests never run it from a label.
+# Job names differ from `checks`, so a skipped acceptance job can't satisfy a required `build` check.
 on:
   workflow_dispatch:
   pull_request:
@@ -17,8 +19,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'acceptance'
+  acceptance-build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.label.name == 'acceptance' &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -44,8 +49,8 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-  smoke:
-    needs: build
+  acceptance-smoke:
+    needs: acceptance-build
     strategy:
       fail-fast: false
       matrix:
