@@ -6,7 +6,7 @@ Stow stores its local setup in `~/Library/Application Support/Stow/`. `state.jso
 
 ## Profiles
 
-The folder above is the first profile, named "Stow". Additional profiles live in `profiles/<UUID>/` inside it, each with its own `state.json`, notes, `.stow.lock`, and backups. A profile folder can hold an `identity.json` with its name, color, and optional icon. A small `profiles.json` index records profile order, which profiles were open at quit, and display settings; it holds no notes, cards, or account data. A `.stow-app.lock` file lets only one Stow process run at a time, and each profile has its own lock.
+The folder above is the first profile, named "Stow". Additional profiles live in `profiles/<UUID>/` inside it, each with its own `state.json`, notes, `.stow.lock`, and backups. A profile folder can hold an `identity.json` with its name, color, and optional icon. A small `profiles.json` index records profile order, which profiles were open at quit, display settings, and the [update check](#update-check) setting; it holds no notes, cards, or account data. A `.stow-app.lock` file lets only one Stow process run at a time, and each profile has its own lock.
 
 Profiles organize work; they are not a security boundary. Every profile lives in the same macOS account, and anything with access to that account can read all of them. Profile names appear in window titles, which apps with screen-recording or accessibility access can read.
 
@@ -18,11 +18,19 @@ Every profile uses the account `gh` is signed in as. If a refresh answers as a d
 
 Use Settings → **Show data folder**, **Open notes folder**, or a note's **Show Markdown file** action to reveal the relevant location. Do not manually rename managed note files. Private repository titles, comments, branch names, note contents, and module settings can remain on disk, including in retained backups.
 
-There is no analytics, telemetry, cloud sync, or Stow account. Notes are not sent to GitHub. Markdown preview uses image placeholders without fetching remote images. GitHub is off on a new installation until you choose **Use GitHub**; requests then use the existing GitHub CLI login. Opening a link launches the system browser. Stow currently supports `github.com` only.
+There is no analytics, telemetry, cloud sync, or Stow account. Notes are not sent to GitHub. Markdown preview uses image placeholders without fetching remote images. GitHub is off on a new installation until you choose **Use GitHub**; requests then use the existing GitHub CLI login. The [update check](#update-check), also off until you turn it on, is the only request Stow makes without `gh`. Opening a link launches the system browser. Stow currently supports `github.com` only.
 
 The JSON index and Markdown files are not application-encrypted. New storage directories use owner-only permissions, and files are created owner-readable and owner-writable before receiving bytes. Existing directory permissions are preserved. System backups, other software with account access, external editors, and trusted accessories may still access local data.
 
 Turning off GitHub hides cards and stops new refreshes without erasing the cache. If GitHub answers as a different account, the profile pauses and keeps the old cards marked stale; choosing **Use X here** clears that profile's cached cards, details, and dismissals, and personal notes and pins remain. Do not share the data folder or state index when reporting a problem.
+
+## Update check
+
+Settings → Updates → **Check for updates** is off until you turn it on, and applies to every profile. While it's on, Stow asks GitHub whether a newer version is out at launch and then once a day. **Check for updates…** in the Stow menu asks once whenever you choose it, even with the setting off.
+
+Each check is one HTTPS `GET https://api.github.com/repos/byanthny/stow/releases?per_page=10`. Nothing is sent beyond the request itself: no cookies, credentials, token, or account, and it never uses `gh`. Its headers are fixed, so they name Stow but not its version, your macOS version, or your languages. Like any website, GitHub sees your IP address and the time of the request. Stow reads at most 1 MiB of the reply and shows a newer version as a notice on the board, with a link to its release page under `https://github.com/byanthny/stow/releases/`. Nothing is downloaded or installed.
+
+Once the setting has been on, `profiles.json` also holds the time of the last check, the newest release it found, and the version of a dismissed notice. A check made with the setting off saves nothing. Backups never carry the setting.
 
 ## Credentials and trusted code
 

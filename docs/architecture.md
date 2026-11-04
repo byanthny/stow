@@ -4,7 +4,7 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 
 | component | responsibility |
 | --- | --- |
-| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, and cache reconciliation |
+| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, cache reconciliation, and the update check |
 | `StowGitHub` | GitHub CLI process transport, GraphQL decoding and pagination, refresh coordination, and lazy details |
 | `StowExtensionSDK` | plain versioned request, descriptor, configuration, and snapshot values plus `AccessoryProvider` |
 | `StowExtensions` | provider registry, validation, timeout, cancellation, cache, and adapters |
@@ -28,7 +28,7 @@ The `.stowbackup` codec uses backup format version 1 and encodes a complete in-m
 
 A profile is one state folder with its own `state.json`, notes folder, `.stow.lock`, and retained backups. The first profile is the data folder itself and is named "Stow"; others live in `profiles/<UUID>/`. Each profile folder can hold an `identity.json` with the profile's ID, name, color, and optional icon. `ProfileCatalog` finds profiles by looking at the folders, not at the index. It treats identity files and the index as untrusted input: sizes are limited, IDs must be UUIDs matching their folder, links and folders owned by another user are ignored, and names are sanitized.
 
-`profiles.json` in the data folder is a small index of profile order, which profiles were open or hidden at quit, the most recently active profile, the IDs already seen, and app-wide display settings. It is created only when there is something to record. A corrupt or newer index is preserved, and **Reset profile list** moves it to a backup before writing a new one.
+`profiles.json` in the data folder is a small index of profile order, which profiles were open or hidden at quit, the most recently active profile, the IDs already seen, and app-wide display and update settings. It is created only when there is something to record. A corrupt or newer index is preserved, and **Reset profile list** moves it to a backup before writing a new one.
 
 One process opens any number of profiles. `.stow-app.lock` is held for the process lifetime and decides whether a second launch hands over. Each open profile takes its own `.stow.lock`; if another process holds it, such as an older build using the first profile, that profile stays closed. `ProfileManager` owns the open sessions. Each `ProfileSession` has its own store, theme, GitHub client, refresh coordinator, accessory host, watcher, and windows, so nothing in one profile reads another's state. Profiles using the same `gh` location share one client and its rate-limit backoff. Hide, show, close, and switching act on a profile's windows together; hidden and closed profiles do not poll or run accessories.
 
@@ -45,6 +45,10 @@ Owners are the repository owners in pull request references, compared ignoring c
 `GHClient` discovers the authenticated viewer, fetches authored and directly requested pull requests, resolves pins, paginates connections, and loads details on demand. Details fetch at most three pages per connection and keep at most 100 checks and 100 reviews, preferring checks that need attention, so a very large pull request cannot bloat the saved index. A new installation leaves GitHub off until the user opts in. `RefreshCoordinator` coalesces overlapping refreshes. The app refreshes on activation and periodically while GitHub is enabled.
 
 Classification distinguishes observed facts from incomplete readiness. Conflicts, requested changes, failing checks, direct review requests, and complete merge readiness can need attention. Draft and terminal states override readiness. Unknown checks, mergeability, review data, or incomplete pagination cannot establish “Ready to merge.” “Behind base branch” is informational. Pins preserve watched cards; dismissals hide cards without deleting notes. Terminal unpinned cards expire 24 hours after first observation.
+
+## Update check
+
+`UpdateCheck` in `StowCore` makes the one request Stow sends without `gh`, and only after the person turns on Settings → Updates or chooses **Check for updates…**. It uses an ephemeral `URLSession` with no cookies, credentials, or cache, fixed headers, and a 30-second limit, and reads at most 1 MiB. Release tags compare as Semantic Versioning, pre-releases included, and a release counts only when its page is under `https://github.com/byanthny/stow/releases/` with no dot segments. `UpdateMonitor` in the app runs one check at a time: at launch and then at most daily while the setting is on, or when asked. It keeps the setting and the last result in `profiles.json`; the board shows a notice until it is dismissed or that version runs. Nothing downloads.
 
 ## Dependency direction
 
