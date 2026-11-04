@@ -354,6 +354,11 @@ final class AppStore {
         lastExpandedNoteID = id
     }
 
+    func setShowsBoardTitle(_ shown: Bool) {
+        state.boardLayout.showsTitle = shown
+        changed()
+    }
+
     func setNotesStartCollapsed(_ collapsed: Bool) {
         state.boardLayout.notesStartCollapsed = collapsed
         changed()

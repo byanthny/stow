@@ -113,6 +113,9 @@ private struct BoardSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Board").font(.stow(size: 14, weight: .semibold))
+            SettingsToggle(
+                "Show board title",
+                isOn: Binding(get: { layout.showsTitle }, set: { store.setShowsBoardTitle($0) }))
             Text("Section order").font(.stow(size: 11)).foregroundStyle(.secondary)
             ForEach(Array(layout.order.enumerated()), id: \.element) { index, section in
                 HStack(spacing: 6) {
@@ -155,7 +158,7 @@ private struct BoardSettingsView: View {
                 isOn: Binding(get: { layout.oneNoteOpenAtATime }, set: { store.setOneNoteOpenAtATime($0) }))
             HStack {
                 Text(
-                    "Defaults: Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time."
+                    "Defaults: title shown; Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time."
                 )
                 .font(.stow(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()

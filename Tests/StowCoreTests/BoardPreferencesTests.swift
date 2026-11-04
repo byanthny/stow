@@ -70,6 +70,7 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertFalse(layout.notesCanCollapse)
         XCTAssertTrue(layout.notesStartCollapsed)
         XCTAssertTrue(layout.oneNoteOpenAtATime)
+        XCTAssertTrue(layout.showsTitle)
     }
 
     func testBoardLayoutKeepsEachKnownSectionOnceInSavedOrder() throws {
@@ -100,7 +101,8 @@ final class BoardPreferencesTests: XCTestCase {
         let url = try directory().appendingPathComponent("state.json")
         var original = fixture()
         original.boardLayout = BoardLayout(
-            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true)
+            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true,
+            showsTitle: false)
         try await StateRepository(url: url).save(original)
         let loaded = try await StateRepository(url: url).load()
         XCTAssertEqual(loaded.boardLayout, original.boardLayout)

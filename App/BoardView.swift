@@ -12,7 +12,9 @@ struct BoardView: View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 Image(systemName: "tray").font(.stow(size: 16, weight: .medium)).foregroundStyle(Color.stowMuted)
-                Text("Stow").font(.stow(size: 14, weight: .semibold))
+                if store.state.boardLayout.showsTitle {
+                    Text("Stow").font(.stow(size: 14, weight: .semibold))
+                }
                 Spacer()
                 if store.isRefreshing {
                     ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 20)

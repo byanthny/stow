@@ -19,20 +19,24 @@ public struct BoardLayout: Codable, Equatable, Sendable {
     public var notesStartCollapsed: Bool
     /// Opening a board note closes the one that was open.
     public var oneNoteOpenAtATime: Bool
+    /// The board header shows its title beside the icon; the icon always stays.
+    public var showsTitle: Bool
 
     public init(
         order: [Section] = defaultOrder, visiblePullRequests: Int = defaultVisiblePullRequests,
-        notesCanCollapse: Bool = false, notesStartCollapsed: Bool = true, oneNoteOpenAtATime: Bool = true
+        notesCanCollapse: Bool = false, notesStartCollapsed: Bool = true, oneNoteOpenAtATime: Bool = true,
+        showsTitle: Bool = true
     ) {
         self.order = Self.normalized(order)
         self.visiblePullRequests = visiblePullRequests
         self.notesCanCollapse = notesCanCollapse
         self.notesStartCollapsed = notesStartCollapsed
         self.oneNoteOpenAtATime = oneNoteOpenAtATime
+        self.showsTitle = showsTitle
     }
 
     private enum CodingKeys: String, CodingKey {
-        case order, visiblePullRequests, notesCanCollapse, notesStartCollapsed, oneNoteOpenAtATime
+        case order, visiblePullRequests, notesCanCollapse, notesStartCollapsed, oneNoteOpenAtATime, showsTitle
     }
 
     public init(from decoder: any Decoder) throws {
@@ -49,6 +53,7 @@ public struct BoardLayout: Codable, Equatable, Sendable {
         notesCanCollapse = try container.decodeIfPresent(Bool.self, forKey: .notesCanCollapse) ?? false
         notesStartCollapsed = try container.decodeIfPresent(Bool.self, forKey: .notesStartCollapsed) ?? true
         oneNoteOpenAtATime = try container.decodeIfPresent(Bool.self, forKey: .oneNoteOpenAtATime) ?? true
+        showsTitle = try container.decodeIfPresent(Bool.self, forKey: .showsTitle) ?? true
     }
 
     /// Moves a section up (negative) or down (positive) one place at a time; edges are left alone.
