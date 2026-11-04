@@ -61,6 +61,7 @@ final class AppStore {
     @ObservationIgnored private let repository: StateRepository
     @ObservationIgnored private let accessoryHost: AccessoryHost
     @ObservationIgnored private let githubOverride: (any GitHubClient)?
+    @ObservationIgnored private let githubClientFactory: (@MainActor (URL) -> any GitHubClient)?
     @ObservationIgnored private var coordinator: RefreshCoordinator?
     @ObservationIgnored private var githubClient: (any GitHubClient)?
     @ObservationIgnored private var detailTasks: [String: Task<Void, Never>] = [:]
@@ -87,6 +88,7 @@ final class AppStore {
 
     init(
         stateURL: URL, isDemo: Bool = false, githubClient: (any GitHubClient)? = nil,
+        githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()], arrival: Bool = false
     ) {
         self.stateURL = stateURL
@@ -94,6 +96,7 @@ final class AppStore {
         self.isDemo = isDemo
         self.isArrival = arrival
         self.githubOverride = githubClient
+        self.githubClientFactory = githubClientFactory
         self.accessoryHost = AccessoryHost(providers: accessoryProviders)
         repository = StateRepository(url: stateURL)
     }
@@ -223,7 +226,7 @@ final class AppStore {
             githubMessage = "GitHub is unavailable. Install gh or choose its executable in Settings."
             return
         }
-        let client = GHClient(executableURL: executable)
+        let client = githubClientFactory?(executable) ?? GHClient(executableURL: executable)
         githubClient = client
         coordinator = RefreshCoordinator(client: client)
     }

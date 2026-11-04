@@ -49,6 +49,10 @@ final class ProfileManager {
     private let githubOverride: @MainActor (ProfileEntry) -> (any GitHubClient)?
     /// The accessory providers every profile's store runs. Tests replace them.
     private let accessoryProviders: [any AccessoryProvider]
+    /// Makes the client for a `gh` location. Tests replace it so none depends on a real `gh`.
+    private let githubClientMaker: @MainActor (URL) -> any GitHubClient
+    /// One client per `gh` location, so a rate-limit backoff pauses every profile that uses it.
+    private var githubClients: [String: any GitHubClient] = [:]
     /// The newest request for each profile. Each request waits for the one before it, so opens, closes, hides,
     /// shows, and changes to the profile's folder made in quick succession apply in order and never interleave.
     @ObservationIgnored private var requests: [UUID: Request] = [:]
@@ -61,12 +65,23 @@ final class ProfileManager {
     init(
         dataFolder: URL, isDemo: Bool, catalog: ProfileCatalog? = nil,
         githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
-        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
+        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()],
+        githubClientMaker: @escaping @MainActor (URL) -> any GitHubClient = { GHClient(executableURL: $0) }
     ) {
+        self.githubClientMaker = githubClientMaker
         self.catalog = catalog ?? ProfileCatalog(dataFolder: dataFolder)
         self.isDemo = isDemo
         self.githubOverride = githubOverride
         self.accessoryProviders = accessoryProviders
+    }
+
+    /// The client every profile using this `gh` location shares. Its backoff is the location's, not a profile's.
+    func githubClient(for executable: URL) -> any GitHubClient {
+        let key = executable.resolvingSymlinksInPath().path
+        if let existing = githubClients[key] { return existing }
+        let client = githubClientMaker(executable)
+        githubClients[key] = client
+        return client
     }
 
     /// Names and colors show once a second profile exists, or always when the user turns that on.
@@ -462,7 +477,9 @@ final class ProfileManager {
         guard
             let session = ProfileSession(
                 entry: entry, profile: ProfileHandle(id: entry.id, manager: self), isDemo: isDemo,
-                githubClient: githubOverride(entry), accessoryProviders: accessoryProviders)
+                githubClient: githubOverride(entry),
+                githubClientFactory: { [weak self] in self?.githubClient(for: $0) ?? GHClient(executableURL: $0) },
+                accessoryProviders: accessoryProviders)
         else { return false }
         session.showsName = showsProfileNames
         session.onActivate = { [weak self] in self?.lastActiveID = entry.id }

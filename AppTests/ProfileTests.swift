@@ -228,6 +228,53 @@ final class ProfileTests: XCTestCase {
         return (manager, try XCTUnwrap(manager.activeSession), client)
     }
 
+    func testProfilesShareOneClientPerGHLocation() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        var made: [URL] = []
+        let manager = ProfileManager(
+            dataFolder: folder, isDemo: false,
+            githubClientMaker: { url in
+                made.append(url)
+                return CountingClient()
+            })
+        let first = manager.githubClient(for: URL(fileURLWithPath: "/synthetic/bin/gh"))
+        let second = manager.githubClient(for: URL(fileURLWithPath: "/synthetic/bin/../bin/gh"))
+        let other = manager.githubClient(for: URL(fileURLWithPath: "/synthetic/other/gh"))
+        XCTAssertTrue(first as AnyObject === second as AnyObject)
+        XCTAssertFalse(first as AnyObject === other as AnyObject)
+        XCTAssertEqual(made.count, 2)
+    }
+
+    func testRateLimitPausesEveryProfileOnTheClient() async throws {
+        let reference = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let transport = RateLimitedTransport()
+        let client = GHClient(transport: transport)
+        var stores: [AppStore] = []
+        for _ in 0..<2 {
+            let folder = try makeDirectory()
+            addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+            try await seed(folder) { state in
+                state.githubEnabled = true
+                state.pins = [reference]
+            }
+            let store = AppStore(
+                stateURL: folder.appendingPathComponent("state.json"), githubClient: client,
+                accessoryProviders: [])
+            await store.start()
+            addTeardownBlock { @MainActor in store.stop() }
+            stores.append(store)
+        }
+        let (a, b) = (stores[0], stores[1])
+        await a.refresh()
+        let afterA = transport.calls
+        XCTAssertGreaterThan(afterA, 0)
+        XCTAssertEqual(a.githubMessage?.hasPrefix("GitHub requests are paused"), true)
+        await b.refresh()
+        XCTAssertEqual(transport.calls, afterA, "B must not reach GitHub while A's backoff holds")
+        XCTAssertEqual(b.githubMessage?.hasPrefix("GitHub requests are paused"), true)
+    }
+
     func testHideOrdersOutEveryWindowAndPausesRefresh() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2253,5 +2300,17 @@ private actor MismatchClient: GitHubClient {
     func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
         detailRequests += 1
         return .init(latestComment: "Synthetic comment")
+    }
+}
+
+/// Answers every request with HTTP 429, and counts them.
+private final class RateLimitedTransport: GraphQLTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    var calls: Int { lock.withLock { count } }
+
+    func execute(query: String, variables: [String: GraphQLValue]) async throws -> GraphQLResponse {
+        lock.withLock { count += 1 }
+        return GraphQLResponse(body: Data("{}".utf8), statusCode: 429, headers: ["retry-after": "300"])
     }
 }

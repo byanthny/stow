@@ -39,6 +39,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     /// sessions first, because a second lock on the same file fails even within one process.
     init?(
         entry: ProfileEntry, profile: ProfileHandle, isDemo: Bool, githubClient: (any GitHubClient)?,
+        githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
         accessoryProviders: [any AccessoryProvider]
     ) {
         let stateURL = entry.folder.appendingPathComponent("state.json")
@@ -51,8 +52,8 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         self.entry = entry
         self.profile = profile
         store = AppStore(
-            stateURL: stateURL, isDemo: isDemo, githubClient: githubClient, accessoryProviders: accessoryProviders,
-            arrival: entry.isArrival)
+            stateURL: stateURL, isDemo: isDemo, githubClient: githubClient, githubClientFactory: githubClientFactory,
+            accessoryProviders: accessoryProviders, arrival: entry.isArrival)
         super.init()
         store.onDetach = { [weak self] id in self?.showNote(id) }
         store.onDelete = { [weak self] id in self?.noteWindows.removeValue(forKey: id)?.orderOut(nil) }
