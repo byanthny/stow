@@ -5,6 +5,7 @@ struct NoteView: View {
     @Bindable var store: AppStore
     let noteID: UUID
     @Environment(\.stowTheme) private var theme
+    @Environment(\.windowChrome) private var chrome
     var detached = false
     /// A detached note's profile. Its color shows as a thin accent and its name in the title area once profile
     /// names show.
@@ -12,6 +13,8 @@ struct NoteView: View {
     /// Board notes can fold back into a one-line row.
     var onCollapse: (() -> Void)?
     @State private var isPreview = false
+    /// Only a detached note's header shares its window's title bar row.
+    private var headerChrome: WindowChrome { detached ? chrome : WindowChrome() }
 
     var body: some View {
         if let note = store.note(noteID) {
@@ -32,7 +35,9 @@ struct NoteView: View {
                         .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
                         .accessibilityIdentifier("note.previewToggle")
                     if detached {
-                        QuietIconButton(symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top") {
+                        QuietIconButton(
+                            symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top", scale: .small
+                        ) {
                             store.toggleAlwaysOnTop(noteID)
                         }
                     } else {
@@ -45,7 +50,8 @@ struct NoteView: View {
                         identifier: "note.actions", tint: theme.color(.muted)
                     ).fixedSize()
                 }
-                .padding(.horizontal, 10).padding(.top, 6)
+                .windowHeaderRow(headerChrome, horizontal: 10, vertical: 0)
+                .padding(.top, headerChrome.isInline ? 0 : 6)
 
                 if let reference = note.pullRequest {
                     Button {
@@ -117,6 +123,34 @@ struct DetachedNoteLauncher: View {
 }
 
 /// A board note folded into one line: open it inline, or pop it out into its own window.
+/// The Notes area's typing spot: clicking it starts a note with the cursor ready.
+struct NoteComposerRow: View {
+    /// With no notes yet, the row also explains what the area is for.
+    let isEmpty: Bool
+    var start: () -> Void
+    @Environment(\.stowTheme) private var theme
+
+    var body: some View {
+        Button(action: start) {
+            VStack(alignment: .leading, spacing: 4) {
+                if isEmpty {
+                    Text("A little room to think.").font(theme.font(size: 13, weight: .medium))
+                        .foregroundStyle(.stowText)
+                }
+                Text(isEmpty ? "Click here and start typing, or paste a pull request link." : "Start typing a note…")
+                    .font(theme.font(size: isEmpty ? 11 : 12)).foregroundStyle(.stowMuted)
+            }
+            .padding(isEmpty ? 14 : 12).frame(maxWidth: .infinity, alignment: .leading)
+            .background(.stowSurface, in: RoundedRectangle(cornerRadius: isEmpty ? 9 : 8))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Start a note")
+        .accessibilityHint("Starts a note you can type into right away")
+        .accessibilityIdentifier("notes.composer")
+    }
+}
+
 struct CollapsedNoteRow: View {
     @Bindable var store: AppStore
     let note: Note

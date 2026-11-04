@@ -506,6 +506,7 @@ final class AppStore {
     }
 
     @discardableResult func addNote(_ markdown: String = "", reference: PullRequestReference? = nil) -> UUID {
+        discardEmptyDraft()
         let note = Note(markdown: markdown, pullRequest: reference)
         state.notes.insert(note, at: 0)
         requestFocus(note.id)
@@ -513,13 +514,37 @@ final class AppStore {
         return note.id
     }
 
+    /// A note started by clicking the Notes area, kept only once something is typed into it.
+    private(set) var draftNoteID: UUID?
+
+    /// Starts an empty note ready for typing. It disappears again if it is left without text.
+    @discardableResult func startNote() -> UUID {
+        let id = addNote()
+        draftNoteID = id
+        return id
+    }
+
+    /// Removes the started note if nothing was typed into it, as if it had never been created.
+    private func discardEmptyDraft(keeping kept: UUID? = nil) {
+        guard let id = draftNoteID, id != kept else { return }
+        draftNoteID = nil
+        guard let note = note(id), note.markdown.isEmpty, !note.isDetached else { return }
+        deleteNote(id)
+    }
+
     func isNoteExpanded(_ id: UUID) -> Bool { expandedNoteIDs.contains(id) }
 
     func toggleNoteExpanded(_ id: UUID) {
-        if expandedNoteIDs.contains(id) { expandedNoteIDs.remove(id) } else { expandNote(id) }
+        if expandedNoteIDs.contains(id) {
+            expandedNoteIDs.remove(id)
+            if id == draftNoteID { discardEmptyDraft() }
+        } else {
+            expandNote(id)
+        }
     }
 
     private func expandNote(_ id: UUID) {
+        discardEmptyDraft(keeping: id)
         if state.boardLayout.oneNoteOpenAtATime { expandedNoteIDs = [id] } else { expandedNoteIDs.insert(id) }
         lastExpandedNoteID = id
     }
@@ -613,11 +638,14 @@ final class AppStore {
         }
         state.notes[index].markdown = markdown
         state.notes[index].updatedAt = .now
+        // Typing into a started note keeps it.
+        if id == draftNoteID, !markdown.isEmpty { draftNoteID = nil }
         changed()
     }
 
     func detachNote(_ id: UUID) {
         guard let index = state.notes.firstIndex(where: { $0.id == id }) else { return }
+        if id == draftNoteID { draftNoteID = nil }
         state.notes[index].isDetached = true
         changed()
         onDetach?(id)

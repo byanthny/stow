@@ -2,6 +2,69 @@ import AppKit
 import StowCore
 import SwiftUI
 
+/// Where a panel's window buttons sit, so a header can share the title bar row with them.
+struct WindowChrome: Equatable, Sendable {
+    /// Space to leave before the first header item; zero outside a panel.
+    var leadingInset: CGFloat = 0
+    /// Height of the title bar row; zero outside a panel.
+    var titlebarHeight: CGFloat = 0
+    var isInline: Bool { titlebarHeight > 0 }
+
+    init(leadingInset: CGFloat = 0, titlebarHeight: CGFloat = 0) {
+        self.leadingInset = leadingInset
+        self.titlebarHeight = titlebarHeight
+    }
+
+    /// Measures a window whose content runs under its transparent title bar.
+    @MainActor init(window: NSWindow) {
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        let trailing = buttons.compactMap { window.standardWindowButton($0)?.frame.maxX }.max() ?? 0
+        leadingInset = trailing > 0 ? trailing + 10 : 0
+        titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var windowChrome = WindowChrome()
+}
+
+/// Lets the empty parts of a header move the window, as a title bar does.
+struct WindowDragArea: NSViewRepresentable {
+    final class DragView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            if event.clickCount == 2 {
+                // Follow the system's title bar double-click setting.
+                switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
+                case "Minimize": window.miniaturize(nil)
+                case "None": break
+                default: window.zoom(nil)
+                }
+                return
+            }
+            window.performDrag(with: event)
+        }
+    }
+
+    func makeNSView(context: Context) -> DragView { DragView() }
+    func updateNSView(_ nsView: DragView, context: Context) {}
+}
+
+extension View {
+    /// Lays out a window's top row. In a panel it shares the title bar row: it starts after the window buttons,
+    /// matches the title bar's height, and its empty space moves the window. Elsewhere it keeps its own padding.
+    func windowHeaderRow(_ chrome: WindowChrome, horizontal: CGFloat, vertical: CGFloat) -> some View {
+        self
+            .padding(.leading, chrome.isInline ? max(horizontal, chrome.leadingInset) : horizontal)
+            .padding(.trailing, horizontal)
+            .padding(.vertical, chrome.isInline ? 0 : vertical)
+            .frame(height: chrome.isInline ? chrome.titlebarHeight : nil)
+            .background { if chrome.isInline { WindowDragArea() } }
+    }
+}
+
 final class StowPanel: NSPanel {
     var noteID: UUID?
     var onPaste: ((String) -> Void)?

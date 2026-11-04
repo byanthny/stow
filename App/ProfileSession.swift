@@ -178,8 +178,9 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             panel.noteID = id
             panel.minSize = NSSize(width: 260, height: 208)
             panel.contentView = describedHost(
-                NoteView(store: store, noteID: id, detached: true, profile: profile).themed(by: store.theme),
-                label: "Note")
+                NoteView(store: store, noteID: id, detached: true, profile: profile).themed(by: store.theme)
+                    .environment(\.windowChrome, WindowChrome(window: panel)),
+                label: "Note", fillsTitleBar: true)
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
@@ -274,8 +275,9 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         board.minSize = NSSize(width: 320, height: 348)
         board.contentView = describedHost(
             BoardView(store: store, profile: profile, showSettings: { [weak self] in self?.showSettings() })
-                .themed(by: store.theme),
-            label: "Board")
+                .themed(by: store.theme)
+                .environment(\.windowChrome, WindowChrome(window: board)),
+            label: "Board", fillsTitleBar: true)
     }
 
     /// "Stow", or "Stow note" with a suffix, using the profile's name in place of "Stow" once names show.
@@ -290,20 +292,26 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         settingsWindow?.title = title("settings")
     }
 
-    /// SwiftUI leaves the hosting view's accessibility group without a description.
-    private func describedHost<Content: View>(_ view: Content, label: String) -> NSHostingView<Content> {
+    /// SwiftUI leaves the hosting view's accessibility group without a description. A panel's content fills its
+    /// title bar too, so its header can share the row with the window buttons instead of sitting below it.
+    private func describedHost<Content: View>(_ view: Content, label: String, fillsTitleBar: Bool = false)
+        -> NSHostingView<Content>
+    {
         let host = NSHostingView(rootView: view)
         host.setAccessibilityLabel(label)
+        if fillsTitleBar { host.safeAreaRegions = [] }
         return host
     }
 
     private func makePanel(frame: NSRect, title: String) -> StowPanel {
-        let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable]
+        // Content runs under the transparent title bar so headers share a row with the window buttons.
+        let style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
         let content = NSWindow.contentRect(forFrameRect: frame, styleMask: style)
         let panel = StowPanel(contentRect: content, styleMask: style, backing: .buffered, defer: false)
         panel.title = title
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
+        panel.titlebarSeparatorStyle = .none
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.appearance = store.theme.snapshot.appKitAppearance

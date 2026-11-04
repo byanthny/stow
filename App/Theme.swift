@@ -119,10 +119,14 @@ extension Color {
 struct QuietIconButton: View {
     let symbol: String
     let label: String
+    /// Tall glyphs such as pins look larger than their neighbors at the same size, so they draw smaller.
+    var scale: Image.Scale = .medium
     var action: () -> Void
     var body: some View {
-        Button(action: action) { Image(systemName: symbol).frame(width: 22, height: 22).contentShape(Rectangle()) }
-            .buttonStyle(.plain).foregroundStyle(.stowMuted)
-            .help(label).accessibilityLabel(label)
+        Button(action: action) {
+            Image(systemName: symbol).imageScale(scale).frame(width: 22, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.stowMuted)
+        .help(label).accessibilityLabel(label)
     }
 }

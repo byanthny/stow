@@ -34,7 +34,17 @@ struct PRCard: View {
                             .multilineTextAlignment(.leading).lineLimit(3)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(.plain).help("Open pull request")
-                if pinned { Image(systemName: "pin.fill").font(theme.font(size: 8)).foregroundStyle(.stowMuted) }
+                // The card's actions sit beside its expand button, one click away.
+                CardIconButton(
+                    symbol: pinned ? "pin.fill" : "pin", label: pinned ? "Unpin pull request" : "Pin pull request",
+                    identifier: "card.pin", scale: .small
+                ) { store.togglePin(pr.reference) }
+                CardIconButton(symbol: "note.text.badge.plus", label: "Add personal note", identifier: "card.addNote") {
+                    store.addNote(reference: pr.reference)
+                }
+                CardIconButton(symbol: "xmark", label: "Dismiss pull request", identifier: "card.dismiss") {
+                    store.dismiss(pr.reference)
+                }
                 Button {
                     store.toggleDetails(pr.reference)
                 } label: {
@@ -126,12 +136,6 @@ struct PRCard: View {
         }.font(theme.font(size: 10)).foregroundStyle(.stowMuted)
         Text("State observed \(pr.observedStateSince, style: .relative) ago").font(theme.font(size: 10))
             .foregroundStyle(.stowMuted)
-        HStack {
-            Button("Add personal note") { store.addNote(reference: pr.reference) }
-            Spacer()
-            Button(pinned ? "Unpin" : "Pin") { store.togglePin(pr.reference) }
-            Button("Dismiss") { store.dismiss(pr.reference) }
-        }.buttonStyle(.plain).font(theme.font(size: 10)).foregroundStyle(.stowMuted).padding(.top, 3)
         ForEach(store.state.notes.filter { $0.pullRequest?.id == pr.id }) { note in
             Button {
                 if note.isDetached {
@@ -157,5 +161,24 @@ func checkSymbol(_ state: String) -> String {
     case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE": "xmark.circle"
     case "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED": "clock"
     default: "questionmark.circle"
+    }
+}
+
+/// A small action icon on a card, sized like the card's expand button.
+struct CardIconButton: View {
+    let symbol: String
+    let label: String
+    let identifier: String
+    var scale: Image.Scale = .medium
+    var action: () -> Void
+    @Environment(\.stowTheme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(theme.font(size: 9, weight: .medium)).imageScale(scale)
+                .frame(width: 18, height: 22).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).foregroundStyle(.stowMuted)
+        .help(label).accessibilityLabel(label).accessibilityIdentifier(identifier)
     }
 }

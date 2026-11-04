@@ -7,6 +7,7 @@ struct BoardView: View {
     let profile: ProfileHandle
     var showSettings: () -> Void
     @Environment(\.stowTheme) private var theme
+    @Environment(\.windowChrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
     @State private var expandedSections: Set<AttentionSection> = []
@@ -39,13 +40,14 @@ struct BoardView: View {
                 }
                 QuietIconButton(
                     symbol: store.state.boardAlwaysOnTop ? "pin.fill" : "pin",
-                    label: store.state.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top"
+                    label: store.state.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top", scale: .small
                 ) { store.toggleBoardAlwaysOnTop() }
                 .accessibilityValue(store.state.boardAlwaysOnTop ? "Pinned" : "Unpinned")
                 .accessibilityIdentifier("board.alwaysOnTop")
                 QuietIconButton(symbol: "plus", label: "New note") { store.addNote() }
                 QuietIconButton(symbol: "slider.horizontal.3", label: "Settings") { showSettings() }
-            }.padding(.horizontal, 15).padding(.vertical, 8)
+            }
+            .windowHeaderRow(chrome, horizontal: 15, vertical: 8)
             Divider().overlay(.white.opacity(0.025))
             ScrollViewReader { proxy in
                 ScrollView {
@@ -167,14 +169,9 @@ struct BoardView: View {
             collapsible: collapsible,
             summary: notes.first?.markdown.split(separator: "\n").first.map(String.init)
         ) {
-            if store.state.notes.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("A little room to think.").font(theme.font(size: 13, weight: .medium))
-                    Text("Start a note, or paste a pull request link here.")
-                        .font(theme.font(size: 11)).foregroundStyle(.stowMuted)
-                    Button("New note") { store.addNote() }.controlSize(.small)
-                }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.stowSurface, in: RoundedRectangle(cornerRadius: 9))
+            // Click and start typing; a started note that stays empty goes away again.
+            if store.draftNoteID == nil {
+                NoteComposerRow(isEmpty: store.state.notes.isEmpty) { store.startNote() }
             }
             ForEach(notes) { note in
                 Group {
