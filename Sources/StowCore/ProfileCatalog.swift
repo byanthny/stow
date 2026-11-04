@@ -217,6 +217,15 @@ public actor ProfileCatalog {
         try writeIndex(index, after: snapshot)
     }
 
+    /// Saves the update settings; writes nothing when they're unchanged.
+    public func setUpdateSettings(_ settings: UpdateSettings) throws {
+        let snapshot = try writableSnapshot()
+        guard snapshot.index.updates != settings else { return }
+        var index = snapshot.index
+        index.updates = settings
+        try writeIndex(index, after: snapshot)
+    }
+
     /// Moves the unusable index aside, byte for byte, and starts a new one. The seen list starts empty, so every
     /// profile outside the data folder is an arrival again and opens once with GitHub and accessories off.
     public func resetIndex() throws -> URL {

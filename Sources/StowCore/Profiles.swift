@@ -214,11 +214,13 @@ public struct ProfileIndex: Codable, Equatable, Sendable {
     public var lastActiveID: UUID?
     public var seenIDs: [UUID] = []
     public var alwaysShowProfileName = false
+    /// Settings → Updates, which applies to every profile.
+    public var updates = UpdateSettings()
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case schemaVersion, order, open, lastActiveID, seenIDs, alwaysShowProfileName
+        case schemaVersion, order, open, lastActiveID, seenIDs, alwaysShowProfileName, updates
     }
 
     public init(from decoder: Decoder) throws {
@@ -230,6 +232,8 @@ public struct ProfileIndex: Codable, Equatable, Sendable {
         seenIDs = try container.decodeIfPresent([UUID].self, forKey: .seenIDs) ?? []
         alwaysShowProfileName =
             try container.decodeIfPresent(Bool.self, forKey: .alwaysShowProfileName) ?? false
+        // Damaged update settings read as defaults.
+        updates = (try? container.decodeIfPresent(UpdateSettings.self, forKey: .updates)) ?? UpdateSettings()
     }
 
     /// Decodes untrusted bytes. A newer version is reported before its fields are read,
