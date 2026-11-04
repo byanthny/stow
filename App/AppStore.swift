@@ -651,6 +651,15 @@ final class AppStore {
         onDetach?(id)
     }
 
+    /// The note becomes a standalone note. Its text and Markdown file stay as they are.
+    func unlinkPullRequest(_ id: UUID) {
+        guard let index = state.notes.firstIndex(where: { $0.id == id }), state.notes[index].pullRequest != nil else {
+            return
+        }
+        state.notes[index].pullRequest = nil
+        changed()
+    }
+
     func closeDetachedNote(_ id: UUID) {
         guard !isTerminating, let index = state.notes.firstIndex(where: { $0.id == id }) else { return }
         state.notes[index].isDetached = false

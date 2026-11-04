@@ -225,6 +225,29 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         await shutdown(app)
     }
 
+    func testRemovingThePullRequestLinkKeepsTheNoteAndItsFile() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        let note = try XCTUnwrap(app.store.state.notes.first)
+        XCTAssertNotNil(note.pullRequest)
+        let file = noteFile(note.id, store: app.store)
+        let source = try Data(contentsOf: file)
+        app.store.unlinkPullRequest(note.id)
+        XCTAssertNil(app.store.note(note.id)?.pullRequest)
+        XCTAssertEqual(app.store.note(note.id)?.markdown, note.markdown)
+        await shutdown(app)
+        XCTAssertEqual(try Data(contentsOf: file), source)
+
+        let restarted = try await prepare(directory)
+        defer { dispose(restarted) }
+        let reloaded = try XCTUnwrap(restarted.store.note(note.id))
+        XCTAssertNil(reloaded.pullRequest)
+        XCTAssertEqual(reloaded.markdown, note.markdown)
+        await shutdown(restarted)
+    }
+
     private func makeDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "StowLiveMarkdownTests-\(UUID().uuidString)", isDirectory: true)

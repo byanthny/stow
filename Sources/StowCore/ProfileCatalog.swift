@@ -13,7 +13,14 @@ public struct ProfileEntry: Equatable, Sendable {
     public var isArrival: Bool
 }
 
-public enum ProfileIndexStatus: Equatable, Sendable { case absent, loaded, needsReset }
+public enum ProfileIndexStatus: Equatable, Sendable {
+    case absent, loaded, needsReset
+    /// Saved by a newer version of Stow. It is kept as it is and, like a list that needs a reset, blocks changes.
+    case newer
+
+    /// Profiles can't change, and their order and open windows aren't saved, until the list is reset.
+    public var blocksChanges: Bool { self == .needsReset || self == .newer }
+}
 
 public struct ProfileCatalogSnapshot: Equatable, Sendable {
     /// Index order first, then by name.
@@ -214,7 +221,7 @@ public actor ProfileCatalog {
     /// profile outside the data folder is an arrival again and opens once with GitHub and accessories off.
     public func resetIndex() throws -> URL {
         let snapshot = try load()
-        guard snapshot.indexStatus == .needsReset else { throw ProfileError.notFound }
+        guard snapshot.indexStatus.blocksChanges else { throw ProfileError.notFound }
         let stamp = Self.backupStamp.string(from: Date())
         let backup = dataFolder.appendingPathComponent(
             "profiles-backup-\(stamp)-\(UUID().uuidString.prefix(8)).json")
@@ -252,7 +259,7 @@ public actor ProfileCatalog {
 
     func writableSnapshot() throws -> ProfileCatalogSnapshot {
         let snapshot = try load()
-        if snapshot.indexStatus == .needsReset { throw ProfileError.indexNeedsReset }
+        if snapshot.indexStatus.blocksChanges { throw ProfileError.indexNeedsReset }
         return snapshot
     }
 
@@ -359,8 +366,13 @@ public actor ProfileCatalog {
             return (ProfileIndex(), .needsReset)
         }
         guard let data else { return (ProfileIndex(), .absent) }
-        guard let index = try? ProfileIndex.decode(data) else { return (ProfileIndex(), .needsReset) }
-        return (index, .loaded)
+        do {
+            return (try ProfileIndex.decode(data), .loaded)
+        } catch ProfileError.newerIndex(_) {
+            return (ProfileIndex(), .newer)
+        } catch {
+            return (ProfileIndex(), .needsReset)
+        }
     }
 
     private func hasProfileData(in folder: URL) throws -> Bool {

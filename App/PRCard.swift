@@ -39,7 +39,7 @@ struct PRCard: View {
                     symbol: pinned ? "pin.fill" : "pin", label: pinned ? "Unpin pull request" : "Pin pull request",
                     identifier: "card.pin", scale: .small
                 ) { store.togglePin(pr.reference) }
-                CardIconButton(symbol: "note.text.badge.plus", label: "Add personal note", identifier: "card.addNote") {
+                CardIconButton(symbol: "square.and.pencil", label: "Add personal note", identifier: "card.addNote") {
                     store.addNote(reference: pr.reference)
                 }
                 CardIconButton(symbol: "xmark", label: "Dismiss pull request", identifier: "card.dismiss") {
@@ -147,7 +147,7 @@ struct PRCard: View {
             } label: {
                 Label(
                     note.markdown.split(separator: "\n").first.map(String.init) ?? "Personal note",
-                    systemImage: "note.text"
+                    systemImage: "doc.text"
                 )
                 .lineLimit(1).font(theme.font(size: 10))
             }.buttonStyle(.plain).foregroundStyle(.stowMuted)

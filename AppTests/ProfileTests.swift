@@ -1624,6 +1624,33 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(main.showsName)
     }
 
+    func testOpeningWhenTheFoldersCannotBeReadSaysSoInsteadOfCallingItMissing() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let indexURL = folder.appendingPathComponent(ProfileIndex.filename)
+        // Once the create has written the index, the data folder can no longer be read.
+        let failing = ProfileCatalog(
+            dataFolder: folder, currentUserID: getuid(), trash: { _ in }, ownerOf: { _ in getuid() },
+            fileExists: { url in
+                if FileManager.default.fileExists(atPath: indexURL.path) { throw StateError.unreadable }
+                return FileManager.default.fileExists(atPath: url.path)
+            })
+        let manager = makeManager(folder, catalog: failing)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let entry = try await manager.createProfile(name: "Work", color: "#336699")
+        let reports = Recorder()
+        manager.reportUnreadable = { reports.names.append($0.name) }
+
+        let opened = await manager.open(entry.id)
+
+        XCTAssertFalse(opened)
+        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertTrue(manager.profiles.contains { $0.id == entry.id }, "A profile Stow can't look for stays listed")
+    }
+
     func testNewProfileColorsStayDistinct() {
         let palette = ProfilePalette.colors
         XCTAssertGreaterThan(palette.count, 3)
@@ -2359,6 +2386,7 @@ final class ProfileTests: XCTestCase {
     private func failOnReports(from manager: ProfileManager) {
         manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
         manager.reportNotFound = { entry in XCTFail("Unexpected report that \(entry.name) cannot be found") }
+        manager.reportUnreadable = { entry in XCTFail("Unexpected report that \(entry.name)'s folder can't be read") }
         manager.reportNoProfiles = { XCTFail("Unexpected report that no profile can be found") }
         manager.reportDeletionFailure = { entry, error in
             XCTFail("Unexpected report that \(entry.name) could not be deleted: \(error)")

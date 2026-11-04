@@ -88,15 +88,21 @@ final class StateCompatibilityTests: XCTestCase {
         var layout = try XCTUnwrap(damaged["boardLayout"] as? [String: Any])
         layout["ownerOrder"] = 5
         damaged["boardLayout"] = layout
-        // A managed user's login adds an underscore and a short code, and its cards can be selected.
-        let owners: [Any] = ["acme", "", " ", "bad login", 5, NSNull(), ["acme"], "-edge", "a--b", "Other", "jo_acme"]
+        // Older logins can end in a hyphen or repeat one, and a managed user's login adds an underscore and a short
+        // code. A name GitHub wouldn't accept today stays too, so damage narrows the selection instead of widening it.
+        let owners: [Any] = [
+            "acme", "", " ", "bad login", 5, NSNull(), ["acme"], "-edge", "a--b", "Other", "jo_acme", "old-login-",
+            "zero\u{200B}width",
+        ]
         damaged["ownerSelection"] = ["owners": owners]
         let decoded = try decode(JSONSerialization.data(withJSONObject: damaged))
         XCTAssertEqual(decoded.boardLayout.ownerOrder, .alphabetical)
-        XCTAssertEqual(decoded.ownerSelection.owners, ["acme", "jo_acme", "Other"])
+        XCTAssertEqual(decoded.ownerSelection.owners, ["-edge", "a--b", "acme", "jo_acme", "old-login-", "Other"])
         XCTAssertEqual(decoded.notes, fixture().notes)
-        let onlyInvalid = Data(#"{"owners":["", "x y", "_"]}"#.utf8)
-        XCTAssertTrue(try JSONDecoder().decode(OwnerSelection.self, from: onlyInvalid).isAll)
+        let onlyUnusable = Data(#"{"owners":["", " ", 5, null]}"#.utf8)
+        XCTAssertTrue(try JSONDecoder().decode(OwnerSelection.self, from: onlyUnusable).isAll)
+        let onlyUnknown = Data(#"{"owners":["x y", "_"]}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(OwnerSelection.self, from: onlyUnknown).owners, ["_"])
     }
 
     func testLoginValidation() {

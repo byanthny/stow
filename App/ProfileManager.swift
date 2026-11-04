@@ -21,8 +21,11 @@ final class ProfileManager {
     private(set) var alwaysShowsProfileName = false {
         didSet { if alwaysShowsProfileName != oldValue { onProfilesChange?() } }
     }
-    /// The index cannot be read. Settings offers Reset profile list, and profile changes wait for it.
+    /// The index cannot be read, or a newer Stow saved it. Settings offers Reset profile list, and profile changes
+    /// wait for it.
     private(set) var indexNeedsReset = false
+    /// A newer version of Stow saved the index, so updating Stow is the better fix than a reset.
+    private(set) var indexIsNewer = false
     /// The profile whose Settings shows the New profile sheet.
     var newProfileRequest: UUID?
     /// Set once `start()` has shown a profile. From then on a quit records which profiles are open, even none.
@@ -52,6 +55,16 @@ final class ProfileManager {
         alert.messageText = "Stow can’t find \(entry.name)"
         alert.informativeText =
             "Its folder was moved or deleted. If it’s in the Trash, put it back, then open it again."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    /// Says that the profile folders can't be read, so Stow can't tell whether a profile someone asked to open is
+    /// still there.
+    @ObservationIgnored var reportUnreadable: @MainActor (ProfileEntry) -> Void = { entry in
+        let alert = NSAlert()
+        alert.messageText = "Stow can’t read its profile folders"
+        alert.informativeText =
+            "\(entry.name) stays closed. Check that Stow’s data folder can be read, then open the profile again."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -149,7 +162,8 @@ final class ProfileManager {
         // problem without writing.
         let snapshot = try? await catalog.load()
         alwaysShowsProfileName = snapshot?.index.alwaysShowProfileName ?? false
-        indexNeedsReset = snapshot?.indexStatus == .needsReset
+        indexNeedsReset = snapshot?.indexStatus.blocksChanges == true
+        indexIsNewer = snapshot?.indexStatus == .newer
         profiles = snapshot?.profiles ?? []
         if profiles.isEmpty {
             guard snapshot?.isNewInstallation ?? true else {
@@ -211,6 +225,7 @@ final class ProfileManager {
             case .opened: return true
             case .heldElsewhere: self.reportOpenElsewhere(entry)
             case .notFound: self.reportNotFound(entry)
+            case .unreadable: self.reportUnreadable(entry)
             }
             return false
         }
@@ -318,7 +333,8 @@ final class ProfileManager {
     /// Takes the list and display setting from a fresh read of the folders, and passes them to the open profiles.
     private func apply(_ snapshot: ProfileCatalogSnapshot) {
         alwaysShowsProfileName = snapshot.index.alwaysShowProfileName
-        indexNeedsReset = snapshot.indexStatus == .needsReset
+        indexNeedsReset = snapshot.indexStatus.blocksChanges
+        indexIsNewer = snapshot.indexStatus == .newer
         // Before the data folder profile first saves, the folder lists nothing; the open profile stays listed.
         if !snapshot.profiles.isEmpty, snapshot.profiles != profiles { profiles = snapshot.profiles }
         for session in sessions.values {
@@ -380,7 +396,7 @@ final class ProfileManager {
             await self.outcome {
                 // Checked first, so a deletion that cannot happen never closes the profile.
                 let snapshot = try await self.catalog.load()
-                if snapshot.indexStatus == .needsReset { throw ProfileError.indexNeedsReset }
+                if snapshot.indexStatus.blocksChanges { throw ProfileError.indexNeedsReset }
                 guard snapshot.profiles.contains(where: { $0.id == id }) else { throw ProfileError.notFound }
                 guard snapshot.profiles.count > 1 else { throw ProfileError.lastProfile }
                 let reopening = self.sessions[id].map { (entry: $0.entry, hidden: $0.isHidden) }
@@ -535,7 +551,7 @@ final class ProfileManager {
         }
     }
 
-    private enum OpenOutcome { case opened, heldElsewhere, notFound }
+    private enum OpenOutcome { case opened, heldElsewhere, notFound, unreadable }
 
     /// Takes the profile's lock and opens its windows, out of sight when it reopens hidden. The profile is first
     /// confirmed with a fresh read of the folders, because the list may be older than a folder moved away or a
@@ -544,7 +560,9 @@ final class ProfileManager {
     private func openSession(_ listed: ProfileEntry, hidden: Bool = false) async -> OpenOutcome {
         // A profile open here already holds its lock, and a second lock on the same file would be refused.
         if sessions[listed.id] != nil { return .opened }
-        guard let entry = await confirmed(listed) else { return .notFound }
+        let confirmation: ProfileEntry?
+        do { confirmation = try await confirmed(listed) } catch { return .unreadable }
+        guard let entry = confirmation else { return .notFound }
         guard
             let session = ProfileSession(
                 entry: entry, profile: ProfileHandle(id: entry.id, manager: self), isDemo: isDemo,
@@ -569,8 +587,16 @@ final class ProfileManager {
     /// from the list, when it is gone. Two profiles open without being listed, and neither writes where profile
     /// data was expected: a new installation's first profile, which has no files until it first saves, and the
     /// data folder profile when the data folder cannot be read at all, whose store then reports the problem.
-    private func confirmed(_ entry: ProfileEntry) async -> ProfileEntry? {
-        guard let snapshot = try? await catalog.load() else { return entry.isDataFolder ? entry : nil }
+    /// Throws for any other profile when the folders can't be read, so a profile is never called missing when Stow
+    /// only can't look.
+    private func confirmed(_ entry: ProfileEntry) async throws -> ProfileEntry? {
+        let snapshot: ProfileCatalogSnapshot
+        do {
+            snapshot = try await catalog.load()
+        } catch {
+            if entry.isDataFolder { return entry }
+            throw error
+        }
         apply(snapshot)
         if let listed = snapshot.profiles.first(where: { $0.id == entry.id }) { return listed }
         if snapshot.isNewInstallation, entry.isDataFolder {

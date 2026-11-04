@@ -1,3 +1,4 @@
+import AppKit
 import StowCore
 import SwiftUI
 
@@ -28,7 +29,7 @@ struct NoteView: View {
                         }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                             .accessibilityLabel("Collapse note").help("Collapse note")
                     }
-                    Label(identity?.name ?? (detached ? "Note" : "Markdown"), systemImage: "note.text")
+                    Label(identity?.name ?? (detached ? "Note" : "Markdown"), systemImage: "doc.text")
                         .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
                     Spacer(minLength: 0)
                     Button(isPreview ? "Edit" : "Preview") { isPreview.toggle() }
@@ -60,6 +61,11 @@ struct NoteView: View {
                         Label(reference.displayName, systemImage: "link").font(theme.font(size: 10)).lineLimit(1)
                     }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                         .padding(.horizontal, 12).padding(.top, 3)
+                        .contextMenu {
+                            Button("Open pull request") { AppStore.openLink(reference.url) }
+                            Button("Remove pull request link") { store.unlinkPullRequest(noteID) }
+                        }
+                        .accessibilityAction(named: "Remove pull request link") { store.unlinkPullRequest(noteID) }
                 }
 
                 if isPreview {
@@ -94,14 +100,32 @@ struct NoteView: View {
 
     private func actions(for note: Note) -> [[PullDownMenu.Item]] {
         let sample = store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
-        return [
+        let link: [[PullDownMenu.Item]] =
+            note.pullRequest == nil
+            ? [] : [[.init(title: "Remove pull request link") { store.unlinkPullRequest(noteID) }]]
+        return link + [
             [.init(title: sample) { store.toggleSample(noteID: noteID) }],
             [
                 .init(title: "Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) },
                 .init(title: "Export Markdown…") { DataTransferActions.exportNote(note, store: store) },
             ],
-            [.init(title: "Delete note") { store.deleteNote(noteID) }],
+            [.init(title: "Delete note…") { confirmDelete() }],
         ]
+    }
+
+    /// Deleting a note also deletes its Markdown file, so a note with text asks first.
+    private func confirmDelete() {
+        guard let note = store.note(noteID) else { return }
+        if !note.markdown.allSatisfy(\.isWhitespace) {
+            let alert = NSAlert()
+            alert.messageText = "Delete “\(note.boardTitle)”?"
+            alert.informativeText = "Its Markdown file is deleted too. This can’t be undone."
+            alert.addButton(withTitle: "Delete").hasDestructiveAction = true
+            alert.addButton(withTitle: "Cancel")
+            alert.window.appearance = theme.appKitAppearance
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
+        store.deleteNote(noteID)
     }
 }
 
