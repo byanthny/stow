@@ -31,10 +31,12 @@ public actor ProfileCatalog {
 
     let dataFolder: URL
     let currentUserID: uid_t
-    let trash: @Sendable (URL) throws -> Void
+    /// Moves a folder to the Trash. Injected so tests never touch the user's Trash.
+    let moveToTrash: @Sendable (URL) throws -> Void
     /// The owner of a path, without following links. A test seam for the per-folder owner check.
     let ownerOf: @Sendable (URL) -> uid_t?
-    private var dataFolderID: UUID?
+    /// The ID minted for a data folder profile without a readable identity. Cleared when that profile is trashed.
+    var dataFolderID: UUID?
 
     public init(
         dataFolder: URL, currentUserID: uid_t = getuid(),
@@ -52,12 +54,14 @@ public actor ProfileCatalog {
     ) {
         self.dataFolder = dataFolder
         self.currentUserID = currentUserID
-        self.trash = trash
+        self.moveToTrash = trash
         self.ownerOf = ownerOf
     }
 
-    /// Reads the data folder and `profiles/`. Writes nothing.
+    /// Reads the data folder and `profiles/`. Writes nothing, except to finish a deletion of the data folder
+    /// profile that a crash interrupted.
     public func load() throws -> ProfileCatalogSnapshot {
+        finishInterruptedMove()
         let (index, status) = try loadIndex()
         let seen = Set(index.seenIDs)
         var found: [ProfileEntry] = []
@@ -135,17 +139,22 @@ public actor ProfileCatalog {
         try writeIdentity(ProfileIdentity(id: id, name: name, color: color), in: entry.folder)
     }
 
-    /// Moves a profile by `offset` places in the list, stopping at either end.
+    /// Moves a profile by `offset` places in the list, stopping at either end. Profiles skipped right now,
+    /// such as one whose folder cannot be read, keep their saved places.
     public func move(_ id: UUID, by offset: Int) throws {
         let snapshot = try writableSnapshot()
-        var ids = snapshot.profiles.map(\.id)
+        let shown = snapshot.profiles.map(\.id)
+        var ids = shown
         guard let position = ids.firstIndex(of: id) else { throw ProfileError.notFound }
         ids.remove(at: position)
         let (shifted, overflow) = position.addingReportingOverflow(offset)
         let target = overflow ? (offset < 0 ? 0 : ids.count) : min(max(shifted, 0), ids.count)
         ids.insert(id, at: target)
+        // The shown profiles take their new order in the places shown profiles held; the others stay put.
+        let isShown = Set(shown)
+        var arranged = ids.makeIterator()
         var index = snapshot.index
-        index.order = ids
+        index.order = Self.merged(index.order, with: shown).map { isShown.contains($0) ? arranged.next() ?? $0 : $0 }
         try writeIndex(index, after: snapshot)
     }
 
@@ -216,13 +225,13 @@ public actor ProfileCatalog {
         return info.st_uid
     }
 
-    private func writableSnapshot() throws -> ProfileCatalogSnapshot {
+    func writableSnapshot() throws -> ProfileCatalogSnapshot {
         let snapshot = try load()
         if snapshot.indexStatus == .needsReset { throw ProfileError.indexNeedsReset }
         return snapshot
     }
 
-    private func entry(_ id: UUID, in snapshot: ProfileCatalogSnapshot) throws -> ProfileEntry {
+    func entry(_ id: UUID, in snapshot: ProfileCatalogSnapshot) throws -> ProfileEntry {
         guard let entry = snapshot.profiles.first(where: { $0.id == id }) else { throw ProfileError.notFound }
         return entry
     }
@@ -240,9 +249,17 @@ public actor ProfileCatalog {
     }
 
     /// The name in the identity file, which differs from the displayed name when a duplicate is numbered.
+    /// A folder without an identity file gets the fallback name. An identity file that exists but cannot be
+    /// read may still hold the real name, so it is refused rather than replaced.
     private func storedName(of entry: ProfileEntry) throws -> String {
-        let identity = try readIdentity(in: entry.folder, folderID: entry.isDataFolder ? nil : entry.id)
-        return identity?.name ?? (entry.isDataFolder ? Self.mainName : Self.unnamedName)
+        let file = entry.folder.appendingPathComponent(ProfileIdentity.filename)
+        // A file that cannot even be checked counts as present, so it is never replaced.
+        guard (try? LiveNoteIO.exists(file)) ?? true else {
+            return entry.isDataFolder ? Self.mainName : Self.unnamedName
+        }
+        guard let identity = try readIdentity(in: entry.folder, folderID: entry.isDataFolder ? nil : entry.id)
+        else { throw ProfileError.invalidIdentity }
+        return identity.name
     }
 
     private func writeIdentity(_ identity: ProfileIdentity, in folder: URL) throws {
@@ -254,7 +271,7 @@ public actor ProfileCatalog {
 
     /// Writes the index atomically. The first write also saves the data folder profile's identity,
     /// so the ID shown to the app stays the same across launches.
-    private func writeIndex(_ index: ProfileIndex, after snapshot: ProfileCatalogSnapshot) throws {
+    func writeIndex(_ index: ProfileIndex, after snapshot: ProfileCatalogSnapshot) throws {
         if let main = snapshot.profiles.first(where: \.isDataFolder), snapshot.indexStatus == .absent,
             try !wrapping({ try LiveNoteIO.exists(dataFolder.appendingPathComponent(ProfileIdentity.filename)) })
         {
@@ -273,7 +290,7 @@ public actor ProfileCatalog {
         return try? encoder.encode(index)
     }
 
-    private func wrapping<T>(_ body: () throws -> T) throws -> T {
+    func wrapping<T>(_ body: () throws -> T) throws -> T {
         do { return try body() } catch is StateError { throw ProfileError.unwritable }
     }
 
@@ -344,7 +361,7 @@ public actor ProfileCatalog {
         return result
     }
 
-    private func isOwnedDirectory(_ url: URL) -> Bool {
+    func isOwnedDirectory(_ url: URL) -> Bool {
         var info = stat()
         guard url.path.withCString({ Darwin.lstat($0, &info) }) == 0 else { return false }
         return (info.st_mode & S_IFMT) == S_IFDIR && ownerOf(url) == currentUserID

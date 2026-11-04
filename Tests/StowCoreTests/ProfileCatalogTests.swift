@@ -5,16 +5,23 @@ import XCTest
 
 final class ProfileCatalogTests: XCTestCase {
     private var root: URL!
+    /// Stands in for the Trash. Tests never use the real one.
+    private var bin: URL!
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
             .appendingPathComponent("stow-catalog-\(UUID().uuidString)", isDirectory: true)
+        bin = FileManager.default.temporaryDirectory
+            .appendingPathComponent("stow-trash-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
     }
 
     override func tearDownWithError() throws {
-        restorePermissions(at: root)
-        try? FileManager.default.removeItem(at: root)
+        for folder in [root, bin].compactMap({ $0 }) {
+            restorePermissions(at: folder)
+            try? FileManager.default.removeItem(at: folder)
+        }
     }
 
     private func restorePermissions(at url: URL) {
@@ -29,8 +36,13 @@ final class ProfileCatalogTests: XCTestCase {
         }
     }
 
-    private func catalog(uid: uid_t = getuid()) -> ProfileCatalog {
-        ProfileCatalog(dataFolder: root, currentUserID: uid, trash: { _ in })
+    /// Trashing moves the folder into `bin`, unless the test passes its own trash operation.
+    private func catalog(uid: uid_t = getuid(), trash: (@Sendable (URL) throws -> Void)? = nil) -> ProfileCatalog {
+        let bin: URL = bin
+        let intoBin: @Sendable (URL) throws -> Void = {
+            try FileManager.default.moveItem(at: $0, to: bin.appendingPathComponent($0.lastPathComponent))
+        }
+        return ProfileCatalog(dataFolder: root, currentUserID: uid, trash: trash ?? intoBin)
     }
 
     private func write(_ text: String, _ relative: String) throws {
@@ -305,6 +317,8 @@ final class ProfileCatalogTests: XCTestCase {
         await assertThrows(.indexNeedsReset) { try await catalog.rename(id, to: "Home") }
         await assertThrows(.indexNeedsReset) { try await catalog.setAlwaysShowProfileName(true) }
         await assertThrows(.indexNeedsReset) { _ = try await catalog.createProfile(name: "New", color: "#336699") }
+        await assertThrows(.indexNeedsReset) { try await catalog.trash(id) }
+        XCTAssertEqual(try trashed(), [])
         let backup = try await catalog.resetIndex()
         XCTAssertEqual(try Data(contentsOf: backup), Data(corrupt.utf8))
         XCTAssertEqual(try mode(root.appendingPathComponent(ProfileIndex.filename)), 0o600)
@@ -363,6 +377,43 @@ final class ProfileCatalogTests: XCTestCase {
         await assertThrows(.notFound) { try await catalog.move(UUID(), by: 1) }
     }
 
+    func testColorChangeKeepsAnIdentityItCannotRead() async throws {
+        let catalog = catalog()
+        for damaged in ["not json", identity(UUID(), "Other")] {
+            let id = UUID()
+            try write("{}", "profiles/\(id.uuidString)/state.json")
+            try write(damaged, "profiles/\(id.uuidString)/identity.json")
+            await assertThrows(.invalidIdentity) { try await catalog.setColor(id, to: "#AABBCC") }
+            XCTAssertEqual(
+                try Data(contentsOf: root.appendingPathComponent("profiles/\(id.uuidString)/identity.json")),
+                Data(damaged.utf8))
+        }
+        let bare = try addProfile(name: nil)
+        try await catalog.setColor(bare, to: "#AABBCC")
+        let stored = try ProfileIdentity.decode(
+            Data(contentsOf: root.appendingPathComponent("profiles/\(bare.uuidString)/identity.json")), folderID: bare)
+        XCTAssertEqual(stored, ProfileIdentity(id: bare, name: "Unnamed profile", color: "#AABBCC"))
+    }
+
+    func testMoveKeepsThePlaceOfASkippedProfile() async throws {
+        let a = try addProfile(name: "A")
+        let skipped = try addProfile(name: "X")
+        let b = try addProfile(name: "B")
+        let c = try addProfile(name: "C")
+        var index = ProfileIndex()
+        index.order = [a, skipped, b, c]
+        try JSONEncoder().encode(index).write(to: root.appendingPathComponent(ProfileIndex.filename))
+        let me = getuid()
+        let skipping = ProfileCatalog(
+            dataFolder: root, currentUserID: me, trash: { _ in },
+            ownerOf: { $0.lastPathComponent == skipped.uuidString ? me + 1 : me })
+        try await skipping.move(c, by: -1)
+        let saved = try ProfileIndex.decode(Data(contentsOf: root.appendingPathComponent(ProfileIndex.filename)))
+        XCTAssertEqual(saved.order, [a, skipped, c, b])
+        let snapshot = try await catalog().load()
+        XCTAssertEqual(snapshot.profiles.map(\.id), [a, skipped, c, b])
+    }
+
     func testSessionSeenAndDisplaySettingPersist() async throws {
         let id = try addProfile(name: "Work")
         let catalog = catalog()
@@ -376,6 +427,298 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertEqual(snapshot.index.open, [.init(id: id, isHidden: true)])
         XCTAssertEqual(snapshot.index.lastActiveID, id)
         XCTAssertFalse(try XCTUnwrap(snapshot.profiles.first).isArrival)
+    }
+
+    // MARK: deleting
+
+    private func trashed() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: bin.path).sorted()
+    }
+
+    private func exists(_ relative: String) -> Bool {
+        FileManager.default.fileExists(atPath: root.appendingPathComponent(relative).path)
+    }
+
+    private func names(in folder: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+    }
+
+    /// Every path under `folder` with its text; folders read as "<folder>".
+    private func tree(_ folder: URL) throws -> [String: String] {
+        var result: [String: String] = [:]
+        for path in try FileManager.default.subpathsOfDirectory(atPath: folder.path) {
+            let url = folder.appendingPathComponent(path)
+            var isDirectory: ObjCBool = false
+            _ = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            result[path] =
+                isDirectory.boolValue ? "<folder>" : String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        }
+        return result
+    }
+
+    /// A data folder profile holding each kind of file that saves, restores, and recovery leave there,
+    /// by the names Stow writes. Returns the top-level names.
+    private func seedDataFolderProfile() throws -> [String] {
+        let restored = "notes-\(UUID().uuidString)"
+        let files = [
+            "state.json": "{}",
+            "notes/\(UUID().uuidString).md": "# First",
+            "\(restored)/\(UUID().uuidString).md": "# Restored",
+            "state.json.backup-\(UUID().uuidString)": "{\"backup\":1}",
+            "state.json.before-restore-\(UUID().uuidString)": "{\"backup\":2}",
+            "state.json.v1-\(UUID().uuidString).backup": "{\"backup\":3}",
+            "notes.backup-\(UUID().uuidString)/\(UUID().uuidString).md": "# Recovered",
+            "\(restored).backup-\(UUID().uuidString)/\(UUID().uuidString).md": "# Recovered after restore",
+            "pre-restore-\(UUID().uuidString).stowbackup": "saved before a restore",
+        ]
+        for (path, text) in files { try write(text, path) }
+        return Set(files.keys.map { String($0.split(separator: "/")[0]) }).sorted()
+    }
+
+    func testTrashMovesProfileFolderAndUpdatesIndex() async throws {
+        try write("{}", "state.json")
+        let catalog = catalog()
+        let main = try await catalog.load().profiles[0].id
+        let work = try await catalog.createProfile(name: "Work", color: "#336699").id
+        let home = try await catalog.createProfile(name: "Home", color: "#336699").id
+        let play = try await catalog.createProfile(name: "Play", color: "#336699").id
+        try await catalog.recordSession(
+            open: [.init(id: work, isHidden: false), .init(id: home, isHidden: true)], lastActiveID: work)
+
+        try await catalog.trash(work)
+        XCTAssertEqual(try trashed(), [work.uuidString])
+        XCTAssertEqual(
+            try names(in: bin.appendingPathComponent(work.uuidString)), [StateLock.filename, "identity.json"])
+        XCTAssertFalse(exists("profiles/\(work.uuidString)"))
+        var snapshot = try await catalog.load()
+        XCTAssertEqual(snapshot.profiles.map(\.id), [main, home, play])
+        XCTAssertEqual(snapshot.index.order, [main, home, play])
+        XCTAssertEqual(snapshot.index.open, [.init(id: home, isHidden: true)])
+        XCTAssertEqual(snapshot.index.seenIDs, [home, play])
+        XCTAssertNil(snapshot.index.lastActiveID)
+
+        try await catalog.recordSession(open: [.init(id: home, isHidden: true)], lastActiveID: home)
+        try await catalog.trash(play)
+        snapshot = try await catalog.load()
+        XCTAssertEqual(snapshot.index.order, [main, home])
+        XCTAssertEqual(snapshot.index.lastActiveID, home)
+        XCTAssertEqual(try trashed(), [work.uuidString, play.uuidString].sorted())
+    }
+
+    func testFirstProfileMovesIntoProfilesThenTrash() async throws {
+        let items = try seedDataFolderProfile()
+        let staying = [StateLock.filename, StateLock.instanceFilename, "notes-draft.txt", "state.json~"]
+        for name in staying { try write("", name) }
+        let catalog = catalog()
+        let main = try await catalog.load().profiles[0].id
+        let work = try await catalog.createProfile(name: "Work", color: "#336699").id
+        let moving = Set(items + ["identity.json"])
+        let expected = try tree(root).filter { moving.contains(String($0.key.split(separator: "/")[0])) }
+
+        try await catalog.trash(main)
+
+        XCTAssertEqual(try trashed(), [main.uuidString])
+        XCTAssertEqual(try tree(bin.appendingPathComponent(main.uuidString)), expected)
+        XCTAssertEqual(try names(in: root), (staying + ["profiles", ProfileIndex.filename]).sorted())
+        XCTAssertEqual(try names(in: root.appendingPathComponent("profiles")), [work.uuidString])
+        let snapshot = try await catalog.load()
+        XCTAssertEqual(snapshot.profiles.map(\.id), [work])
+        XCTAssertEqual(snapshot.index.order, [work])
+    }
+
+    func testDataFolderProfileStartedAfterTrashGetsItsOwnID() async throws {
+        try write("{}", "state.json")
+        try addProfile(name: "Work")
+        let catalog = catalog()
+        let before = try await catalog.load()
+        let trashedID = try XCTUnwrap(before.profiles.first(where: \.isDataFolder)).id
+        try await catalog.trash(trashedID)
+        // An older build then starts fresh in the data folder. Its profile must not take the trashed one's ID,
+        // or the trashed folder would be hidden if it were put back.
+        try write("{}", "state.json")
+        let after = try await catalog.load()
+        XCTAssertNotEqual(try XCTUnwrap(after.profiles.first(where: \.isDataFolder)).id, trashedID)
+    }
+
+    func testLastProfileCannotBeDeleted() async throws {
+        try write("{}", "state.json")
+        let catalog = catalog()
+        let main = try await catalog.load().profiles[0].id
+        let before = try tree(root)
+        await assertThrows(.lastProfile) { try await catalog.trash(main) }
+        await assertThrows(.notFound) { try await catalog.trash(UUID()) }
+        XCTAssertEqual(try tree(root), before)
+        XCTAssertEqual(try trashed(), [])
+    }
+
+    func testLockedProfileIsRefused() async throws {
+        try write("{}", "state.json")
+        let catalog = catalog()
+        let main = try await catalog.load().profiles[0]
+        let work = try await catalog.createProfile(name: "Work", color: "#336699")
+        for entry in [work, main] {
+            let state = entry.folder.appendingPathComponent("state.json")
+            guard case .acquired(let lock) = StateLock.acquire(forStateAt: state) else {
+                return XCTFail("the test must hold the profile's lock")
+            }
+            let before = try tree(root)
+            await assertThrows(.inUse) { try await catalog.trash(entry.id) }
+            XCTAssertEqual(try tree(root), before)
+            lock.release()
+        }
+        XCTAssertEqual(try trashed(), [])
+    }
+
+    func testProfileThatCannotBeLockedIsStillTrashed() async throws {
+        try write("{}", "state.json")
+        let catalog = catalog()
+        let work = try await catalog.createProfile(name: "Work", color: "#336699")
+        // A planted link makes the lock unavailable, as on a volume without flock.
+        try FileManager.default.createSymbolicLink(
+            at: work.folder.appendingPathComponent(StateLock.filename),
+            withDestinationURL: root.appendingPathComponent("missing"))
+        try await catalog.trash(work.id)
+        XCTAssertEqual(try trashed(), [work.id.uuidString])
+    }
+
+    func testFailedMovePutsEveryFileBack() async throws {
+        let items = try seedDataFolderProfile()
+        try write("", StateLock.filename)
+        let catalog = catalog()
+        let main = try await catalog.load().profiles[0].id
+        _ = try await catalog.createProfile(name: "Work", color: "#336699")
+        // A folder without write access cannot change parent, so the move fails after the first files moved.
+        let stuck = try XCTUnwrap(items.first { $0.hasPrefix("notes-") && !$0.contains(".backup-") })
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o500], ofItemAtPath: root.appendingPathComponent(stuck).path)
+        let before = try tree(root)
+        await assertThrows(.unwritable) { try await catalog.trash(main) }
+        XCTAssertEqual(try tree(root), before)
+        XCTAssertEqual(try trashed(), [])
+        let snapshot = try await catalog.load()
+        XCTAssertTrue(snapshot.profiles.contains { $0.id == main && $0.isDataFolder })
+    }
+
+    func testFailedTrashLeavesProfilesInPlace() async throws {
+        _ = try seedDataFolderProfile()
+        try write("", StateLock.filename)
+        let refusing = catalog(trash: { _ in throw CocoaError(.fileWriteNoPermission) })
+        let main = try await refusing.load().profiles[0].id
+        let work = try await refusing.createProfile(name: "Work", color: "#336699").id
+        try write("", "profiles/\(work.uuidString)/\(StateLock.filename)")
+        let before = try tree(root)
+        await assertThrows(.unwritable) { try await refusing.trash(work) }
+        await assertThrows(.unwritable) { try await refusing.trash(main) }
+        XCTAssertEqual(try tree(root), before)
+        let snapshot = try await refusing.load()
+        XCTAssertEqual(snapshot.profiles.map(\.id), [main, work])
+        XCTAssertTrue(try XCTUnwrap(snapshot.profiles.first).isDataFolder)
+    }
+
+    func testTrashSucceedsWhenOnlyTheIndexUpdateFails() async throws {
+        try write("{}", "state.json")
+        let catalog = catalog()
+        let work = try await catalog.createProfile(name: "Work", color: "#336699").id
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+        try await catalog.trash(work)
+        XCTAssertEqual(try trashed(), [work.uuidString])
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        let snapshot = try await catalog.load()
+        XCTAssertEqual(snapshot.profiles.count, 1)
+        XCTAssertTrue(snapshot.index.order.contains(work))
+    }
+
+    // MARK: finishing an interrupted move
+
+    private func journal(_ id: UUID, _ items: [String], version: Int = 1) -> String {
+        let list = items.map { "\"\($0)\"" }.joined(separator: ",")
+        return "{\"schemaVersion\":\(version),\"id\":\"\(id.uuidString)\",\"items\":[\(list)]}"
+    }
+
+    /// A deletion of the data folder profile that stopped after moving half of its files.
+    private func seedInterruptedMove() throws -> (id: UUID, items: [String]) {
+        let id = UUID()
+        let restored = "notes-\(UUID().uuidString)"
+        let backup = "state.json.backup-\(UUID().uuidString)"
+        let saved = "pre-restore-\(UUID().uuidString).stowbackup"
+        try write("{}", "profiles/\(id.uuidString)/state.json")
+        try write(identity(id, "Home"), "profiles/\(id.uuidString)/identity.json")
+        try write("# Moved", "profiles/\(id.uuidString)/notes/\(UUID().uuidString).md")
+        try write("# Waiting", "\(restored)/\(UUID().uuidString).md")
+        try write("{}", backup)
+        try write("saved before a restore", saved)
+        let items = ["state.json", "identity.json", "notes", restored, backup, saved]
+        try write(journal(id, items), ".moving.json")
+        return (id, items)
+    }
+
+    func testInterruptedFirstProfileMoveIsFinishedAtLoad() async throws {
+        let (id, items) = try seedInterruptedMove()
+        let snapshot = try await catalog().load()
+        let entry = try XCTUnwrap(snapshot.profiles.first)
+        XCTAssertEqual(snapshot.profiles.map(\.id), [id])
+        XCTAssertFalse(entry.isDataFolder)
+        XCTAssertEqual(entry.name, "Home")
+        XCTAssertEqual(
+            entry.folder.standardizedFileURL,
+            root.appendingPathComponent("profiles/\(id.uuidString)").standardizedFileURL)
+        XCTAssertEqual(try names(in: entry.folder), (items + [StateLock.filename]).sorted())
+        XCTAssertEqual(try names(in: root), [StateLock.filename, "profiles"])
+        XCTAssertEqual(try trashed(), [])
+    }
+
+    func testInterruptedMoveWaitsWhileEitherFolderIsLocked() async throws {
+        let (id, items) = try seedInterruptedMove()
+        let destination = root.appendingPathComponent("profiles/\(id.uuidString)")
+        let catalog = catalog()
+        for folder in [root!, destination] {
+            guard case .acquired(let lock) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
+            else { return XCTFail("the test must hold the lock") }
+            let before = try tree(root)
+            let waiting = try await catalog.load()
+            XCTAssertEqual(try tree(root), before)
+            XCTAssertEqual(waiting.profiles.map(\.id), [id])
+            lock.release()
+        }
+        _ = try await catalog.load()
+        XCTAssertFalse(exists(".moving.json"))
+        XCTAssertEqual(try names(in: destination), (items + [StateLock.filename]).sorted())
+        XCTAssertEqual(try trashed(), [])
+    }
+
+    func testJournalForAFolderAlreadyTrashedIsDropped() async throws {
+        // The folder reached the Trash before its journal was removed, and an older build then started fresh.
+        let id = UUID()
+        try write(journal(id, ["state.json", "notes"]), ".moving.json")
+        try write("{}", "state.json")
+        try write("# New", "notes/\(UUID().uuidString).md")
+        let snapshot = try await catalog().load()
+        XCTAssertFalse(exists(".moving.json"))
+        XCTAssertFalse(exists("profiles/\(id.uuidString)"))
+        XCTAssertTrue(exists("state.json"))
+        XCTAssertTrue(exists("notes"))
+        XCTAssertEqual(snapshot.profiles.count, 1)
+        XCTAssertTrue(try XCTUnwrap(snapshot.profiles.first).isDataFolder)
+    }
+
+    func testJournalThatCannotBeTrustedIsLeftAlone() async throws {
+        let id = UUID()
+        try write("{}", "profiles/\(id.uuidString)/state.json")
+        try write("{}", "state.json")
+        try write("# Here", "notes/\(UUID().uuidString).md")
+        try write(#"{"schemaVersion":1}"#, ProfileIndex.filename)
+        try write("", StateLock.filename)
+        for untrusted in [
+            "not json",
+            journal(id, ["notes"], version: 2),
+            journal(id, ["notes", ProfileIndex.filename]),
+            journal(id, ["notes", "../elsewhere"]),
+        ] {
+            try write(untrusted, ".moving.json")
+            let before = try tree(root)
+            _ = try await catalog().load()
+            XCTAssertEqual(try tree(root), before)
+        }
     }
 
     private func assertThrows(
