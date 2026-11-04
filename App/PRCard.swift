@@ -19,10 +19,18 @@ struct PRCard: View {
                 Button {
                     AppStore.openLink(pr.reference.url)
                 } label: {
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        // Lead with the repository so cards from different repos are easy to tell apart.
+                        if pr.title != pr.reference.displayName {
+                            HStack(spacing: 4) {
+                                Text(verbatim: "\(pr.reference.owner)/\(pr.reference.repository)")
+                                    .font(.stow(size: 10, weight: .semibold)).foregroundStyle(Color.stowText)
+                                Text(verbatim: "#\(pr.reference.number)").font(.stow(size: 10))
+                                    .foregroundStyle(Color.stowMuted)
+                            }.lineLimit(1).truncationMode(.middle)
+                        }
                         Text(pr.title).font(.stow(size: 12, weight: .medium)).foregroundStyle(Color.stowText)
                             .multilineTextAlignment(.leading).lineLimit(3)
-                        Text(pr.reference.displayName).font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.buttonStyle(.plain).help("Open pull request")
                 if pinned { Image(systemName: "pin.fill").font(.stow(size: 8)).foregroundStyle(Color.stowMuted) }

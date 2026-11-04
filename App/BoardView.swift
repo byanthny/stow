@@ -137,7 +137,7 @@ struct BoardView: View {
         let cards = store.cards(in: section)
         return CollapsibleBoardSection(
             title: title, count: cards.count, isCollapsed: store.sectionIsCollapsed(section.rawValue),
-            summary: cards.prefix(2).map(\.title).joined(separator: " · "),
+            summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
             needsAttention: section == .needsYou && !cards.isEmpty,
             toggle: { store.toggleSection(section.rawValue) },
             content: {
