@@ -13,11 +13,17 @@ final class AppStoreCancellationTests: XCTestCase {
             let directory = try makeDirectory()
             defer { try? FileManager.default.removeItem(at: directory) }
             let client = CancelledDetailClient(outcome: outcome)
+            // An existing installation that already opted in to GitHub.
+            var initial = AppState()
+            initial.githubEnabled = true
+            try await StateRepository(url: stateURL(directory)).save(initial)
             let store = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
             await store.start()
             // Background timers are unnecessary for this controlled in-flight detail request.
             store.stop()
             defer { store.stop() }
+            XCTAssertTrue(store.state.githubEnabled)
+            XCTAssertFalse(store.offersGitHubSetup)
             let reference = PullRequestReference(owner: "example", repository: "synthetic", number: 42)
             store.state.pullRequests = [.init(reference: reference, title: "Synthetic cached card")]
             store.toggleDetails(reference)
@@ -44,6 +50,39 @@ final class AppStoreCancellationTests: XCTestCase {
             let persisted = try await StateRepository(url: stateURL(directory)).load()
             XCTAssertNil(persisted.pullRequests.first?.details)
         }
+    }
+
+    func testNewInstallationAsksBeforeUsingTheGitHubCLILogin() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let client = CancelledDetailClient(outcome: .failure)
+        let store = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
+        await store.start()
+        store.stop()
+        defer { store.stop() }
+        XCTAssertFalse(store.state.githubEnabled, "A new installation must not use an existing gh login unasked")
+        XCTAssertTrue(store.offersGitHubSetup)
+        store.answerGitHubSetup(useGitHub: false)
+        XCTAssertFalse(store.offersGitHubSetup)
+        XCTAssertFalse(store.state.githubEnabled)
+
+        // The first launch saved the choice, so a relaunch is no longer a new installation.
+        let relaunched = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
+        await relaunched.start()
+        relaunched.stop()
+        defer { relaunched.stop() }
+        XCTAssertFalse(relaunched.offersGitHubSetup)
+        XCTAssertFalse(relaunched.state.githubEnabled)
+
+        let fresh = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: fresh) }
+        let accepting = AppStore(stateURL: stateURL(fresh), githubClient: client, accessoryProviders: [])
+        await accepting.start()
+        accepting.stop()
+        defer { accepting.stop() }
+        accepting.answerGitHubSetup(useGitHub: true)
+        XCTAssertTrue(accepting.state.githubEnabled)
+        XCTAssertFalse(accepting.offersGitHubSetup)
     }
 
     func testDisablingQueuedAccessoryPreventsItsProviderFromStarting() async throws {

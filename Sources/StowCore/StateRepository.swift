@@ -39,6 +39,8 @@ public actor StateRepository {
     }
     private let url: URL
     public private(set) var notesDirectory: URL
+    /// Whether the last load found a saved index. False for a new installation.
+    public private(set) var foundSavedIndex = false
     private var hasLoaded = false
     private var expectsNotesDirectory = false
     private var requiresRecovery = false
@@ -69,6 +71,7 @@ public actor StateRepository {
         guard !requiresRecovery else { throw StateError.recoveryRequired }
         do {
             let data = try LiveNoteIO.read(url, maximumBytes: LiveNoteIO.maximumIndexBytes)
+            foundSavedIndex = data != nil
             var state = AppState()
             var legacy = false
             if let data {

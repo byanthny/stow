@@ -32,6 +32,7 @@ struct BoardView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 18) {
+                        if store.offersGitHubSetup { githubSetup }
                         if let error = store.saveError {
                             VStack(alignment: .leading, spacing: 6) {
                                 Label(error, systemImage: "exclamationmark.triangle").font(.stow(size: 11))
@@ -112,6 +113,24 @@ struct BoardView: View {
         .preferredColorScheme(ThemeController.shared.colorScheme)
         .frame(minWidth: 320, minHeight: 320)
         .disabled(store.isRestoringBackup)
+    }
+
+    private var githubSetup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Show your pull requests?").font(.stow(size: 13, weight: .medium))
+            Text(
+                "Stow can use your existing GitHub CLI login for github.com. Pull request titles and status are stored on this Mac. Notes work either way."
+            )
+            .font(.stow(size: 11)).foregroundStyle(Color.stowMuted).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Button("Use GitHub") { store.answerGitHubSetup(useGitHub: true) }
+                    .controlSize(.small).accessibilityIdentifier("github.setup.use")
+                Button("Not now") { store.answerGitHubSetup(useGitHub: false) }
+                    .controlSize(.small).accessibilityIdentifier("github.setup.dismiss")
+            }
+        }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 9))
+            .accessibilityElement(children: .contain).accessibilityIdentifier("github.setup")
     }
 
     private func prSection(_ title: String, section: AttentionSection) -> some View {

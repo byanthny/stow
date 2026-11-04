@@ -13,6 +13,8 @@ final class AppStore {
     var isRefreshing = false
     var saveError: String?
     var githubMessage: String?
+    /// A new installation asks once before using an existing GitHub CLI login.
+    var offersGitHubSetup = false
     var storageNeedsRecovery = false
     var expandedPRs: Set<String> = []
     var loadingDetails: Set<String> = []
@@ -67,7 +69,14 @@ final class AppStore {
     }
 
     func start() async {
-        do { state = try await repository.load() } catch {
+        do {
+            state = try await repository.load()
+            if !isDemo, !(await repository.foundSavedIndex) {
+                // GitHub is opt-in: a new installation never uses an existing gh login unasked.
+                state.githubEnabled = false
+                offersGitHubSetup = true
+            }
+        } catch {
             storageNeedsRecovery = true
             saveError = "Saved data could not be opened. Your original file has been preserved."
         }
@@ -156,7 +165,13 @@ final class AppStore {
         coordinator = RefreshCoordinator(client: client)
     }
 
+    func answerGitHubSetup(useGitHub: Bool) {
+        offersGitHubSetup = false
+        if useGitHub { setGitHubEnabled(true) }
+    }
+
     func setGitHubEnabled(_ enabled: Bool) {
+        offersGitHubSetup = false
         state.githubEnabled = enabled
         githubMessage = nil
         configureGitHub()
