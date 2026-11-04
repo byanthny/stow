@@ -30,7 +30,7 @@ Proposal only. Queue this after v1 acceptance and before public release. No impl
 
 - Prefer one app process that owns several isolated profile stores and routes new-window/profile requests to that process.
 - Enforce one writer per profile across processes. A second launch of the same profile should activate its existing windows or refuse a competing writable session.
-- Use an operating-system lock for the profile's writable session, with tested crash recovery. Atomic file replacement alone does not prevent competing writers.
+- Use an operating-system lock for the profile's writable session, with tested crash recovery. Atomic file replacement alone does not prevent competing writers. `StateLock` already provides this for the single v1 state folder; give each profile store its own.
 - Restore only the selected profile's windows unless the user explicitly opens another profile. Save and flush each store independently.
 - Test concurrent profile windows, rapid switching, quit flushes, duplicate launches, and a crashed writer without touching ordinary user state.
 

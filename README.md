@@ -4,7 +4,7 @@ A small native macOS board for Markdown notes and GitHub pull requests. Requires
 
 Keep notes on the board or detach them into separate windows. Each detached note has its own always-on-top setting. Closing a note window keeps the note; deleting it is explicit. The board groups pull requests into “Needs you” and “Waiting” using observed GitHub state, and keeps cached cards when a refresh is incomplete.
 
-GitHub is optional. Notes work without `gh`, an account, or a network connection. Accessories are optional too: the bundled `org.stow.sample` provider is disabled by default.
+GitHub is optional and stays off until you turn it on. Notes work without `gh`, an account, or a network connection. Accessories are optional too: the bundled `org.stow.sample` provider is disabled by default.
 
 <img src="docs/images/board.png" width="360" alt="Stow board with pull requests and notes">
 
@@ -50,7 +50,7 @@ For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [
 - Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note from its actions menu. Use **Command-0** or the Dock icon to reopen the board.
 - Click **Needs you**, **Waiting**, or **Notes** to collapse or expand that section. Stow remembers the choice; creating a note expands Notes again.
-- Enable or disable GitHub in Settings. Install [GitHub CLI](https://cli.github.com/) and authenticate outside Stow with `gh auth login --hostname github.com`. Stow uses that existing login; it does not extract or save a token. Use **Choose gh…** if automatic discovery fails.
+- On first launch, Stow asks before using GitHub; change it later in Settings. Install [GitHub CLI](https://cli.github.com/) and authenticate outside Stow with `gh auth login --hostname github.com`. Stow uses that existing login; it does not extract or save a token. Use **Choose gh…** if automatic discovery fails.
 - Click a pull request to load details. Stow reads GitHub state; it does not merge, review, or modify pull requests.
 
 ## Notes and Backups
@@ -67,4 +67,10 @@ Read [architecture](docs/architecture.md), [appearance](docs/appearance.md), [ac
 
 See the [roadmap](docs/roadmap.md) for the ordered release, public-site, and extension queue.
 
-No project license has been selected. Third-party dependencies retain their own licenses; [their notices](App/ThirdPartyNotices.txt) are included in the app bundle.
+## Contributing
+
+See [contributing](CONTRIBUTING.md). Report vulnerabilities privately as described in the [security policy](SECURITY.md).
+
+## License
+
+Stow is free software under the [GNU General Public License v3.0 or later](LICENSE). Third-party dependencies keep their own licenses; [their notices](App/ThirdPartyNotices.txt) ship in the app bundle.

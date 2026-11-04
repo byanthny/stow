@@ -1,6 +1,9 @@
 Stow — third-party notices
 
-The Stow project license has not been selected. The following notices apply to bundled dependencies.
+Stow is free software under the GNU General Public License v3.0 or later.
+Source: https://github.com/byanthny/stow
+
+The following notices apply to bundled dependencies.
 
 
 ================================================================

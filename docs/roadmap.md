@@ -19,9 +19,11 @@ Work through this queue in order. These are future tasks, not authorization to p
 
 ## 3. prepare for public development
 
-- [ ] Choose the project license and retain dependency notices before making the repository public.
-- [ ] Review tracked files and history for private data, credentials, machine paths, fixtures, screenshots, and dependency provenance. Keep demos synthetic.
-- [ ] Add concise contribution and security-reporting guidance, supported-platform expectations, and a small release checklist. Keep routine maintenance practical for one maintainer and eventual outside contributors.
+- [x] Choose the project license and retain dependency notices before making the repository public: GPL-3.0-or-later, chosen 2026-11-03.
+- [x] Review tracked files and history for private data, credentials, machine paths, fixtures, screenshots, and dependency provenance. Keep demos synthetic. Audited 2026-11-03; no history rewrite needed.
+- [x] Add concise contribution and security-reporting guidance and supported-platform expectations.
+- [ ] Add a small release checklist. Keep routine maintenance practical for one maintainer and eventual outside contributors.
+- [ ] Before making the repository public, apply the reviewed settings: private vulnerability reporting, secret scanning with push protection, Dependabot alerts, a `main` ruleset, GitHub-owned actions only, and approval for outside contributors' workflows.
 
 ## 4. establish versioned releases
 
@@ -33,7 +35,7 @@ Work through this queue in order. These are future tasks, not authorization to p
 ## 5. make installation deliberate
 
 - [ ] Add a DMG with a drag-to-Applications layout if it makes installation clearer. Keep the ZIP available. Use a PKG installer only if a concrete requirement needs installer behavior or privileged setup.
-- [ ] Decide whether public distribution warrants Developer ID signing and notarization. Confirm enrollment requirements and actual cost before committing to paid distribution.
+- [ ] Publish no binaries before Developer ID signing and notarization; until then Stow is source-only. Confirm enrollment requirements and actual cost before committing to paid distribution.
 - [ ] Protect signing credentials and notarization access in a maintainer-approved release environment. Import them only in trusted release jobs, remove temporary keychains, verify signatures, submit for notarization, and staple and validate the resulting distributable.
 - [ ] Exercise download, installation, launch, upgrade, and rollback on a separate Mac or clean test account. Describe the observed Gatekeeper behavior accurately.
 

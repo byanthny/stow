@@ -29,9 +29,9 @@ Use **Copy config**, **Edit config…**, or `.conf` import/export to share short
 
 ## full backup and restore
 
-**Save backup…** creates a versioned `.stowbackup` JSON snapshot containing note contents and the complete local setup: cached pull requests and details, pins, dismissals, settings, module configuration, appearance, and window state. It does not extract GitHub CLI credentials.
+**Save backup…** creates a versioned `.stowbackup` JSON snapshot containing note contents and the complete local setup: cached pull requests and details, pins, dismissals, settings, module configuration, appearance, and window state. It does not extract GitHub CLI credentials. Settings that describe the Mac rather than your setup stay local: a backup omits the chosen `gh` location, and a restore keeps this Mac's GitHub settings, so a backup from someone else cannot pick a program for Stow to run or turn GitHub on. Accessories keep their configuration but come back turned off.
 
-Backups are plaintext and are not encrypted. They can contain private notes, repository details, account identifiers, and sensitive module settings. Store full backups, migration backups, and pre-restore backups privately; do not commit or publicly attach them.
+Backups are plaintext and are not encrypted. They can contain private notes, repository details, account identifiers, and sensitive module settings. Store full backups, migration backups, and pre-restore backups privately; do not commit or publicly attach them. Saving a backup in a synced cloud folder is fine, but it stays plaintext there: the provider and anyone the folder is shared with can read it.
 
 Restore validates format, version, and data, previews note and cached pull-request counts, and asks for confirmation because it replaces the current setup. It saves a full pre-restore `.stowbackup`, writes a new private `notes-<UUID>` folder, then atomically publishes the `state.json` index pointing to it. The previous folder and raw index are retained; a failed restore leaves the previous setup untouched.
 

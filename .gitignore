@@ -20,3 +20,5 @@ state.json.*
 .local/
 *.stowbackup
 Stow-notes-*/
+.claude/worktrees/
+.claude/settings.local.json
