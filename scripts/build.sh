@@ -6,7 +6,8 @@ cd "$repository"
 configuration=${1:-Debug}
 output=${2:-build}
 case "$configuration" in
-    Debug) architectures=$(uname -m) ;;
+    # STOW_ARCHS='arm64 x86_64' builds a universal Debug app for runtime checks on other hardware.
+    Debug) architectures=${STOW_ARCHS:-$(uname -m)} ;;
     Release) architectures='arm64 x86_64' ;;
     *) printf 'usage: %s [Debug|Release] [output-directory]\n' "$0" >&2; exit 2 ;;
 esac
