@@ -15,17 +15,25 @@ public struct BoardLayout: Codable, Equatable, Sendable {
     /// Pull requests shown in each section before "Show more"; 0 shows every card.
     public var visiblePullRequests: Int
     public var notesCanCollapse: Bool
+    /// Board notes show as one-line rows until opened.
+    public var notesStartCollapsed: Bool
+    /// Opening a board note closes the one that was open.
+    public var oneNoteOpenAtATime: Bool
 
     public init(
         order: [Section] = defaultOrder, visiblePullRequests: Int = defaultVisiblePullRequests,
-        notesCanCollapse: Bool = false
+        notesCanCollapse: Bool = false, notesStartCollapsed: Bool = true, oneNoteOpenAtATime: Bool = true
     ) {
         self.order = Self.normalized(order)
         self.visiblePullRequests = visiblePullRequests
         self.notesCanCollapse = notesCanCollapse
+        self.notesStartCollapsed = notesStartCollapsed
+        self.oneNoteOpenAtATime = oneNoteOpenAtATime
     }
 
-    private enum CodingKeys: String, CodingKey { case order, visiblePullRequests, notesCanCollapse }
+    private enum CodingKeys: String, CodingKey {
+        case order, visiblePullRequests, notesCanCollapse, notesStartCollapsed, oneNoteOpenAtATime
+    }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -39,6 +47,8 @@ public struct BoardLayout: Codable, Equatable, Sendable {
                 forKey: .visiblePullRequests, in: container, debugDescription: "Pull request count out of range")
         }
         notesCanCollapse = try container.decodeIfPresent(Bool.self, forKey: .notesCanCollapse) ?? false
+        notesStartCollapsed = try container.decodeIfPresent(Bool.self, forKey: .notesStartCollapsed) ?? true
+        oneNoteOpenAtATime = try container.decodeIfPresent(Bool.self, forKey: .oneNoteOpenAtATime) ?? true
     }
 
     /// Moves a section up (negative) or down (positive) one place at a time; edges are left alone.

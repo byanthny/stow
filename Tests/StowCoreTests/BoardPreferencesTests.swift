@@ -68,6 +68,8 @@ final class BoardPreferencesTests: XCTestCase {
         XCTAssertEqual(layout.order, [.needsYou, .notes, .waiting])
         XCTAssertEqual(layout.visiblePullRequests, 3)
         XCTAssertFalse(layout.notesCanCollapse)
+        XCTAssertTrue(layout.notesStartCollapsed)
+        XCTAssertTrue(layout.oneNoteOpenAtATime)
     }
 
     func testBoardLayoutKeepsEachKnownSectionOnceInSavedOrder() throws {

@@ -145,8 +145,10 @@ struct BoardView: View {
                 Group {
                     if note.isDetached {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
+                    } else if store.isNoteExpanded(note.id) {
+                        NoteView(store: store, noteID: note.id) { store.toggleNoteExpanded(note.id) }
                     } else {
-                        NoteView(store: store, noteID: note.id)
+                        CollapsedNoteRow(store: store, note: note)
                     }
                 }.id(note.id)
             }

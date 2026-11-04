@@ -17,6 +17,9 @@ final class AppStore {
     var offersGitHubSetup = false
     var storageNeedsRecovery = false
     var expandedPRs: Set<String> = []
+    /// Board notes shown open this session; `boardLayout` decides the starting state.
+    var expandedNoteIDs: Set<UUID> = []
+    @ObservationIgnored private var lastExpandedNoteID: UUID?
     var loadingDetails: Set<String> = []
     var accessoryResults: [UUID: AccessoryResult] = [:]
     var focusNoteID: UUID?
@@ -88,6 +91,10 @@ final class AppStore {
             state.pullRequests[index].readinessIsComplete = false
         }
         ThemeController.shared.apply(state.appearance)
+        if !state.boardLayout.notesStartCollapsed {
+            let open = state.boardLayout.oneNoteOpenAtATime ? Array(state.notes.prefix(1)) : state.notes
+            expandedNoteIDs = Set(open.map(\.id))
+        }
         isLoaded = true
         if !storageNeedsRecovery {
             _ = await persist()
@@ -336,7 +343,33 @@ final class AppStore {
         return note.id
     }
 
+    func isNoteExpanded(_ id: UUID) -> Bool { expandedNoteIDs.contains(id) }
+
+    func toggleNoteExpanded(_ id: UUID) {
+        if expandedNoteIDs.contains(id) { expandedNoteIDs.remove(id) } else { expandNote(id) }
+    }
+
+    private func expandNote(_ id: UUID) {
+        if state.boardLayout.oneNoteOpenAtATime { expandedNoteIDs = [id] } else { expandedNoteIDs.insert(id) }
+        lastExpandedNoteID = id
+    }
+
+    func setNotesStartCollapsed(_ collapsed: Bool) {
+        state.boardLayout.notesStartCollapsed = collapsed
+        changed()
+    }
+
+    func setOneNoteOpenAtATime(_ enabled: Bool) {
+        state.boardLayout.oneNoteOpenAtATime = enabled
+        if enabled, expandedNoteIDs.count > 1 {
+            // Keep the note opened most recently; close the rest.
+            expandedNoteIDs = lastExpandedNoteID.map { expandedNoteIDs.contains($0) ? [$0] : [] } ?? []
+        }
+        changed()
+    }
+
     func requestFocus(_ id: UUID) {
+        expandNote(id)
         if state.collapsedSections.contains("notes") {
             state.collapsedSections.removeAll { $0 == "notes" }
             changed()
@@ -386,6 +419,7 @@ final class AppStore {
 
     func deleteNote(_ id: UUID) {
         deletedNoteIDs.insert(id)
+        expandedNoteIDs.remove(id)
         state.notes.removeAll { $0.id == id }
         let removed = state.extensionInstances.filter { $0.noteID == id }
         state.extensionInstances.removeAll { $0.noteID == id }

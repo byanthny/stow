@@ -143,9 +143,17 @@ private struct BoardSettingsView: View {
             Toggle(
                 "Let Notes collapse",
                 isOn: Binding(get: { layout.notesCanCollapse }, set: { store.setNotesCanCollapse($0) }))
+            Toggle(
+                "Notes start collapsed",
+                isOn: Binding(get: { layout.notesStartCollapsed }, set: { store.setNotesStartCollapsed($0) }))
+            Toggle(
+                "Open one note at a time",
+                isOn: Binding(get: { layout.oneNoteOpenAtATime }, set: { store.setOneNoteOpenAtATime($0) }))
             HStack {
-                Text("Defaults: Needs you, Notes, Waiting; 3 pull requests per section; Notes always open.")
-                    .font(.stow(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(
+                    "Defaults: Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time."
+                )
+                .font(.stow(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Reset") { store.resetBoardLayout() }.disabled(layout == BoardLayout())
             }
