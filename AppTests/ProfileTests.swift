@@ -3,6 +3,7 @@ import Foundation
 import StowCore
 import StowExtensionSDK
 import StowGitHub
+import StowSampleExtension
 import XCTest
 
 @testable import Stow
@@ -274,32 +275,54 @@ final class ProfileTests: XCTestCase {
         let started = await manager.start()
         XCTAssertTrue(started)
         let mainID = try XCTUnwrap(manager.activeSession).entry.id
-        let opened = await manager.open(workEntry.id)
+        let workID = workEntry.id
+        let opened = await manager.open(workID)
         XCTAssertTrue(opened)
-        let workNote = try XCTUnwrap(manager.sessions[workEntry.id]).store.addNote("Synthetic work note")
-        manager.sessions[workEntry.id]?.store.detachNote(workNote)
+        let workNote = try XCTUnwrap(manager.sessions[workID]).store.addNote("Synthetic work note")
+        manager.sessions[workID]?.store.detachNote(workNote)
 
         enum Operation { case open, hide, show, close }
         let script: [(Operation, UUID)] = [
-            (.hide, mainID), (.close, workEntry.id), (.open, workEntry.id), (.show, mainID),
-            (.close, mainID), (.hide, workEntry.id), (.open, mainID), (.close, workEntry.id),
-            (.show, workEntry.id), (.hide, mainID), (.close, mainID), (.open, workEntry.id),
-            (.open, mainID), (.hide, workEntry.id), (.close, workEntry.id), (.show, mainID),
-            (.open, workEntry.id), (.close, mainID), (.hide, workEntry.id), (.open, mainID),
+            (.hide, mainID), (.close, workID), (.show, workID), (.open, workID), (.hide, workID),
+            (.show, mainID), (.close, mainID), (.open, mainID), (.hide, mainID), (.show, workID),
+            (.close, workID), (.hide, mainID), (.open, workID), (.close, mainID), (.show, mainID),
+            (.hide, workID), (.open, mainID), (.close, workID), (.show, workID), (.hide, mainID),
         ]
         XCTAssertEqual(script.count, 20)
-        var pending: [Task<Void, Never>] = []
+        // Applied in order, the script leaves the first profile open and hidden and the work profile closed.
+        enum Outcome { case closed, shown, hidden }
+        var expected: [UUID: Outcome] = [mainID: .shown, workID: .shown]
         for (operation, id) in script {
-            switch operation {
-            case .open: pending.append(Task { await manager.open(id) })
-            case .close: pending.append(Task { _ = await manager.close(id) })
-            case .hide: manager.hide(id)
-            case .show: manager.show(id)
+            switch (operation, expected[id]) {
+            case (.open, _): expected[id] = .shown
+            case (.close, _): expected[id] = .closed
+            case (.hide, .shown): expected[id] = .hidden
+            case (.show, .hidden): expected[id] = .shown
+            default: break
             }
         }
-        for task in pending { await task.value }
+        XCTAssertEqual(expected, [mainID: .hidden, workID: .closed])
 
-        for id in [mainID, workEntry.id] {
+        // Each request goes out in its own task, without waiting for the others. Main-actor tasks start in the
+        // order they were made, so requests reach the manager in script order. Most hides and shows arrive while
+        // an open or close of their profile is pending, so they wait in its queue.
+        var pending: [Task<Void, Never>] = []
+        for (operation, id) in script {
+            pending.append(
+                Task {
+                    switch operation {
+                    case .open: await manager.open(id)
+                    case .close: _ = await manager.close(id)
+                    case .hide: manager.hide(id)
+                    case .show: manager.show(id)
+                    }
+                })
+        }
+        for task in pending { await task.value }
+        let settled = await waitUntil { !manager.hasPendingRequests }
+        XCTAssertTrue(settled)
+
+        for id in [mainID, workID] {
             let stateURL = try XCTUnwrap(manager.profiles.first { $0.id == id }).folder
                 .appendingPathComponent("state.json")
             let lock = StateLock.acquire(forStateAt: stateURL)
@@ -320,24 +343,51 @@ final class ProfileTests: XCTestCase {
         for window in NSApp.windows where window.isVisible && !earlierWindows.contains(ObjectIdentifier(window)) {
             XCTAssertNotNil(manager.session(owning: window), "Orphan window \(window.title)")
         }
-        // Requests for one profile apply in the order they were made, and each profile's last request was an open.
-        for id in [mainID, workEntry.id] {
-            XCTAssertNotNil(manager.sessions[id])
-            XCTAssertEqual(manager.sessions[id]?.isHidden, false)
-        }
+        // The first profile ends hidden only if the last hide waited for the close and the open queued before it.
+        XCTAssertEqual(manager.sessions[mainID]?.isHidden, true)
+        XCTAssertNil(manager.sessions[workID])
 
         // The manager still opens and closes normally afterwards, and no note was lost.
-        let reopened = await manager.open(mainID)
+        let reopened = await manager.open(workID)
         XCTAssertTrue(reopened)
-        let closed = await manager.close(workEntry.id)
+        let closed = await manager.close(mainID)
         XCTAssertTrue(closed)
-        let main = try XCTUnwrap(manager.sessions[mainID])
-        XCTAssertTrue(main.board.isVisible)
-        XCTAssertFalse(main.isHidden)
-        XCTAssertNil(manager.sessions[workEntry.id])
-        let workState = try await StateRepository(url: workEntry.folder.appendingPathComponent("state.json")).load()
-        XCTAssertEqual(workState.notes.first { $0.id == workNote }?.markdown, "Synthetic work note")
-        XCTAssertEqual(main.store.state.notes.count, 1)
+        let work = try XCTUnwrap(manager.sessions[workID])
+        XCTAssertTrue(work.board.isVisible)
+        XCTAssertFalse(work.isHidden)
+        XCTAssertEqual(work.store.note(workNote)?.markdown, "Synthetic work note")
+        XCTAssertNil(manager.sessions[mainID])
+        let mainState = try await StateRepository(url: folder.appendingPathComponent("state.json")).load()
+        XCTAssertEqual(mainState.notes.count, 1)
+    }
+
+    func testSwitchAfterHidingTheLastActiveProfileStartsFromTheVisibleOne() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        XCTAssertEqual(manager.lastActiveID, workEntry.id)
+
+        // While Stow is inactive no window is key, so only the sessions say which profile is on screen.
+        manager.hide(workEntry.id)
+        XCTAssertEqual(manager.lastActiveID, workEntry.id)
+        XCTAssertTrue(manager.activeSession === main, "Menus act on the profile that shows")
+
+        await manager.switchTo(workEntry.id)
+        assertForward(work, in: manager)
+        XCTAssertTrue(main.isHidden, "The switch leaves the profile that was on screen")
+
+        // With every profile hidden, the most recently active one is still the one menus act on.
+        manager.hide(workEntry.id)
+        XCTAssertTrue(manager.activeSession === work)
     }
 
     func testCloseReleasesLockAndReopenRestoresWindows() async throws {
@@ -425,6 +475,110 @@ final class ProfileTests: XCTestCase {
         guard case .acquired(let lock) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
         else { return XCTFail("Closing without saving must still release the profile lock") }
         lock.release()
+    }
+
+    func testClosedProfileStartsNoAccessoriesWhenItsResumeRefreshReturns() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder) { state in
+            state.githubEnabled = true
+            state.extensionInstances = [
+                ExtensionInstanceState(moduleID: "org.stow.sample", slot: .boardAccessory, isEnabled: false)
+            ]
+        }
+        let delayed = DelayedClient()
+        let provider = RecordingAccessoryProvider()
+        let manager = makeManager(folder, githubOverride: { _ in delayed }, accessoryProviders: [provider])
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        // Turned on without a refresh, so the first accessory run would be the one showing the profile starts.
+        session.store.state.extensionInstances[0].isEnabled = true
+
+        manager.hide(session.entry.id)
+        manager.show(session.entry.id)
+        let refreshing = await waitUntil { await delayed.hasStarted }
+        XCTAssertTrue(refreshing)
+        let closed = await manager.close(session.entry.id)
+        XCTAssertTrue(closed)
+        await delayed.release()
+        // Allow the resumed refresh to return and a wrongly started accessory to run.
+        try await Task.sleep(for: .milliseconds(300))
+        let startedIDs = await provider.startedIDs
+        XCTAssertEqual(startedIDs, [], "A closed profile must not start its accessories")
+    }
+
+    func testClosingDuringAnAccessoryRunStartsNoMoreAccessories() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let slowNote = Note(markdown: "Synthetic note with a slow accessory")
+        let quickNote = Note(markdown: "Synthetic note with a quick accessory")
+        let slow = ExtensionInstanceState(
+            moduleID: "org.stow.sample", slot: .noteAccessory, noteID: slowNote.id, isEnabled: true)
+        let quick = ExtensionInstanceState(
+            moduleID: "org.stow.sample", slot: .noteAccessory, noteID: quickNote.id, isEnabled: true)
+        try await seed(folder) { state in
+            state.notes = [slowNote, quickNote]
+            state.extensionInstances = [slow, quick]
+        }
+        let provider = RecordingAccessoryProvider(holding: slow.id)
+        let manager = makeManager(folder, accessoryProviders: [provider])
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        let slowStarted = await waitUntil { await provider.startedIDs == [slow.id] }
+        XCTAssertTrue(slowStarted)
+
+        // Showing the profile starts a refresh that waits on the slow accessory before the quick one.
+        manager.hide(session.entry.id)
+        manager.show(session.entry.id)
+        let closed = await manager.close(session.entry.id)
+        XCTAssertTrue(closed)
+        await provider.release()
+        try await Task.sleep(for: .milliseconds(300))
+        let startedIDs = await provider.startedIDs
+        XCTAssertEqual(startedIDs, [slow.id], "A closed profile must not start its next accessory")
+    }
+
+    func testCloseWaitsForARecoveryAlreadyRunning() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let stateURL = folder.appendingPathComponent("state.json")
+        let damaged = Data("synthetic damaged state".utf8)
+        try damaged.write(to: stateURL)
+        let manager = makeManager(folder, githubOverride: { _ in CountingClient() })
+        // The damaged state cannot be saved, so a close that runs before the recovery finishes asks first.
+        manager.confirmClosingWithoutSaving = { _ in true }
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertTrue(session.store.storageNeedsRecovery)
+
+        let recovery = Task { await session.store.recoverState() }
+        // Two turns of the main actor let the recovery pass its checks and start moving files.
+        await Task.yield()
+        await Task.yield()
+        let closed = await manager.close(session.entry.id)
+        XCTAssertTrue(closed)
+        // The close waited for the recovery: the damaged file is kept, and fresh state was saved before the lock
+        // was released.
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path)
+        let backup = try XCTUnwrap(names.first { $0.hasPrefix("state.json.backup-") })
+        XCTAssertEqual(try Data(contentsOf: folder.appendingPathComponent(backup)), damaged)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: stateURL.path), "The final save ran after the recovery")
+        let fresh = try await StateRepository(url: stateURL).load()
+        XCTAssertTrue(fresh.notes.isEmpty)
+        guard case .acquired(let lock) = StateLock.acquire(forStateAt: stateURL) else {
+            return XCTFail("Closing must release the profile lock")
+        }
+        lock.release()
+        let closedTree = try tree(folder)
+        await recovery.value
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(try tree(folder), closedTree, "Nothing may change once the lock is released")
     }
 
     func testRefreshFinishingAfterCloseWritesNothing() async throws {
@@ -699,9 +853,11 @@ final class ProfileTests: XCTestCase {
 
     /// A manager whose questions fail the test instead of opening a modal alert.
     private func makeManager(
-        _ folder: URL, githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil }
+        _ folder: URL, githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
+        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
     ) -> ProfileManager {
-        let manager = ProfileManager(dataFolder: folder, isDemo: false, githubOverride: githubOverride)
+        let manager = ProfileManager(
+            dataFolder: folder, isDemo: false, githubOverride: githubOverride, accessoryProviders: accessoryProviders)
         manager.confirmClosingWithoutSaving = { entry in
             XCTFail("Unexpected question about closing \(entry.name) without saving")
             return false
@@ -767,6 +923,19 @@ final class ProfileTests: XCTestCase {
         return id
     }
 
+    /// Every file under `folder` by relative path, with its bytes; folders map to no bytes.
+    private func tree(_ folder: URL) throws -> [String: Data?] {
+        var result: [String: Data?] = [:]
+        let root = folder.standardizedFileURL.path
+        let items = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isDirectoryKey])
+        while let item = items?.nextObject() as? URL {
+            let path = String(item.standardizedFileURL.path.dropFirst(root.count))
+            let isDirectory = try item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true
+            result[path] = isDirectory ? .some(nil) : try Data(contentsOf: item)
+        }
+        return result
+    }
+
     private func exists(_ name: String, in folder: URL) -> Bool {
         FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path)
     }
@@ -802,6 +971,27 @@ private final class Recorder {
     func answer(_ entry: ProfileEntry) -> Bool {
         names.append(entry.name)
         return answers.isEmpty ? false : answers.removeFirst()
+    }
+}
+
+/// Records which accessories start. The one it holds waits until released or cancelled.
+private actor RecordingAccessoryProvider: AccessoryProvider {
+    nonisolated let descriptor = AccessoryDescriptor(
+        id: "org.stow.sample", name: "Synthetic recording provider", supportedSlots: [.boardAccessory, .noteAccessory])
+    private(set) var startedIDs: [UUID] = []
+    private let holdingID: UUID?
+    private var isReleased = false
+
+    init(holding id: UUID? = nil) { holdingID = id }
+
+    func release() { isReleased = true }
+
+    func snapshot(for request: AccessoryRequest) async throws -> AccessorySnapshot {
+        startedIDs.append(request.instanceID)
+        if request.instanceID == holdingID {
+            while !isReleased { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        return .init(primaryText: "Synthetic accessory result")
     }
 }
 

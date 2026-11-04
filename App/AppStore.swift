@@ -34,6 +34,8 @@ final class AppStore {
             guard oldValue, !isPaused else { return }
             Task {
                 await refresh()
+                // A profile closed while GitHub answered starts no accessories.
+                guard !isStopped else { return }
                 await refreshAccessories()
             }
         }
@@ -65,6 +67,7 @@ final class AppStore {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var persistenceTask: Task<Bool, Never>?
     @ObservationIgnored private var restoreTask: Task<Bool, Never>?
+    @ObservationIgnored private var recoveryTask: Task<Void, Never>?
     @ObservationIgnored private var notesPresenter: NotesFolderPresenter?
     @ObservationIgnored private var notesWatcher: NotesFolderWatcher?
     @ObservationIgnored private var changeRevision: UInt64 = 0
@@ -515,8 +518,12 @@ final class AppStore {
 
     func refreshAccessories() async {
         guard !isRestoringBackup, !isPaused else { return }
+        // A refresh that began while the store ran ends once it stops, so a closing profile starts no more
+        // accessories. One asked of an already stopped store still runs: tests that silence a store's timers by
+        // stopping it, then refresh its accessories by hand.
+        let beganRunning = !isStopped
         for id in state.extensionInstances.map(\.id) {
-            guard !Task.isCancelled, !isRestoringBackup, !isPaused else { return }
+            guard !Task.isCancelled, !isRestoringBackup, !isPaused, !(beganRunning && isStopped) else { return }
             guard let instance = state.extensionInstances.first(where: { $0.id == id && $0.isEnabled }) else {
                 continue
             }
@@ -698,10 +705,11 @@ final class AppStore {
         return await persist()
     }
 
-    /// The last write of a closing profile, after `stop()`. Waits for a restore or save still running, writes the
-    /// final state, and closes the writer, so nothing writes once the profile releases its lock.
+    /// The last write of a closing profile, after `stop()`. Waits for a restore, recovery, or save still running,
+    /// writes the final state, and closes the writer, so nothing writes once the profile releases its lock.
     func saveAndClose() async -> Bool {
         if let restoreTask { _ = await restoreTask.value }
+        if let recoveryTask { await recoveryTask.value }
         if let persistenceTask { _ = await persistenceTask.value }
         guard isStopped, isLoaded, !storageNeedsRecovery, !isRestoringBackup else { return false }
         do {
@@ -718,7 +726,16 @@ final class AppStore {
         return state
     }
 
+    /// Backs up unreadable saved data and starts fresh. A closing profile waits for it to finish.
     func recoverState() async {
+        guard !isStopped, recoveryTask == nil else { return }
+        let recovery = Task { await recover() }
+        recoveryTask = recovery
+        defer { recoveryTask = nil }
+        await recovery.value
+    }
+
+    private func recover() async {
         guard !isStopped else { return }
         do {
             try await repository.recoverByBackingUp()

@@ -1,6 +1,8 @@
 import AppKit
 import StowCore
+import StowExtensionSDK
 import StowGitHub
+import StowSampleExtension
 
 /// Keeps track of the profiles and which of them are open. Each open profile is a session with its own lock,
 /// store, and windows.
@@ -32,6 +34,8 @@ final class ProfileManager {
     private let isDemo: Bool
     /// A GitHub client for a profile's store in place of the one it finds itself. Tests use it.
     private let githubOverride: @MainActor (ProfileEntry) -> (any GitHubClient)?
+    /// The accessory providers every profile's store runs. Tests replace them.
+    private let accessoryProviders: [any AccessoryProvider]
     private var alwaysShowsProfileName = false
     /// The newest lifecycle request for each profile. Each request waits for the one before it, so opens, closes,
     /// hides, and shows made in quick succession apply in order and never interleave.
@@ -44,22 +48,30 @@ final class ProfileManager {
 
     init(
         dataFolder: URL, isDemo: Bool, catalog: ProfileCatalog? = nil,
-        githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil }
+        githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
+        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
     ) {
         self.catalog = catalog ?? ProfileCatalog(dataFolder: dataFolder)
         self.isDemo = isDemo
         self.githubOverride = githubOverride
+        self.accessoryProviders = accessoryProviders
     }
 
     /// Names show once a second profile exists, or always when the user turns that on.
     var showsProfileNames: Bool { profiles.count > 1 || alwaysShowsProfileName }
 
-    /// The key window's profile, else the most recently active one, else the first open profile. Never a profile
-    /// that has stopped.
+    /// Whether any open, close, hide, or show is still running or waiting for one before it.
+    var hasPendingRequests: Bool { !requests.isEmpty }
+
+    /// The profile menus act on: the key window's, else the most recently active one if it shows, else the first
+    /// one that shows, else a hidden one, preferring the most recently active. Never a profile that has stopped.
+    /// While Stow is inactive no window is key, so a hidden profile is never taken over one on screen.
     var activeSession: ProfileSession? {
         if let window = NSApp.keyWindow, let session = session(owning: window) { return session }
-        if let lastActiveID, let session = sessions[lastActiveID], !session.isStopped { return session }
-        return profiles.lazy.compactMap { self.sessions[$0.id] }.first { !$0.isStopped }
+        let open = profiles.compactMap { sessions[$0.id] }.filter { !$0.isStopped }
+        let last = open.first { $0.entry.id == lastActiveID }
+        if let last, !last.isHidden { return last }
+        return open.first { !$0.isHidden } ?? last ?? open.first
     }
 
     func session(owning window: NSWindow) -> ProfileSession? {
@@ -141,9 +153,11 @@ final class ProfileManager {
     private func openSession(_ entry: ProfileEntry) async -> Bool {
         // A profile open here already holds its lock, and a second lock on the same file would be refused.
         if sessions[entry.id] != nil { return true }
-        guard let session = ProfileSession(entry: entry, isDemo: isDemo, githubClient: githubOverride(entry)) else {
-            return false
-        }
+        guard
+            let session = ProfileSession(
+                entry: entry, isDemo: isDemo, githubClient: githubOverride(entry),
+                accessoryProviders: accessoryProviders)
+        else { return false }
         session.showsName = showsProfileNames
         session.onActivate = { [weak self] in self?.lastActiveID = entry.id }
         sessions[entry.id] = session

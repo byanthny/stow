@@ -1,5 +1,6 @@
 import AppKit
 import StowCore
+import StowExtensionSDK
 import StowGitHub
 import SwiftUI
 
@@ -31,7 +32,10 @@ final class ProfileSession: NSObject, NSWindowDelegate {
 
     /// Takes the profile's `.stow.lock`, or returns nil when another holder has it. Callers check their own open
     /// sessions first, because a second lock on the same file fails even within one process.
-    init?(entry: ProfileEntry, isDemo: Bool, githubClient: (any GitHubClient)? = nil) {
+    init?(
+        entry: ProfileEntry, isDemo: Bool, githubClient: (any GitHubClient)?,
+        accessoryProviders: [any AccessoryProvider]
+    ) {
         let stateURL = entry.folder.appendingPathComponent("state.json")
         switch StateLock.acquire(forStateAt: stateURL) {
         case .acquired(let held): lock = held
@@ -40,7 +44,9 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         case .heldByAnotherProcess: return nil
         }
         self.entry = entry
-        store = AppStore(stateURL: stateURL, isDemo: isDemo, githubClient: githubClient, arrival: entry.isArrival)
+        store = AppStore(
+            stateURL: stateURL, isDemo: isDemo, githubClient: githubClient, accessoryProviders: accessoryProviders,
+            arrival: entry.isArrival)
         super.init()
         store.onDetach = { [weak self] id in self?.showNote(id) }
         store.onDelete = { [weak self] id in self?.noteWindows.removeValue(forKey: id)?.orderOut(nil) }
