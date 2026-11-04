@@ -179,10 +179,14 @@ final class ProfileCatalogTests: XCTestCase {
         try write("{}", "state.json")
         try addProfile(name: "Zed")
         try addProfile(name: "Alpha")
-        for bytes in ["not json", "{\"schemaVersion\":99,\"future\":true}"] {
+        let cases: [(String, ProfileIndexStatus)] = [
+            ("not json", .needsReset), ("{\"schemaVersion\":99,\"future\":true}", .newer),
+        ]
+        for (bytes, status) in cases {
             try write(bytes, ProfileIndex.filename)
             let snapshot = try await catalog().load()
-            XCTAssertEqual(snapshot.indexStatus, .needsReset)
+            XCTAssertEqual(snapshot.indexStatus, status)
+            XCTAssertTrue(snapshot.indexStatus.blocksChanges)
             XCTAssertFalse(snapshot.isNewInstallation)
             XCTAssertEqual(snapshot.profiles.map(\.name), ["Alpha", "Stow", "Zed"])
             XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(ProfileIndex.filename)), Data(bytes.utf8))
@@ -424,6 +428,20 @@ final class ProfileCatalogTests: XCTestCase {
         try await catalog.recordSession(open: [.init(id: id, isHidden: false)], lastActiveID: id)
         XCTAssertEqual(try Data(contentsOf: indexURL), written)
         await assertThrows(.unwritable) { try await catalog.recordSession(open: [], lastActiveID: id) }
+    }
+
+    func testNewerListWaitsForResetAndKeepsItsBytes() async throws {
+        let id = try addProfile(name: "Work")
+        let newer = "{\"schemaVersion\":99,\"future\":true}"
+        try write(newer, ProfileIndex.filename)
+        let catalog = catalog()
+        await assertThrows(.indexNeedsReset) { try await catalog.rename(id, to: "Home") }
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(ProfileIndex.filename)), Data(newer.utf8))
+        let backup = try await catalog.resetIndex()
+        XCTAssertEqual(try Data(contentsOf: backup), Data(newer.utf8))
+        try await catalog.rename(id, to: "Home")
+        let status = try await catalog.load().indexStatus
+        XCTAssertEqual(status, .loaded)
     }
 
     func testChangesWaitForResetThenSucceed() async throws {

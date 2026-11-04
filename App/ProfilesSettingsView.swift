@@ -34,7 +34,9 @@ struct ProfilesSettingsView: View {
             }
             if needsReset {
                 Text(
-                    "Stow can’t read the profile list, so profile order and open windows aren’t saved and profiles can’t change. Reset it to start a new list; the old one is kept as a backup."
+                    manager?.indexIsNewer == true
+                        ? "A newer version of Stow saved the profile list, so profile order and open windows aren’t saved and profiles can’t change here. Update Stow, or reset the list to start a new one; the old one is kept as a backup."
+                        : "Stow can’t read the profile list, so profile order and open windows aren’t saved and profiles can’t change. Reset it to start a new list; the old one is kept as a backup."
                 )
                 .font(theme.font(size: 11)).foregroundStyle(.stowAmber).fixedSize(horizontal: false, vertical: true)
             }
@@ -98,8 +100,12 @@ struct ProfilesSettingsView: View {
                 let backup = try await manager.resetIndex()
                 problem = nil
                 status = "The old profile list was kept as \(backup.lastPathComponent)."
+            } catch ProfileError.notFound {
+                // Another copy of Stow fixed the list in the meantime.
+                problem = nil
+                status = "The profile list can be read again, so nothing was reset."
             } catch {
-                problem = profileProblem(error, name: "")
+                problem = profileProblem(error, name: "The profile list")
             }
         }
     }
