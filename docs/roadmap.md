@@ -55,10 +55,20 @@ Work through this queue in order. These are future tasks, not authorization to p
 - [x] Do not upload large app packages or raw logs on PRs. Store distributables for approved releases, use short retention for necessary temporary artifacts, and avoid caching private state.
 - [ ] Review actual CI minutes, artifact storage, hosting, domain renewals, and developer-program costs before enabling recurring spend. Current account allowances and billing have not been established. Set explicit limits before adding paid services.
 
+## after profiles, in order
+
+Ideas taken from Zed, Ghostty, and Zen, queued until profiles land because they touch the theme, menus, and board code that profiles restructure. Each is opt-in or a setting with a default.
+
+- [ ] Light and dark themes that follow macOS, with a live theme preview. For example, `preset = dark:graphite,light:paper` in the config, as Ghostty does. Arrowing through themes previews them, and Escape restores the previous one, as in Zed.
+- [ ] A quick-note shortcut that works from any app, like Ghostty's quick terminal. Off by default. Use the standard global hot-key API, which needs no Accessibility permission, never a monitor of every key press.
+- [ ] Compact mode that hides the board header until the pointer reaches it, as in Zen.
+- [ ] A command palette listing every action, as in Zed.
+- [ ] One text config for all settings with the defaults shown, as in Ghostty and Zed. It never contains notes, pull requests, account data, or machine paths, so it stays safe to share.
+
 ## later ideas
 
 - [ ] Improve the bundled optional-module experience and document source-based provider reuse before designing installable plugins.
-- [ ] Define installable-module packaging, discovery, API compatibility, signing, updates, permissions, and failure isolation before accepting third-party binaries. Keep trusted in-process code clearly identified.
+- [ ] Define installable-module packaging, discovery, API compatibility, signing, updates, permissions, and failure isolation before accepting third-party binaries. Keep trusted in-process code clearly identified. Prefer a sandbox that grants each extension only declared capabilities, like Zed's WebAssembly extensions, over loading outside code into the app.
 - [ ] Consider a weather accessory or other small providers only after the host contract and installation story are settled. Keep each optional, quiet when disabled, and independent of notes and GitHub.
 - [ ] Revisit menu bar UI, widgets, notifications, and GitHub write actions after the core workflow is stable and a concrete need justifies them.
 - [ ] Evaluate automatic updates separately from release packaging, including trust, rollback, and ongoing hosting cost.
