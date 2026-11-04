@@ -48,6 +48,6 @@ Classification distinguishes observed facts from incomplete readiness. Conflicts
 
 ## Dependency direction
 
-The SDK depends only on Foundation. Core may store SDK configuration values, but providers receive only their explicit request. The host owns placement and rendering. The app links the modules; module tests do not depend on the app or MarkdownUI.
+The SDK depends only on Foundation. Core may store SDK configuration values, but providers receive only their explicit request. The host owns placement and rendering. The app links the modules; module tests do not depend on the app.
 
 The JSON adapter exercises a serialization boundary in-process. It does not launch an executable, isolate code, or promise a stable binary ABI. A later host may carry the same values over a process transport without introducing macOS view types into the contract.

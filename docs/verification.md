@@ -20,7 +20,7 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Manual acceptance
 
-- Start with synthetic state. Create, edit, preview, detach, close, reopen, and explicitly delete notes. Verify selection, undo, copy/paste, Markdown links, and the last edit after quit and restart.
+- Start with synthetic state. Create, edit, detach, close, reopen, and explicitly delete notes. Verify selection, undo, copy/paste, Markdown styling while typing, Command-click links, a long note growing on the board, and the last edit after quit and restart.
 - The board's and each detached note's headers share the title bar row with the window buttons. Drag each window by the header's empty space, and double-click there to zoom or minimize as the system's title bar setting says. Click **Start typing a note…** and type: the note stays. Start another and leave it empty, then open a different note or press **+**: the empty one goes away. Pin, add a personal note to, and dismiss a card from its icons.
 - Keep multiple detached notes open. Change each note’s always-on-top setting. Hide and reopen the board through the Dock and Command-0. Confirm window restoration on one display and after disconnecting another display.
 - Disable GitHub and verify notes-only use. Test missing `gh`, authentication failure, offline refresh, inaccessible pins, rate limits, partial responses, and an account switch. Preserve cached content and keep incomplete readiness conservative.
@@ -40,7 +40,7 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
   - Switching by keyboard: ⌃⌥1 to ⌃⌥9 switch to that position, and ⌃⌥] and ⌃⌥[ move to the next and previous profile, wrapping. Check them with the board focused, while a note's text view has focus, and with a non-US keyboard layout. Confirm they work only while Stow is the active app. Repeat with **Hide when switching away** on and off, and with Reduce Motion on. A switch should be immediate.
   - Menus: the Dock menu lists every profile with its state, switches, and offers **New profile…**; with one profile it offers only **New profile…**. The Profiles menu in the menu bar appears once a second profile exists, or with **Always show profile name** on, and lists every profile with Next profile and Previous profile; with one profile and the setting off, it and its shortcuts are gone. The Window menu tells windows apart by profile name. New note, Refresh GitHub, Settings…, and Show board name the profile when more than one exists.
   - Board profile menu: click the profile icon in a board's header. With several profiles it lists the other profiles with their state, then **Hide profile**, **Close profile**, **New profile…**, and **Profile settings…**; with one profile it offers only the last two. Choosing another profile switches to it and hides this one unless **Hide when switching away** is off. Each item acts on that board's profile.
-  - VoiceOver: the profile icon button, the profile menu, the owner control, window titles ("Work", "Work note", "Work settings"), and the account-mismatch banner read clearly and the color is never the only cue.
+  - VoiceOver: the profile icon button, the profile menu, the owner control, window titles ("Work", a note's title with "— Work", "Work settings"), and the account-mismatch banner read clearly and the color is never the only cue.
   - Window restoration: quit with some profiles visible, some hidden, and one closed, relaunch, and confirm each returns as it was. If none was visible, the most recently active profile shows. Then change which profiles are visible, hidden, and closed, force quit, and relaunch: each profile returns as it was at the last normal quit, not at the force quit, because Stow records the open profiles only while quitting (`recordSession` runs only from `prepareToQuit`).
   - Delete: **Delete…** asks "Delete <name>?" with **Move to Trash** and **Cancel**. Cancel changes nothing; Move to Trash closes the profile and moves its folder to the Trash. With only one profile, Settings shows no **Delete…** button. Deleting a profile another process holds is refused. In Finder, Put Back returns it, and Stow lists it again when it comes forward, with GitHub and accessories off. Close a profile and move its folder to the Trash in Finder. With Stow in the background, choose that profile from the Dock menu: Stow says it can't find it, drops it from its menus, and leaves no folder behind. Bringing Stow forward first reloads the list, so the profile is already gone from the menus and this message doesn't appear. Also delete the first profile and check it moves to `profiles/<id>/` first.
   - Second launch: start Stow, launch a second copy, and confirm it exits at once and brings the running copy forward without changing any profile's `state.json`.
@@ -53,6 +53,15 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 ## Evidence
 
 Current counts, at 0.2.0: `./scripts/test.sh` runs 322 tests. The package suite in `Tests/` has 160 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 115 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Live notes validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
+
+- `./scripts/test.sh` passed: 169 XCTest and 47 Swift Testing cases in the package, and 123 hosted cases. New coverage includes Markdown style ranges, live styling that keeps the source, links opening from Command-click or the context menu only, board notes growing to a limit, the board following the cursor as a note grows, note window titles, and the network tripwire run against the editor.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED.
+- The Debug smoke test against a new synthetic folder exited 0 and wrote 14 checks, all true. Its detached-note capture and a hosted capture of an open board note were inspected: the title, heading, emphasis, quote, link, and code styles showed as typed, and the open note showed all of its lines.
+- Restyling took about 25 ms per keystroke on a 46 KB synthetic note in a Release build, growing with note size.
+- `./scripts/accessibility.sh` passed its three audits, of the board with an open note, a detached note, and Settings, with no issues.
+- Not run: keyboard navigation, VoiceOver, and the hands-on note checks.
 
 Release 0.2.0 validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
 

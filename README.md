@@ -39,7 +39,7 @@ Use Xcode 16.4 or later with its command line tools selected. Open the checked-i
 open Stow.xcodeproj
 ```
 
-Choose the **Stow** scheme and run. Xcode downloads the pinned MarkdownUI dependency on the first build. XcodeGen is only needed when changing `project.yml`; project generation is not a setup prerequisite.
+Choose the **Stow** scheme and run. Stow has no third-party dependencies. XcodeGen is only needed when changing `project.yml`; project generation is not a setup prerequisite.
 
 From the repository root:
 
@@ -55,8 +55,9 @@ The scripts put their output in `build/`. Pass another directory as the second b
 
 For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [installation](docs/install.md).
 
-- Create a note with **Command-N**. Switch between editing and Markdown preview from the note controls.
-- Keep code snippets in notes. Inline code and fenced code blocks are styled as code while you type and in the preview.
+- Create a note with **Command-N**. Its first line is its title. Markdown shows as you type: headings, bold, italic, strikethrough, quotes, lists, links, and code. The marks stay visible, and the file stays plain Markdown.
+- Keep code snippets in notes. Inline code and fenced code blocks show in a fixed-width font.
+- Open a link in a note with **Command**-click, or **Open Link** in its context menu. An open note on the board grows to show all of its text.
 - Paste a canonical `https://github.com/example/project/pull/42` URL outside the editor to pin a pull request. Text following one URL becomes an attached note. Other or ambiguous text stays intact as a note.
 - Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note into its own window with the arrow button in its header. Use **Command-0** or the Dock icon to reopen the board.
@@ -92,4 +93,4 @@ See [contributing](CONTRIBUTING.md).
 
 ## License
 
-Stow is free software under the [GNU General Public License v3.0 or later](LICENSE). Third-party dependencies keep their own licenses; [their notices](App/ThirdPartyNotices.txt) ship in the app bundle.
+Stow is free software under the [GNU General Public License v3.0 or later](LICENSE).

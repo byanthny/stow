@@ -18,7 +18,7 @@ Every profile uses the account `gh` is signed in as. If a refresh answers as a d
 
 Use Settings → **Show data folder**, **Open notes folder**, or a note's **Show Markdown file** action to reveal the relevant location. Do not manually rename managed note files. Private repository titles, comments, branch names, note contents, and module settings can remain on disk, including in retained backups.
 
-There is no analytics, telemetry, cloud sync, or Stow account. Notes are not sent to GitHub. Markdown preview uses image placeholders without fetching remote images. GitHub is off on a new installation until you choose **Use GitHub**; requests then use the existing GitHub CLI login. Opening a link launches the system browser. Stow currently supports `github.com` only.
+There is no analytics, telemetry, cloud sync, or Stow account. Notes are not sent to GitHub. Notes show Markdown as text and never fetch images or links. GitHub is off on a new installation until you choose **Use GitHub**; requests then use the existing GitHub CLI login. Opening a link launches the system browser. Stow currently supports `github.com` only.
 
 The JSON index and Markdown files are not application-encrypted. New storage directories use owner-only permissions, and files are created owner-readable and owner-writable before receiving bytes. Existing directory permissions are preserved. System backups, other software with account access, external editors, and trusted accessories may still access local data.
 
