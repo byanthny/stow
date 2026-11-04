@@ -10,8 +10,6 @@ import XCTest
 @MainActor
 final class SectionsAndAppearanceTests: XCTestCase {
     func testSectionsDefaultOpenPersistAndExpandForNewOrFocusedNotes() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -51,8 +49,6 @@ final class SectionsAndAppearanceTests: XCTestCase {
     }
 
     func testAppearancePersistsAndRestoresThemeControllerAndWindowScheme() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -69,25 +65,22 @@ final class SectionsAndAppearanceTests: XCTestCase {
         appearance.colors.text = "#18202A"
         XCTAssertTrue(app.store.applyAppearance(appearance))
         XCTAssertEqual(app.store.state.appearance, appearance)
-        XCTAssertEqual(ThemeController.shared.settings, appearance)
+        XCTAssertEqual(app.store.theme.settings, appearance)
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
         let persisted = try await StateRepository(url: stateURL(directory)).load()
         XCTAssertEqual(persisted.appearance, appearance)
         dispose(app)
-        ThemeController.shared.apply(.default)
 
         let restored = try await prepare(directory)
         defer { dispose(restored) }
         XCTAssertEqual(restored.store.state.appearance, appearance)
-        XCTAssertEqual(ThemeController.shared.settings, appearance)
-        XCTAssertEqual(ThemeController.shared.colorScheme, .light)
+        XCTAssertEqual(restored.store.theme.settings, appearance)
+        XCTAssertEqual(restored.store.theme.snapshot.colorScheme, .light)
         XCTAssertEqual(restored.board.appearance?.name, .aqua)
     }
 
     func testChangingEditorFontAndLineHeightPreservesMarkdownSelectionAndEditorIdentity() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -128,8 +121,6 @@ final class SectionsAndAppearanceTests: XCTestCase {
     }
 
     func testBackgroundOpacityLeavesWindowAndTextFullyOpaque() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -153,11 +144,11 @@ final class SectionsAndAppearanceTests: XCTestCase {
             XCTAssertEqual(window.contentView?.alphaValue ?? 0, 1, accuracy: 0.001)
         }
         let expectedBackgroundOpacity = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency ? 1.0 : 0.25
-        XCTAssertEqual(ThemeController.shared.effectiveBackgroundOpacity, expectedBackgroundOpacity, accuracy: 0.001)
-        XCTAssertEqual(NSColor(Color.stowBackground).alphaComponent, expectedBackgroundOpacity, accuracy: 0.001)
-        XCTAssertEqual(NSColor(Color.stowNote).alphaComponent, expectedBackgroundOpacity, accuracy: 0.001)
-        XCTAssertEqual(NSColor(Color.stowSurface).alphaComponent, expectedBackgroundOpacity, accuracy: 0.001)
-        XCTAssertEqual(NSColor(Color.stowText).alphaComponent, 1, accuracy: 0.001)
+        XCTAssertEqual(app.store.theme.snapshot.effectiveBackgroundOpacity, expectedBackgroundOpacity, accuracy: 0.001)
+        XCTAssertEqual(NSColor(app.store.theme.snapshot.color(.background)).alphaComponent, expectedBackgroundOpacity, accuracy: 0.001)
+        XCTAssertEqual(NSColor(app.store.theme.snapshot.color(.note)).alphaComponent, expectedBackgroundOpacity, accuracy: 0.001)
+        XCTAssertEqual(NSColor(app.store.theme.snapshot.color(.surface)).alphaComponent, expectedBackgroundOpacity, accuracy: 0.001)
+        XCTAssertEqual(NSColor(app.store.theme.snapshot.color(.text)).alphaComponent, 1, accuracy: 0.001)
         XCTAssertEqual(editor.textColor?.alphaComponent ?? 0, 1, accuracy: 0.001)
         XCTAssertEqual(editor.insertionPointColor.alphaComponent, 1, accuracy: 0.001)
         XCTAssertEqual(editor.alphaValue, 1, accuracy: 0.001)

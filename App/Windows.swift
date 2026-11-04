@@ -198,7 +198,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applyBoardLevel()
         board.minSize = NSSize(width: 320, height: 348)
         board.contentView = NSHostingView(
-            rootView: BoardView(store: store, showSettings: { [weak self] in self?.showSettings() }))
+            rootView: BoardView(store: store, showSettings: { [weak self] in self?.showSettings() })
+                .themed(by: store.theme))
     }
 
     private func makePanel(frame: NSRect, title: String) -> StowPanel {
@@ -210,7 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.titlebarAppearsTransparent = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
-        panel.appearance = NSAppearance(named: ThemeController.shared.colorScheme == .dark ? .darkAqua : .aqua)
+        panel.appearance = store.theme.snapshot.appKitAppearance
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
@@ -227,7 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func applyWindowAppearance() {
-        let appearance = NSAppearance(named: ThemeController.shared.colorScheme == .dark ? .darkAqua : .aqua)
+        let appearance = store.theme.snapshot.appKitAppearance
         for panel in [board].compactMap({ $0 }) + Array(noteWindows.values) {
             panel.isOpaque = false
             panel.backgroundColor = .clear
@@ -258,7 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             panel = makePanel(frame: frame, title: "Stow note")
             panel.noteID = id
             panel.minSize = NSSize(width: 260, height: 208)
-            panel.contentView = NSHostingView(rootView: NoteView(store: store, noteID: id, detached: true))
+            panel.contentView = NSHostingView(rootView: NoteView(store: store, noteID: id, detached: true).themed(by: store.theme))
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
@@ -296,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             window.isReleasedWhenClosed = false
             // Reopening Settings brings it to the current desktop instead of switching to its last one.
             window.collectionBehavior = [.moveToActiveSpace]
-            window.contentView = NSHostingView(rootView: SettingsView(store: store))
+            window.contentView = NSHostingView(rootView: SettingsView(store: store).themed(by: store.theme))
             window.center()
             settingsWindow = window
         }

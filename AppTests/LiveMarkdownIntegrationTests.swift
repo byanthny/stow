@@ -9,8 +9,6 @@ import XCTest
 @MainActor
 final class LiveMarkdownIntegrationTests: XCTestCase {
     func testPortableSnapshotIncludesImmediateExternalEditBeforeWatcherDebounce() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -29,8 +27,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testOrdinaryFlushAndPortableSnapshotAreBlockedDuringRestore() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -58,8 +54,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testExternalEditThenFlushUpdatesSourceWithoutChangingNoteIdentity() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -87,8 +81,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testDirtyAppEditAndExternalEditBothSurviveFlushAndRestart() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -120,8 +112,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testRestorePreservesPreviousBackupAndFolderAndRebuildsRestoredWindows() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -165,7 +155,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         XCTAssertEqual(app.noteWindows[restoredNote.id]?.level, .normal)
         XCTAssertNil(app.noteWindows[oldNote.id])
         XCTAssertFalse(oldWindow.isVisible)
-        XCTAssertEqual(ThemeController.shared.settings, replacement.appearance)
+        XCTAssertEqual(app.store.theme.settings, replacement.appearance)
         XCTAssertEqual(
             try Data(contentsOf: noteFile(restoredNote.id, store: app.store)), Data(restoredNote.markdown.utf8))
         let backups = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
@@ -192,8 +182,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testMarkdownBatchImportPreservesSourceAndAllocatesNewStableIdentities() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
@@ -219,8 +207,6 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
     }
 
     func testUncoordinatedInPlaceAndAtomicEditsReloadWithoutExplicitFlush() async throws {
-        let previousTheme = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(previousTheme) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)

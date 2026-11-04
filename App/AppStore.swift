@@ -8,6 +8,8 @@ import StowSampleExtension
 
 @MainActor @Observable
 final class AppStore {
+    /// This store's own theme; no window reads another store's.
+    let theme = ThemeController()
     var state = AppState()
     var isLoaded = false
     var isRefreshing = false
@@ -87,7 +89,7 @@ final class AppStore {
             state.pullRequests[index].isStale = true
             state.pullRequests[index].readinessIsComplete = false
         }
-        ThemeController.shared.apply(state.appearance)
+        theme.apply(state.appearance)
         isLoaded = true
         if !storageNeedsRecovery {
             _ = await persist()
@@ -113,7 +115,7 @@ final class AppStore {
     func applyAppearance(_ settings: AppearanceSettings) -> Bool {
         guard let valid = try? settings.validated() else { return false }
         state.appearance = valid
-        ThemeController.shared.apply(valid)
+        theme.apply(valid)
         onAppearanceChange?()
         changed()
         return true
@@ -690,7 +692,7 @@ final class AppStore {
             saveError = nil
             changeRevision &+= 1
             persistedRevision = changeRevision
-            ThemeController.shared.apply(state.appearance)
+            theme.apply(state.appearance)
             await watchNotesFolder()
             onRestoreWindows?()
             return true

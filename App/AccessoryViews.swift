@@ -16,7 +16,7 @@ struct AccessoryViews: View {
                     Text(store.accessoryResults[instance.id]?.error?.message ?? "Loading accessory…").lineLimit(2)
                 }
                 Spacer(minLength: 0)
-            }.font(.system(size: 10)).foregroundStyle(Color.stowMuted).padding(.horizontal, 12).padding(.bottom, 9)
+            }.font(.system(size: 10)).foregroundStyle(.stowMuted).padding(.horizontal, 12).padding(.bottom, 9)
         }
     }
 }

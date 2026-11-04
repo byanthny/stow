@@ -8,7 +8,7 @@ struct NativeEditor: NSViewRepresentable {
     var shouldFocus = false
     var focusRequestID: UUID
     var accessibilityID = "note.source"
-    var appearance = ThemeController.shared.settings
+    var appearance: AppearanceSettings
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()

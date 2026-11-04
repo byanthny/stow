@@ -8,8 +8,6 @@ import XCTest
 @MainActor
 final class ThemeConfigIntegrationTests: XCTestCase {
     func testInvalidPastedDraftPreservesAppearanceAndCanBeCorrectedThenPersisted() async throws {
-        let priorGlobal = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(priorGlobal) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try await makeStore(directory)
@@ -27,7 +25,7 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         XCTAssertNotNil(draft.error, "The sheet needs a visible error while leaving its source editable")
         XCTAssertEqual(draft.source, invalidSource)
         XCTAssertEqual(store.state.appearance, beforeAppearance)
-        XCTAssertEqual(ThemeController.shared.settings, beforeAppearance)
+        XCTAssertEqual(store.theme.settings, beforeAppearance)
         XCTAssertEqual(store.state.notes, beforeNotes)
         XCTAssertEqual(try Data(contentsOf: stateURL(directory)), savedBefore)
 
@@ -41,23 +39,20 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         XCTAssertTrue(draft.apply(to: store))
         XCTAssertNil(draft.error)
         XCTAssertEqual(store.state.appearance, corrected)
-        XCTAssertEqual(ThemeController.shared.settings, corrected)
+        XCTAssertEqual(store.theme.settings, corrected)
         XCTAssertEqual(store.state.notes, beforeNotes)
         let saved = await store.flush()
         XCTAssertTrue(saved)
         store.stop()
-        ThemeController.shared.apply(.default)
         let restored = AppStore(stateURL: stateURL(directory), isDemo: true)
         await restored.start()
         defer { restored.stop() }
         XCTAssertEqual(restored.state.appearance, corrected)
-        XCTAssertEqual(ThemeController.shared.settings, corrected)
+        XCTAssertEqual(store.theme.settings, corrected)
         XCTAssertEqual(restored.state.notes, beforeNotes)
     }
 
     func testLegacyJSONPastedIntoTheSameDraftAppliesWithoutChangingNotes() async throws {
-        let priorGlobal = ThemeController.shared.settings
-        defer { ThemeController.shared.apply(priorGlobal) }
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try await makeStore(directory)

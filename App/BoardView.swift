@@ -4,6 +4,7 @@ import SwiftUI
 struct BoardView: View {
     @Bindable var store: AppStore
     var showSettings: () -> Void
+    @Environment(\.stowTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
     @State private var expandedSections: Set<AttentionSection> = []
@@ -11,8 +12,8 @@ struct BoardView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 7) {
-                Image(systemName: "tray").font(.stow(size: 16, weight: .medium)).foregroundStyle(Color.stowMuted)
-                Text("Stow").font(.stow(size: 14, weight: .semibold))
+                Image(systemName: "tray").font(theme.font(size: 16, weight: .medium)).foregroundStyle(.stowMuted)
+                Text("Stow").font(theme.font(size: 14, weight: .semibold))
                 Spacer()
                 if store.isRefreshing {
                     ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 20)
@@ -41,7 +42,7 @@ struct BoardView: View {
                         }
                         if store.state.githubEnabled, let message = store.githubMessage {
                             Label(message, systemImage: "wifi.exclamationmark")
-                                .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+                                .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 14).padding(.bottom, 14)
                         }
@@ -59,7 +60,7 @@ struct BoardView: View {
                 }
             }
             HStack(spacing: 5) {
-                Circle().fill(store.githubMessage == nil ? Color.stowGreen.opacity(0.75) : Color.stowAmber)
+                Circle().fill(store.githubMessage == nil ? AnyShapeStyle(StowColor.stowGreen.opacity(0.75)) : AnyShapeStyle(.stowAmber))
                     .frame(width: 4, height: 4)
                 if !store.state.githubEnabled {
                     Text("Notes only")
@@ -69,10 +70,10 @@ struct BoardView: View {
                     Text("Notes are saved on this Mac")
                 }
                 Spacer()
-            }.font(.stow(size: 9)).foregroundStyle(Color.stowMuted).padding(.horizontal, 15).padding(.bottom, 9)
+            }.font(theme.font(size: 9)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.bottom, 9)
         }
-        .foregroundStyle(Color.stowText).background(Color.stowBackground)
-        .preferredColorScheme(ThemeController.shared.colorScheme)
+        .foregroundStyle(.stowText).background(.stowBackground)
+        .preferredColorScheme(theme.colorScheme)
         .frame(minWidth: 320, minHeight: 320)
         .disabled(store.isRestoringBackup)
     }
@@ -82,19 +83,19 @@ struct BoardView: View {
             if store.offersGitHubSetup { githubSetup }
             if let error = store.saveError {
                 VStack(alignment: .leading, spacing: 6) {
-                    Label(error, systemImage: "exclamationmark.triangle").font(.stow(size: 11))
+                    Label(error, systemImage: "exclamationmark.triangle").font(theme.font(size: 11))
                     Button(store.storageNeedsRecovery ? "Recover saved data…" : "Retry saving") {
                         if store.storageNeedsRecovery {
                             confirmRecovery()
                         } else {
                             Task { _ = await store.flush() }
                         }
-                    }.buttonStyle(.link).font(.stow(size: 11))
-                }.foregroundStyle(Color.stowAmber)
+                    }.buttonStyle(.link).font(theme.font(size: 11))
+                }.foregroundStyle(.stowAmber)
             }
             if let message = store.noteFileMessage {
                 Label(message, systemImage: "doc.on.doc")
-                    .font(.stow(size: 11)).foregroundStyle(Color.stowAmber)
+                    .font(theme.font(size: 11)).foregroundStyle(.stowAmber)
             }
         }
     }
@@ -109,11 +110,11 @@ struct BoardView: View {
 
     private var githubSetup: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Show your pull requests?").font(.stow(size: 13, weight: .medium))
+            Text("Show your pull requests?").font(theme.font(size: 13, weight: .medium))
             Text(
                 "Stow can use your existing GitHub CLI login for github.com. Pull request titles and status are stored on this Mac. Notes work either way."
             )
-            .font(.stow(size: 11)).foregroundStyle(Color.stowMuted).fixedSize(horizontal: false, vertical: true)
+            .font(theme.font(size: 11)).foregroundStyle(.stowMuted).fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
                 Button("Use GitHub") { store.answerGitHubSetup(useGitHub: true) }
                     .controlSize(.small).accessibilityIdentifier("github.setup.use")
@@ -121,7 +122,7 @@ struct BoardView: View {
                     .controlSize(.small).accessibilityIdentifier("github.setup.dismiss")
             }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 9))
+            .background(.stowSurface, in: RoundedRectangle(cornerRadius: 9))
             .accessibilityElement(children: .contain).accessibilityIdentifier("github.setup")
     }
 
@@ -134,12 +135,12 @@ struct BoardView: View {
         ) {
             if store.state.notes.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("A little room to think.").font(.stow(size: 13, weight: .medium))
+                    Text("A little room to think.").font(theme.font(size: 13, weight: .medium))
                     Text("Start a note, or paste a pull request link here.")
-                        .font(.stow(size: 11)).foregroundStyle(Color.stowMuted)
+                        .font(theme.font(size: 11)).foregroundStyle(.stowMuted)
                     Button("New note") { store.addNote() }.controlSize(.small)
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.stowSurface, in: RoundedRectangle(cornerRadius: 9))
+                    .background(.stowSurface, in: RoundedRectangle(cornerRadius: 9))
             }
             ForEach(store.state.notes) { note in
                 Group {
@@ -165,7 +166,7 @@ struct BoardView: View {
         ) {
             if cards.isEmpty {
                 Text(section == .needsYou ? "Nothing needs you right now." : "No pull requests waiting.")
-                    .font(.stow(size: 11)).foregroundStyle(Color.stowMuted).padding(.vertical, 3)
+                    .font(theme.font(size: 11)).foregroundStyle(.stowMuted).padding(.vertical, 3)
             }
             ForEach(cards.prefix(shown)) { pr in PRCard(store: store, pr: pr) }
             if limited {
@@ -174,7 +175,7 @@ struct BoardView: View {
                         if expanded { expandedSections.remove(section) } else { expandedSections.insert(section) }
                     }
                 }
-                .buttonStyle(.plain).font(.stow(size: 10, weight: .medium)).foregroundStyle(Color.stowMuted)
+                .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
                 .padding(.leading, 2)
             }
         }
@@ -189,7 +190,7 @@ struct BoardView: View {
             VStack(alignment: .leading, spacing: 9) {
                 if isCollapsed {
                     if let summary, !summary.isEmpty {
-                        Text(summary).font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+                        Text(summary).font(theme.font(size: 10)).foregroundStyle(.stowMuted)
                             .lineLimit(1).padding(.leading, 15)
                     }
                 } else {
@@ -204,7 +205,7 @@ struct BoardView: View {
             ) { store.toggleSection(id) }
             .padding(.horizontal, 14).padding(.vertical, 4)
             // A pinned header covers cards scrolling beneath it, even on a translucent board.
-            .background { Rectangle().fill(.ultraThinMaterial).overlay(Color.stowBackground) }
+            .background { Rectangle().fill(.ultraThinMaterial).overlay(.stowBackground) }
         }
     }
 
@@ -234,6 +235,7 @@ private struct BoardSectionHeader: View {
     let count: Int
     let isCollapsed: Bool
     let collapsible: Bool
+    @Environment(\.stowTheme) private var theme
     var needsAttention = false
     var toggle: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -256,12 +258,12 @@ private struct BoardSectionHeader: View {
 
     private var row: some View {
         HStack(spacing: 6) {
-            Image(systemName: "chevron.right").font(.stow(size: 8, weight: .semibold))
+            Image(systemName: "chevron.right").font(theme.font(size: 8, weight: .semibold))
                 .rotationEffect(.degrees(isCollapsed ? 0 : 90)).frame(width: 9)
                 .opacity(collapsible ? 1 : 0)
-            Text(title).font(.stow(size: 11, weight: .semibold))
-            Text(verbatim: "\(count)").font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
-            if needsAttention && isCollapsed { Circle().fill(Color.stowAmber).frame(width: 4, height: 4) }
+            Text(title).font(theme.font(size: 11, weight: .semibold))
+            Text(verbatim: "\(count)").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
+            if needsAttention && isCollapsed { Circle().fill(.stowAmber).frame(width: 4, height: 4) }
             Spacer()
         }.padding(.vertical, 3).contentShape(Rectangle())
     }

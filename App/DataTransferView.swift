@@ -7,15 +7,16 @@ import UniformTypeIdentifiers
 
 struct DataTransferView: View {
     @Bindable var store: AppStore
+    @Environment(\.stowTheme) private var theme
     @State private var error: String?
     @State private var status: String?
     @State private var isRestoring = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Notes and backups").font(.stow(size: 14, weight: .semibold))
+            Text("Notes and backups").font(theme.font(size: 14, weight: .semibold))
             Text("Notes are live Markdown files. Open the notes folder to edit them in another app.")
-                .font(.stow(size: 11)).foregroundStyle(Color.stowMuted)
+                .font(theme.font(size: 11)).foregroundStyle(.stowMuted)
             Button("Open notes folder") { DataTransferActions.showNotesFolder(store: store) }
                 .accessibilityIdentifier("data.notesFolder")
             HStack {
@@ -24,7 +25,7 @@ struct DataTransferView: View {
                     .disabled(store.state.notes.isEmpty)
             }
             Text("Import adds notes. Export creates Markdown copies in a new folder, leaving your live files in place.")
-                .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+                .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
             HStack {
                 Button("Save backup…") { saveBackup() }.accessibilityIdentifier("data.saveBackup")
                 Button("Restore backup…") { restoreBackup() }.accessibilityIdentifier("data.restoreBackup")
@@ -33,18 +34,18 @@ struct DataTransferView: View {
             Text(
                 "Backups include note text, settings, and cached pull requests. Keep them private. GitHub credentials are not included."
             )
-            .font(.stow(size: 10)).foregroundStyle(Color.stowMuted)
+            .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
             if let status {
-                Text(status).font(.stow(size: 11)).foregroundStyle(Color.stowMuted)
+                Text(status).font(theme.font(size: 11)).foregroundStyle(.stowMuted)
                     .accessibilityIdentifier("data.status")
             }
             if let error {
-                Text(error).font(.stow(size: 11)).foregroundStyle(Color.stowRed)
+                Text(error).font(theme.font(size: 11)).foregroundStyle(.stowRed)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("data.error")
             }
         }
-        .font(.stow(size: 11))
+        .font(theme.font(size: 11))
         .disabled(isRestoring)
     }
 
