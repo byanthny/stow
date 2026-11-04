@@ -8,7 +8,11 @@ import StowSampleExtension
 /// store, and windows.
 @MainActor
 final class ProfileManager {
-    private(set) var profiles: [ProfileEntry] = []
+    private(set) var profiles: [ProfileEntry] = [] {
+        didSet { onProfilesChange?() }
+    }
+    /// Called when the profile list, its order, or a name changes, so menus can rebuild their shortcuts.
+    var onProfilesChange: (() -> Void)?
     private(set) var sessions: [UUID: ProfileSession] = [:]
     /// The profile that menus act on when no Stow window is key.
     private(set) var lastActiveID: UUID?
@@ -167,6 +171,39 @@ final class ProfileManager {
             source.store.state.hidesWhenSwitchingAway
         else { return }
         hide(source.entry.id)
+    }
+
+    /// Switches to the next profile (offset 1) or the previous one (offset -1) in profile order, wrapping around.
+    /// With no active profile, Next goes to the first and Previous to the last.
+    func switchRelative(_ offset: Int) async {
+        guard profiles.count > 1 else { return }
+        let current = (activeSession?.entry.id ?? lastActiveID).flatMap { id in profiles.firstIndex { $0.id == id } }
+        let start = current ?? (offset > 0 ? -1 : 0)
+        let count = profiles.count
+        await switchTo(profiles[((start + offset) % count + count) % count].id)
+    }
+
+    /// Shows or opens the most recently active profile, as the Dock icon does. An open profile shows at once.
+    func reopenMostRecent() {
+        guard let target = profiles.first(where: { $0.id == lastActiveID }) ?? profiles.first else { return }
+        if sessions[target.id] != nil {
+            show(target.id)
+        } else {
+            Task { await open(target.id) }
+        }
+    }
+
+    /// Where New profile… goes. Until the profile editor exists it opens the active profile's Settings.
+    func requestNewProfile() {
+        activeSession?.showSettings()
+    }
+
+    /// Reads the profile list again, so a new profile, a new order, or a new name reaches the menus.
+    func reloadProfiles() async {
+        guard let snapshot = try? await catalog.load() else { return }
+        alwaysShowsProfileName = snapshot.index.alwaysShowProfileName
+        if !snapshot.profiles.isEmpty { profiles = snapshot.profiles }
+        for session in sessions.values { session.showsName = showsProfileNames }
     }
 
     /// Saves a profile, then closes its windows, stops its refreshes, accessories, and watchers, and releases its

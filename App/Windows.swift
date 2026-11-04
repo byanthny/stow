@@ -25,10 +25,13 @@ final class StowPanel: NSPanel {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private(set) var manager: ProfileManager?
     /// Held for the process lifetime; a second Stow on the same data folder hands over to this one.
     private var instanceLock: StateLock?
+    private var profilesMenu = NSMenu(title: "Profiles")
+    /// Menu items whose titles name the active profile once several exist: base title, then the item.
+    private var profileTitled: [(base: String, join: String, item: NSMenuItem)] = []
 
     /// The active profile's store and windows.
     var store: AppStore! { manager?.activeSession?.store }
@@ -101,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func prepare(stateURL: URL, isDemo: Bool) async -> Bool {
         let manager = ProfileManager(dataFolder: stateURL.deletingLastPathComponent(), isDemo: isDemo)
         self.manager = manager
+        manager.onProfilesChange = { [weak self] in self?.rebuildProfilesMenu() }
         installMenus()
         guard await manager.start() else { return false }
         DispatchQueue.main.async { LaunchMetrics.firstBoardVisible() }
@@ -118,9 +122,87 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        guard let session = manager?.activeSession, session.board != nil else { return false }
-        session.showBoard()
+        guard let manager else { return false }
+        manager.reopenMostRecent()
         return true
+    }
+
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let dock = NSMenu()
+        if let manager, manager.profiles.count > 1 {
+            for entry in manager.profiles { dock.addItem(profileItem(entry, in: manager, shortcut: nil)) }
+            dock.addItem(.separator())
+        }
+        item("New profile…", #selector(newProfile), "", in: dock)
+        return dock
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshTitles()
+        if menu === profilesMenu { rebuildProfilesMenu() }
+    }
+
+    @objc private func newProfile() { manager?.requestNewProfile() }
+    @objc private func switchToProfile(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? UUID, let manager else { return }
+        Task { await manager.switchTo(id) }
+    }
+    @objc private func nextProfile() {
+        guard let manager else { return }
+        Task { await manager.switchRelative(1) }
+    }
+    @objc private func previousProfile() {
+        guard let manager else { return }
+        Task { await manager.switchRelative(-1) }
+    }
+
+    /// A profile's menu item: checked when visible, a dash when hidden, plain when closed.
+    private func profileItem(_ entry: ProfileEntry, in manager: ProfileManager, shortcut: String?) -> NSMenuItem {
+        let item = NSMenuItem(title: entry.name, action: #selector(switchToProfile), keyEquivalent: shortcut ?? "")
+        item.target = self
+        item.representedObject = entry.id
+        if shortcut != nil { item.keyEquivalentModifierMask = [.control, .option] }
+        if let session = manager.sessions[entry.id], !session.isStopped {
+            item.state = session.isHidden ? .mixed : .on
+        } else {
+            item.state = .off
+        }
+        return item
+    }
+
+    /// The Profiles menu lists every profile in order. The first nine carry ⌃⌥1 to ⌃⌥9, and Next and Previous
+    /// use ⌃⌥] and ⌃⌥[. These are menu key equivalents, so they work only while Stow is the active app.
+    private func rebuildProfilesMenu() {
+        guard let manager else { return }
+        profilesMenu.removeAllItems()
+        for (position, entry) in manager.profiles.enumerated() {
+            profilesMenu.addItem(
+                profileItem(entry, in: manager, shortcut: position < 9 ? String(position + 1) : nil))
+        }
+        profilesMenu.addItem(.separator())
+        if manager.profiles.count > 1 {
+            for (title, selector, key) in [
+                ("Next profile", #selector(nextProfile), "]"), ("Previous profile", #selector(previousProfile), "["),
+            ] {
+                item(title, selector, key, in: profilesMenu).keyEquivalentModifierMask = [.control, .option]
+            }
+            profilesMenu.addItem(.separator())
+        }
+        item("New profile…", #selector(newProfile), "", in: profilesMenu)
+    }
+
+    /// With several profiles, New note, Refresh GitHub, Settings…, and Show board name the profile they act on.
+    private func refreshTitles() {
+        let name = manager.flatMap { $0.showsProfileNames ? $0.activeSession?.entry.name : nil }
+        for entry in profileTitled {
+            guard let name else {
+                entry.item.title = entry.base
+                continue
+            }
+            let ellipsis = entry.base.hasSuffix("…")
+            let base = ellipsis ? String(entry.base.dropLast()) : entry.base
+            entry.item.title = "\(base) \(entry.join) \(name)" + (ellipsis ? "…" : "")
+        }
     }
 
     private static func activateRunningCopy() {
@@ -196,13 +278,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func showSettings() { manager?.activeSession?.showSettings() }
 
     private func installMenus() {
+        profileTitled = []
         let main = NSMenu()
         let app = NSMenu()
         app.addItem(
             withTitle: "About Stow", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
             keyEquivalent: "")
         app.addItem(.separator())
-        item("Settings…", #selector(showSettings), ",", in: app)
+        item("Settings…", #selector(showSettings), ",", in: app, names: "for")
         app.addItem(.separator())
         app.addItem(withTitle: "Hide Stow", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(.separator())
@@ -211,8 +294,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appItem.submenu = app
         main.addItem(appItem)
         let file = NSMenu(title: "File")
-        item("New note", #selector(newNote), "n", in: file)
-        item("Refresh GitHub", #selector(refresh), "r", in: file)
+        item("New note", #selector(newNote), "n", in: file, names: "in")
+        item("New profile…", #selector(newProfile), "", in: file)
+        item("Refresh GitHub", #selector(refresh), "r", in: file, names: "in")
         file.addItem(withTitle: "Close window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         main.addItem(withTitle: "File", action: nil, keyEquivalent: "").submenu = file
         let edit = NSMenu(title: "Edit")
@@ -224,16 +308,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         main.addItem(withTitle: "Edit", action: nil, keyEquivalent: "").submenu = edit
         let windows = NSMenu(title: "Window")
-        item("Show board", #selector(showBoard), "0", in: windows)
+        item("Show board", #selector(showBoard), "0", in: windows, names: "in")
         windows.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
         main.addItem(withTitle: "Window", action: nil, keyEquivalent: "").submenu = windows
+        // The Profiles menu sits before Window, as the menus that list windows usually do.
+        profilesMenu = NSMenu(title: "Profiles")
+        main.insertItem(withTitle: "Profiles", action: nil, keyEquivalent: "", at: main.items.count - 1)
+            .submenu = profilesMenu
+        for menu in [app, file, profilesMenu, windows] { menu.delegate = self }
+        rebuildProfilesMenu()
         NSApp.mainMenu = main
         NSApp.windowsMenu = windows
     }
 
-    private func item(_ title: String, _ action: Selector, _ key: String, in menu: NSMenu) {
+    @discardableResult
+    private func item(
+        _ title: String, _ action: Selector, _ key: String, in menu: NSMenu, names join: String? = nil
+    ) -> NSMenuItem {
         let item = menu.addItem(withTitle: title, action: action, keyEquivalent: key)
         item.target = self
+        if let join { profileTitled.append((title, join, item)) }
+        return item
     }
 }
 

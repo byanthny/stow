@@ -1094,6 +1094,210 @@ final class ProfileTests: XCTestCase {
     // MARK: helpers
 
     /// A manager whose questions fail the test instead of opening a modal alert.
+    func testNewNoteGoesToKeyWindowProfile() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        let mainNotes = main.store.state.notes.count
+        let workNotes = work.store.state.notes.count
+
+        app.newNote()
+        XCTAssertEqual(work.store.state.notes.count, workNotes + 1)
+        XCTAssertEqual(main.store.state.notes.count, mainNotes)
+    }
+
+    func testMenuTitlesNameProfileOnlyWithSeveralProfiles() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        XCTAssertEqual(newNoteTitle(app), "New note")
+
+        let workEntry = try await addProfile("Work", in: folder)
+        await manager.reloadProfiles()
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        XCTAssertEqual(newNoteTitle(app), "New note in Work")
+        XCTAssertEqual(menu("File", in: app).items.first { $0.action == #selector(AppDelegate.refresh) }?.title,
+            "Refresh GitHub in Work")
+    }
+
+    func testDockMenuListsProfilesWithState() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let single = try await makeApp(folder)
+        let onlyNew = try XCTUnwrap(single.applicationDockMenu(NSApp))
+        XCTAssertEqual(onlyNew.items.map(\.title), ["New profile…"])
+        stop(single)
+
+        let workEntry = try await addProfile("Work", in: folder)
+        _ = try await addProfile("Play", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        manager.hide(workEntry.id)
+        let dock = try XCTUnwrap(app.applicationDockMenu(NSApp))
+        XCTAssertEqual(dock.items.map(\.title), ["Stow", "Work", "Play", "", "New profile…"])
+        XCTAssertEqual(dock.items.prefix(3).map(\.state), [.on, .mixed, .off])
+    }
+
+    func testDockReopenShowsMostRecentProfile() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let main = try XCTUnwrap(manager.activeSession)
+        let opened = await manager.open(workEntry.id)
+        XCTAssertTrue(opened)
+        let work = try XCTUnwrap(manager.sessions[workEntry.id])
+        manager.hide(main.entry.id)
+        manager.hide(workEntry.id)
+        XCTAssertTrue(work.isHidden)
+
+        XCTAssertTrue(app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false))
+        let shown = await waitUntil { !work.isHidden }
+        XCTAssertTrue(shown)
+        XCTAssertTrue(main.isHidden)
+        XCTAssertTrue(work.board.isVisible)
+
+        // With every profile closed, the most recent one opens again.
+        let closed = await manager.close(workEntry.id)
+        XCTAssertTrue(closed)
+        let closedMain = await manager.close(main.entry.id)
+        XCTAssertTrue(closedMain)
+        XCTAssertTrue(manager.sessions.isEmpty)
+        _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
+        let reopened = await waitUntil { manager.sessions[workEntry.id]?.board?.isVisible == true }
+        XCTAssertTrue(reopened)
+    }
+
+    func testProfilesMenuShortcutsFollowOrder() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let work = try await addProfile("Work", in: folder)
+        _ = try await addProfile("Play", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let profiles = menu("Profiles", in: app)
+        app.menuNeedsUpdate(profiles)
+        let slots = profiles.items.filter { $0.representedObject is UUID }
+        XCTAssertEqual(slots.map(\.title), ["Stow", "Work", "Play"])
+        XCTAssertEqual(slots.map(\.keyEquivalent), ["1", "2", "3"])
+        XCTAssertTrue(slots.allSatisfy { $0.keyEquivalentModifierMask == [.control, .option] })
+        XCTAssertEqual(
+            profiles.items.filter { $0.keyEquivalent == "]" || $0.keyEquivalent == "[" }.map(\.title),
+            ["Next profile", "Previous profile"])
+
+        try await ProfileCatalog(dataFolder: folder).move(work.id, by: 1)
+        await app.manager?.reloadProfiles()
+        let reordered = menu("Profiles", in: app).items.filter { $0.representedObject is UUID }
+        XCTAssertEqual(reordered.map(\.title), ["Stow", "Play", "Work"])
+        XCTAssertEqual(reordered.map(\.keyEquivalent), ["1", "2", "3"])
+        XCTAssertEqual(reordered[2].representedObject as? UUID, work.id)
+    }
+
+    func testProfilesMenuIsMinimalWithOneProfile() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let profiles = menu("Profiles", in: app)
+        app.menuNeedsUpdate(profiles)
+        XCTAssertEqual(profiles.items.map(\.title), ["Stow", "", "New profile…"])
+        XCTAssertEqual(menu("File", in: app).items.filter { $0.title.contains("profile") }.map(\.title), ["New profile…"])
+    }
+
+    func testNextAndPreviousProfileWrap() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let work = try await addProfile("Work", in: folder)
+        let play = try await addProfile("Play", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let first = try XCTUnwrap(manager.activeSession).entry.id
+        let profiles = menu("Profiles", in: app)
+        app.menuNeedsUpdate(profiles)
+        let next = try XCTUnwrap(profiles.items.first { $0.keyEquivalent == "]" })
+        let previous = try XCTUnwrap(profiles.items.first { $0.keyEquivalent == "[" })
+        XCTAssertEqual(next.keyEquivalentModifierMask, [.control, .option])
+        XCTAssertEqual(previous.keyEquivalentModifierMask, [.control, .option])
+
+        // From the first, Previous wraps to the last.
+        previous.target.map { _ = NSApp.sendAction(previous.action!, to: $0, from: previous) }
+        let atLast = await waitUntil { manager.activeSession?.entry.id == play.id && manager.lastActiveID == play.id }
+        XCTAssertTrue(atLast)
+        // From the last, Next wraps to the first.
+        next.target.map { _ = NSApp.sendAction(next.action!, to: $0, from: next) }
+        let atFirst = await waitUntil { manager.lastActiveID == first && manager.activeSession?.entry.id == first }
+        XCTAssertTrue(atFirst)
+        // Next from the first goes to the second.
+        next.target.map { _ = NSApp.sendAction(next.action!, to: $0, from: next) }
+        let atSecond = await waitUntil { manager.lastActiveID == work.id }
+        XCTAssertTrue(atSecond)
+    }
+
+    func testDockMenuSwitches() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let app = try await makeApp(folder)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let main = try XCTUnwrap(manager.activeSession)
+        let dock = try XCTUnwrap(app.applicationDockMenu(NSApp))
+        dock.performActionForItem(at: 1)
+        let switched = await waitUntil { manager.sessions[workEntry.id]?.isHidden == false && main.isHidden }
+        XCTAssertTrue(switched)
+        XCTAssertEqual(manager.lastActiveID, workEntry.id)
+        XCTAssertFalse(main.board.isVisible)
+    }
+
+    private func makeApp(_ folder: URL) async throws -> AppDelegate {
+        let app = AppDelegate()
+        let started = await app.prepare(stateURL: folder.appendingPathComponent("state.json"), isDemo: false)
+        XCTAssertTrue(started)
+        let manager = try XCTUnwrap(app.manager)
+        manager.confirmClosingWithoutSaving = { _ in false }
+        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
+        return app
+    }
+
+    private func stop(_ app: AppDelegate) {
+        if let manager = app.manager { stop(manager) }
+    }
+
+    private func menu(_ title: String, in app: AppDelegate) -> NSMenu {
+        let menu = NSApp.mainMenu?.items.first { $0.title == title }?.submenu
+        return menu ?? NSMenu()
+    }
+
+    private func newNoteTitle(_ app: AppDelegate) -> String? {
+        let file = menu("File", in: app)
+        app.menuNeedsUpdate(file)
+        return file.items.first { $0.action == #selector(AppDelegate.newNote) }?.title
+    }
+
     private func makeManager(
         _ folder: URL, githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
