@@ -23,6 +23,10 @@ Use Stow's import action for arbitrary external Markdown files instead of droppi
 
 Before exporting notes or saving a full backup, Stow synchronizes live edits. If synchronization fails, the transfer is refused. Markdown copies do not preserve window placement, linked pull-request metadata, or accessory settings. Keep them private when their contents are private.
 
+## Profiles
+
+A backup, export, or import acts on the profile whose Settings window you use. A backup holds one profile's setup and never the profile list, names, or colors. Restoring replaces only that profile. Owner selection, grouping, order, and the owner-related settings travel in a backup with the board layout. A backup includes cached cards from every owner unless the profile keeps only its selected owners on disk; see [privacy](privacy.md#profiles).
+
 ## Appearance configs
 
 Use **Copy config**, **Edit config…**, or `.conf` import/export to share short `key = value` appearance settings. These configs contain no notes or cached pull requests. See [appearance](appearance.md).

@@ -14,8 +14,9 @@ Work through this queue in order. These are future tasks, not authorization to p
 ## 2. Plan profiles and organization views
 
 - [x] Design profiles and repository-owner grouping and sorting: the [profile design](profiles.md) and its [implementation plan](profiles-plan.md), approved 2026-11-03.
-- [ ] Cover multiple profiles on one Mac, enforce one writer per profile, and keep another Mac independent by default.
-- [ ] Resolve safe per-profile GitHub account context before claiming simultaneous work/personal account support. Do not switch the user's global CLI account or copy credentials.
+- [x] Cover multiple profiles on one Mac, enforce one writer per profile, and keep another Mac independent by default. Implemented on the profiles branch, pending hands-on acceptance.
+- [x] Group and sort pull requests by repository owner, and filter by owner per profile.
+- [ ] Resolve safe per-profile GitHub account context before claiming simultaneous work/personal account support. Today every profile uses the account `gh` is signed in as, and a different account pauses the profile. Do not switch the user's global CLI account or copy credentials.
 - [ ] Review safe setup transfer separately from private note/cache migration or any future sync. Keep this increment local and optional.
 
 ## 3. Prepare for public development

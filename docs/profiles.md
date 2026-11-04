@@ -1,6 +1,6 @@
 # Profiles and owner views
 
-Design approved by the owner on 2026-11-03, after a final security, privacy, and cost pass. It replaces the earlier proposal. Nothing here is implemented yet; the [implementation plan](profiles-plan.md) covers the work. Calls made during the design, rather than by the owner, are marked *(call)* so they are easy to revisit.
+Design approved by the owner on 2026-11-03, after a final security, privacy, and cost pass. It replaces the earlier proposal. It is implemented on the `byanthny/reverent-torvalds-a738c1` branch and not yet released; the [implementation plan](profiles-plan.md) records the work. Calls made during the design, rather than by the owner, are marked *(call)* so they are easy to revisit.
 
 ## Why
 
@@ -120,7 +120,7 @@ All of this section is an *(owner request)*.
 - An owner is the repository owner in a pull request reference: an organization or a user. Owners compare ignoring case and display as GitHub returns them.
 - Each profile saves an owner selection: All owners, the default, or any set of owners. Changes save immediately.
 - An owner control in the board header, separate from the profile menu, lists All owners and each known owner with a checkmark and a count of its cards that are not dismissed. Known owners come from cached cards, pins, and the current selection. **Add owner…** accepts a GitHub login for an owner that has no cards yet *(call)*.
-- The owner control appears when GitHub is on and the profile's cards come from more than one owner, and whenever a selection other than All owners is active, so a filter never hides cards silently. Settings → Board → **Show owner control** can make it always visible *(call)*.
+- The owner control appears when GitHub is on and the profile's cards come from more than one owner, and whenever a selection other than All owners is active, so a filter never hides cards silently. Settings → Board → **Always show owner control** can make it always visible *(call)*.
 - The selection only changes what is visible. Refresh, dismissals, and pins are unaffected, and classification is identical in every view. GitHub warnings, incomplete-data messages, and account mismatches always show.
 - A per-profile setting, off by default, keeps only the selected owners' pull requests on disk, plus pins *(call)*. With it on, the profile's files and backups leave out other owners' cards, the owner control shows counts for other owners only from the latest refresh, and adding an owner refreshes at once.
 - Pinned cards stay visible whatever the selection, because pinning is an explicit choice made in that profile *(call)*.

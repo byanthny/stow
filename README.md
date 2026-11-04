@@ -4,6 +4,8 @@ A small native macOS board for Markdown notes and GitHub pull requests. Requires
 
 Keep notes on the board or detach them into separate windows. Each detached note has its own always-on-top setting. Closing a note window keeps the note; deleting it is explicit. The board groups pull requests into “Needs you” and “Waiting” using observed GitHub state, and keeps cached cards when a refresh is incomplete.
 
+Keep separate setups as profiles, such as work and personal. Each has its own notes, pull requests, layout, and theme, and profiles can be hidden, shown, and switched from the keyboard. Filter the board by repository owner, or group pull requests by owner.
+
 GitHub is optional and stays off until you turn it on. Notes work without `gh`, an account, or a network connection. Accessories are optional too: the bundled `org.stow.sample` provider is disabled by default.
 
 <img src="docs/images/board.png" width="360" alt="Stow board with pull requests and notes">
