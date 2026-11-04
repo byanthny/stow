@@ -61,7 +61,7 @@ Import or export ordinary `.md` copies, or use **Save backup…** for notes and 
 
 ## Development
 
-The Swift package tests the core, GitHub transport, and accessory contract independently of the app. `scripts/test.sh` also runs the hosted app tests using local ad-hoc signing and an isolated test host. The app uses AppKit windows, SwiftUI views, and a native text editor.
+The Swift package tests the core, GitHub transport, and accessory contract independently of the app. `scripts/test.sh` also runs the hosted app tests using local ad-hoc signing and an isolated test host. `scripts/accessibility.sh` runs Xcode's accessibility audit against the Debug app through UI automation. The app uses AppKit windows, SwiftUI views, and a native text editor.
 
 Read [architecture](docs/architecture.md), [appearance](docs/appearance.md), [accessory providers](docs/providers.md), [privacy and recovery](docs/privacy.md), and the [verification checklist](docs/verification.md). Feature acceptance, macOS 14 behavior, and performance claims require recorded validation; see that checklist for current evidence.
 

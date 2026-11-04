@@ -12,7 +12,7 @@ Use Xcode 16.4 or later with its command line tools selected, then run from the 
 ./scripts/build.sh Release
 ```
 
-XcodeGen is only needed when changing targets or dependencies in `project.yml`; keep the checked-in Xcode project in sync. Debug builds accept `--stow-testing-state <absolute folder> --stow-demo` to run against synthetic state instead of your own notes.
+XcodeGen is only needed when changing targets or dependencies in `project.yml`; keep the checked-in Xcode project in sync. Generate it from a checkout folder named `stow`, because the local package reference takes its name from the folder. Debug builds accept `--stow-testing-state <absolute folder> --stow-demo` to run against synthetic state instead of your own notes.
 
 ## changes
 

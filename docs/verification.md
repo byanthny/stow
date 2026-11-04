@@ -6,6 +6,7 @@ Record the toolchain, macOS version, commands, and observed result for each vali
 
 ```sh
 ./scripts/test.sh
+./scripts/accessibility.sh
 ./scripts/build.sh Debug
 ./scripts/build.sh Release
 ./scripts/package.sh
@@ -13,7 +14,9 @@ Record the toolchain, macOS version, commands, and observed result for each vali
 
 The package suite covers classification, paste parsing, persistence and recovery, cache reconciliation, mocked GitHub pagination and partial responses, refresh coordination, and the accessory contract and cancellation. The test script also runs hosted app tests through the Stow scheme with local ad-hoc signing. The app detects the test host before normal startup so these tests cannot load the normal state folder. Builds check compilation of the native app. Packaging verifies the ad-hoc signature and both executable architectures, strips build-machine debug paths before signing, then emits a ZIP checksum. None of these checks establishes a real-account GitHub flow or complete UI acceptance.
 
-CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and builds universal Release. The hosted test step already builds Debug, so a duplicate Debug build is omitted. Hosted tests use ad-hoc signing without a development team or signing credential. A Linux job scans history and files with Gitleaks 8.30.1. Native checks run after it only for code, project, dependency, script, or workflow changes, plus explicit manual runs. Push builds cover `main`; feature branches run through their PR, avoiding duplicate push/PR builds. It does not sign for distribution, notarize, authenticate with GitHub as a user, or upload app data.
+`scripts/accessibility.sh` runs Xcode's accessibility audit (`performAccessibilityAudit()`) through the `StowUITests` scheme. It launches the Debug app with `--stow-testing-state <temporary folder> --stow-demo` and audits the board with one pull request and one note open, a detached note, and Settings. The audit checks contrast, element descriptions, hit regions, clipped text, traits, press actions, and parent/child structure. A hosted test can't do this, because SwiftUI builds its accessibility tree only for a connected assistive app. UI automation needs Automation Mode, which macOS may ask an administrator to approve, and the test moves the pointer while it runs. Two elements outside Stow's views are exempt: the virtual Touch Bar that UI testing adds, and a group that macOS 26 nests inside the titlebar zoom button. The audit can't judge reading order, label wording, or keyboard flow, so the manual keyboard and VoiceOver checks still apply.
+
+CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and builds universal Release. The hosted test step already builds Debug, so a duplicate Debug build is omitted. Hosted tests use ad-hoc signing without a development team or signing credential. A Linux job scans history and files with Gitleaks 8.30.1. Native checks run after it only for code, project, dependency, script, or workflow changes, plus explicit manual runs. Push builds cover `main`; feature branches run through their PR, avoiding duplicate push/PR builds. It does not sign for distribution, notarize, authenticate with GitHub as a user, or upload app data. The accessibility audit runs in the on-demand `acceptance` workflow instead, on `macos-15` with Xcode 16.4, whose runner images enable Automation Mode without a prompt. Run it by hand, or add the `acceptance` label to a pull request that changes the UI.
 
 ## manual acceptance
 
@@ -49,5 +52,12 @@ Hands-on acceptance on 2026-11-03, macOS 26.5 on Apple silicon with the built-in
 - Dock and focus: the board reopens from the Dock and Command-0, and a note takes focus again after switching apps. Passed.
 - First-launch GitHub prompt: fresh state without demo data shows the card and it behaves as designed. Passed.
 - Skipped by the maintainer for now: keyboard navigation, VoiceOver, Reduce transparency and Increase contrast, and minimum widths.
+
+Accessibility audit on 2026-11-03, macOS 26.5 on Apple silicon with Xcode 26.6 and synthetic demo state:
+
+- The first `./scripts/accessibility.sh` run failed all three audits. Stow's findings: each window's SwiftUI hosting group and the board's lazy list had no description. The 9-point muted status, check, and timestamp text on pull request cards failed contrast in the default theme. SwiftUI's `Menu` (note actions, theme preset) and menu-style `Picker` (pull requests before Show more) gave assistive apps no press action.
+- Fixes: the hosting views are labelled Board, Note, and Settings, and the board list Board contents. That card text is now 10 point. Both menus are AppKit pull-down buttons, and the picker is segmented. The note, Settings, and refreshed README captures were checked visually.
+- Afterwards all three audits passed in 23 seconds of test time. `./scripts/test.sh` passed 144 tests (64 core XCTest, 45 Swift Testing, and 35 hosted cases), and a fresh synthetic smoke run passed its 12 checks.
+- Exempt as system UI: the virtual Touch Bar that UI testing adds, and a group inside the macOS 26 titlebar zoom button. A low-battery notification over the board once failed a contrast check, because the audit measures what is on screen. After the Mac slept, Automation Mode needed approval again, and unapproved runs timed out. A separately running copy of Stow kept running through a test run.
 
 Still pending: monitor changes with an external display, Intel runtime behavior (hardware is available, and the on-demand `acceptance` workflow runs the smoke checks on x86_64), keyboard navigation, VoiceOver and display accessibility settings, and extended idle/typing measurements. macOS 14 runtime behavior is untested: GitHub retired its `macos-14` runners on 2026-11-02, and no macOS 14 machine is available. The current machine and hosted tests do not establish those results.
