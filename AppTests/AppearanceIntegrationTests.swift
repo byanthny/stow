@@ -1,5 +1,6 @@
 import AppKit
 import StowCore
+import SwiftUI
 import XCTest
 
 @testable import Stow
@@ -106,6 +107,60 @@ final class AppearanceIntegrationTests: XCTestCase {
         undo.undo()
 
         XCTAssertEqual(editor.string, "Use ")
+    }
+
+    func testPullDownMenuItemsRunTheirActions() throws {
+        var chosen: [String] = []
+        let menu = PullDownMenu(
+            title: "Synthetic",
+            sections: [
+                [.init(title: "First") { chosen.append("first") }],
+                [.init(title: "Second") { chosen.append("second") }],
+            ],
+            label: "Synthetic menu")
+        let (window, buttons) = hostPullDowns(menu)
+        defer { window.close() }
+        let button = try XCTUnwrap(buttons.first)
+        let second = try XCTUnwrap(button.menu?.items.firstIndex { $0.title == "Second" })
+
+        button.menu?.performActionForItem(at: second)
+
+        XCTAssertEqual(chosen, ["second"])
+    }
+
+    func testThemePresetMenuSwitchesThemeAndKeepsFonts() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        var custom = AppearanceSettings.default
+        custom.editorFontName = "Synthetic-Note-Font"
+        XCTAssertTrue(store.applyAppearance(custom))
+        let (window, buttons) = hostPullDowns(AppearanceView(store: store).themed(by: store.theme))
+        defer { window.close() }
+        let presets = try XCTUnwrap(buttons.first { $0.accessibilityLabel() == "Theme preset" })
+        let graphite = try XCTUnwrap(presets.menu?.items.firstIndex { $0.title == "Graphite · dark" })
+
+        presets.menu?.performActionForItem(at: graphite)
+
+        XCTAssertEqual(store.state.appearance.name, AppearanceSettings.graphite.name)
+        XCTAssertEqual(store.state.appearance.colors, AppearanceSettings.graphite.colors)
+        XCTAssertEqual(store.state.appearance.editorFontName, "Synthetic-Note-Font")
+    }
+
+    /// Hosts `view` in a window and finds its pull-down buttons, so a test can choose a menu item as a click does.
+    private func hostPullDowns<V: View>(_ view: V) -> (NSWindow, [NSPopUpButton]) {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 900), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        let hosting = NSHostingView(rootView: view)
+        window.contentView = hosting
+        window.orderFront(nil)
+        hosting.layoutSubtreeIfNeeded()
+        func buttons(in view: NSView) -> [NSPopUpButton] {
+            view.subviews.flatMap { buttons(in: $0) } + [view].compactMap { $0 as? NSPopUpButton }
+        }
+        return (window, buttons(in: hosting))
     }
 
     func testThemesDoNotBleedBetweenStores() throws {

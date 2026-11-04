@@ -60,7 +60,7 @@ struct PullDownMenu: NSViewRepresentable {
         for (number, section) in sections.enumerated() {
             if number > 0 { menu.addItem(.separator()) }
             for item in section {
-                let entry = NSMenuItem(title: item.title, action: #selector(Coordinator.perform(_:)), keyEquivalent: "")
+                let entry = NSMenuItem(title: item.title, action: #selector(Coordinator.runItem(_:)), keyEquivalent: "")
                 entry.target = coordinator
                 entry.tag = index
                 index += 1
@@ -77,7 +77,9 @@ struct PullDownMenu: NSViewRepresentable {
         var shownTitles: [[String]]?
         var shownTint: Color?
 
-        @objc func perform(_ sender: NSMenuItem) {
+        /// Not `perform(_:)`: a selector by that name resolves to NSObject's `performSelector:`, which would treat
+        /// the menu item as a selector and run nothing.
+        @objc func runItem(_ sender: NSMenuItem) {
             guard actions.indices.contains(sender.tag) else { return }
             actions[sender.tag]()
         }
