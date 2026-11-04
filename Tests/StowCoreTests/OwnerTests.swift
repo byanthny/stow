@@ -72,6 +72,16 @@ final class OwnerTests: XCTestCase {
         XCTAssertEqual(retainingSelectedOwners(cards, selection: OwnerSelection(), pins: []), cards)
     }
 
+    func testSavedOlderLoginKeepsOnlyItsCards() throws {
+        // An older login can end in a hyphen. Loading it must not widen the selection to every owner, or a profile
+        // that keeps only selected owners on disk would save everyone's cards.
+        let selection = try JSONDecoder().decode(OwnerSelection.self, from: Data(#"{"owners":["old-login-"]}"#.utf8))
+        XCTAssertEqual(selection.owners, ["old-login-"])
+        XCTAssertEqual(try JSONDecoder().decode(OwnerSelection.self, from: JSONEncoder().encode(selection)), selection)
+        let cards = [card("old-login-", "r", 1), card("acme", "r", 2)]
+        XCTAssertEqual(retainingSelectedOwners(cards, selection: selection, pins: []).map(\.reference.number), [1])
+    }
+
     func testOwnerControlVisibility() {
         let one = [card("acme", "r", 1), card("Acme", "r", 2)]
         let two = one + [card("beta")]

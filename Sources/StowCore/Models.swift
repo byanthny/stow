@@ -196,8 +196,9 @@ public struct OwnerSelection: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey { case owners }
 
-    /// Saved state and backups are untrusted: an entry that is not an owner's login, such as an empty string or a
-    /// number, is dropped instead of rejecting the whole state.
+    /// Saved state and backups are untrusted. An entry that isn't text, or that is empty or holds spaces, control or
+    /// invisible characters, is dropped instead of rejecting the whole state. Any other name is kept, even one GitHub
+    /// wouldn't accept today, so a damaged entry narrows the selection instead of widening it to every owner.
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let entries = try container.decodeIfPresent([Entry].self, forKey: .owners) ?? []
@@ -210,10 +211,15 @@ public struct OwnerSelection: Codable, Equatable, Sendable {
         init(from decoder: any Decoder) throws { login = try? decoder.singleValueContainer().decode(String.self) }
     }
 
-    /// An owner a profile can keep selected: a GitHub login, or a managed user's login, which adds an underscore
-    /// and a short code and can own cards although Add owner… does not accept it.
+    /// An owner a profile can keep selected. Cards and pasted links can name older logins that end in a hyphen or
+    /// repeat one, and managed users' logins with an underscore, so this is looser than Add owner…, which asks for a
+    /// login GitHub accepts today (`isValidLogin`).
     private static func isSavedOwner(_ owner: String) -> Bool {
-        isValidLogin(owner.replacingOccurrences(of: "_", with: "-"))
+        let scalars = owner.unicodeScalars
+        guard (1...100).contains(scalars.count) else { return false }
+        return !scalars.contains { scalar in
+            scalar.properties.isWhitespace || [.control, .format].contains(scalar.properties.generalCategory)
+        }
     }
 
     public var isAll: Bool { owners.isEmpty }
