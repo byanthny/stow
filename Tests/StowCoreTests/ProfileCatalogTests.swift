@@ -526,6 +526,47 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertEqual(snapshot.index.order, [work])
     }
 
+    func testDeletingMainReusesOnlyAnEmptyLeftoverFolder() async throws {
+        let items = try seedDataFolderProfile()
+        try write("", StateLock.filename)
+        let catalog = catalog()
+        let main = try await catalog.load().profiles[0].id
+        _ = try await catalog.createProfile(name: "Work", color: "#336699")
+        let leftover = root.appendingPathComponent("profiles/\(main.uuidString)")
+
+        // A folder with anything in it, a link to an empty folder, or an empty folder while a journal is waiting
+        // is never used.
+        try write("stray", "profiles/\(main.uuidString)/.DS_Store")
+        var before = try tree(root)
+        await assertThrows(.unwritable) { try await catalog.trash(main) }
+        XCTAssertEqual(try tree(root), before)
+        try FileManager.default.removeItem(at: leftover)
+        let elsewhere = root.appendingPathComponent("elsewhere")
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: leftover, withDestinationURL: elsewhere)
+        before = try tree(root)
+        await assertThrows(.unwritable) { try await catalog.trash(main) }
+        XCTAssertEqual(try tree(root), before)
+        XCTAssertEqual(try names(in: elsewhere), [])
+        try FileManager.default.removeItem(at: leftover)
+        try FileManager.default.createDirectory(at: leftover, withIntermediateDirectories: false)
+        try write("not json", ".moving.json")
+        before = try tree(root)
+        await assertThrows(.unwritable) { try await catalog.trash(main) }
+        XCTAssertEqual(try tree(root), before)
+        XCTAssertEqual(try trashed(), [])
+
+        // An empty folder left by a crash right after it was made is reused, and made owner-only.
+        try FileManager.default.removeItem(at: root.appendingPathComponent(".moving.json"))
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: leftover.path)
+        try await catalog.trash(main)
+        XCTAssertEqual(try trashed(), [main.uuidString])
+        let moved = bin.appendingPathComponent(main.uuidString)
+        XCTAssertEqual(try names(in: moved), (items + ["identity.json"]).sorted())
+        XCTAssertEqual(try mode(moved), 0o700)
+        XCTAssertFalse(exists(".moving.json"))
+    }
+
     func testDataFolderProfileStartedAfterTrashGetsItsOwnID() async throws {
         try write("{}", "state.json")
         try addProfile(name: "Work")

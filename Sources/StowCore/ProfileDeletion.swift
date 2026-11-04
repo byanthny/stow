@@ -70,15 +70,13 @@ extension ProfileCatalog {
         forget(id, in: snapshot)
     }
 
-    /// Moves the data folder profile's files into a new `profiles/<id>/` under a journal, then trashes that
+    /// Moves the data folder profile's files into an empty `profiles/<id>/` under a journal, then trashes that
     /// folder, so Put Back returns the profile to a place Stow looks.
     private func trashDataFolderProfile(_ id: UUID) throws {
         let destination = profilesURL.appendingPathComponent(id.uuidString, isDirectory: true)
         try wrapping { try LiveNoteIO.ensureDirectory(profilesURL) }
-        // Discovery ignores a profiles folder that is not a real one owned by this user. mkdir never reuses
-        // an existing folder, so the files never mix with another copy of the profile.
-        guard isOwnedDirectory(profilesURL), destination.path.withCString({ Darwin.mkdir($0, mode_t(0o700)) }) == 0
-        else { throw ProfileError.unwritable }
+        // Discovery ignores a profiles folder that is not a real one owned by this user.
+        guard isOwnedDirectory(profilesURL), makeMoveDestination(destination) else { throw ProfileError.unwritable }
         let journal: ProfileMoveJournal
         do {
             let names = try FileManager.default.contentsOfDirectory(atPath: dataFolder.path)
@@ -99,6 +97,19 @@ extension ProfileCatalog {
         }
         // The folder is in the Trash. A journal that outlives this names a missing folder, which load drops.
         try? LiveNoteIO.remove(journalURL)
+    }
+
+    /// Makes the folder the data folder profile moves into. An existing folder is reused only when it is a real
+    /// folder owned by this user, holds nothing, and no journal is waiting: what a crash between making it and
+    /// writing the journal leaves. Any other existing folder is refused, so the files never mix with another copy.
+    private func makeMoveDestination(_ folder: URL) -> Bool {
+        let status = folder.path.withCString { Darwin.mkdir($0, mode_t(0o700)) == 0 ? 0 : errno }
+        if status == 0 { return true }
+        guard status == EEXIST, isOwnedDirectory(folder), (try? LiveNoteIO.exists(journalURL)) == false,
+            (try? FileManager.default.contentsOfDirectory(atPath: folder.path))?.isEmpty == true
+        else { return false }
+        // Owner-only, like a folder made here.
+        return folder.path.withCString { Darwin.chmod($0, mode_t(0o700)) } == 0
     }
 
     /// Moves items back into the data folder after a failed step. Once all are back, it removes the empty folder
