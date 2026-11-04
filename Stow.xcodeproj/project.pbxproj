@@ -27,6 +27,8 @@
 		5B81B5EF686EE5C467896E7C /* StowSampleExtension in Frameworks */ = {isa = PBXBuildFile; productRef = A264A05198370049BFD1BF4B /* StowSampleExtension */; };
 		63111EFC6882BA292539D6D6 /* AppIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0F40371A05002BD9C2656E9 /* AppIntegrationTests.swift */; };
 		6616988118AC8B33E13E502F /* StowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE09CDF2EC58B328525A4B53 /* StowApp.swift */; };
+		671E7E7853F19B99BEB9DBFF /* OwnerControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56FC667B30A54762087BF23A /* OwnerControl.swift */; };
+		672FD01238B147FAE3D08C77 /* OwnerViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A46EDD7D27ADE7A28DF88B0 /* OwnerViewTests.swift */; };
 		69D5ABCA4F5CB4908E399E55 /* AppStoreCancellationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F08AE2886F6946894A224AA8 /* AppStoreCancellationTests.swift */; };
 		6EDEAAB26AA350808FA1FA61 /* AppearanceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60BB03D3C6E9C1CA520FBF29 /* AppearanceIntegrationTests.swift */; };
 		78F81CC38809F80FAD9061B4 /* LaunchMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD31FFE1EB0783C12611B81 /* LaunchMetrics.swift */; };
@@ -77,6 +79,7 @@
 		3727F1F8343238152D9DEA5F /* ProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileTests.swift; sourceTree = "<group>"; };
 		39A7319D2D8E9F3D12867849 /* NotesFolderPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesFolderPresenter.swift; sourceTree = "<group>"; };
 		568BD814954ADC74850E3880 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
+		56FC667B30A54762087BF23A /* OwnerControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerControl.swift; sourceTree = "<group>"; };
 		5ED6C264979A01D79F5855BF /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
 		60BB03D3C6E9C1CA520FBF29 /* AppearanceIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceIntegrationTests.swift; sourceTree = "<group>"; };
 		65FE07DEE8B707F6F7A3E21A /* NativeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEditor.swift; sourceTree = "<group>"; };
@@ -88,6 +91,7 @@
 		8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionsAndAppearanceTests.swift; sourceTree = "<group>"; };
 		8F85FD678524729F2EAC4880 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		95AE6FC3B5182B400775AF72 /* ThirdPartyNotices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.txt; sourceTree = "<group>"; };
+		9A46EDD7D27ADE7A28DF88B0 /* OwnerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerViewTests.swift; sourceTree = "<group>"; };
 		9D697814A7679D4593407DE8 /* AccessoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessoryViews.swift; sourceTree = "<group>"; };
 		A2504016B8A69BAA7774CCD3 /* ProfileSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSession.swift; sourceTree = "<group>"; };
 		A6940A51DC1C594B393E6028 /* Stow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Stow.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -144,6 +148,7 @@
 				C77BAF160150D32A58024D83 /* BoardWindowLevelTests.swift */,
 				B81E0113F9DC9DAA89FFFBD3 /* DataTransferTests.swift */,
 				CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */,
+				9A46EDD7D27ADE7A28DF88B0 /* OwnerViewTests.swift */,
 				3727F1F8343238152D9DEA5F /* ProfileTests.swift */,
 				8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */,
 				2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */,
@@ -176,6 +181,7 @@
 				39A7319D2D8E9F3D12867849 /* NotesFolderPresenter.swift */,
 				0ADBB4BA961022731A776296 /* NotesFolderWatcher.swift */,
 				AF5ED088B70B60243755E42B /* NoteView.swift */,
+				56FC667B30A54762087BF23A /* OwnerControl.swift */,
 				15A0A36E778F7188CF52838D /* PRCard.swift */,
 				568BD814954ADC74850E3880 /* ProfileManager.swift */,
 				A2504016B8A69BAA7774CCD3 /* ProfileSession.swift */,
@@ -343,6 +349,7 @@
 				EFBABA910E1A5CFE63E7DB87 /* BoardWindowLevelTests.swift in Sources */,
 				8716FF98EFD918D92EA6872C /* DataTransferTests.swift in Sources */,
 				E2639633E61BC409B0873B48 /* LiveMarkdownIntegrationTests.swift in Sources */,
+				672FD01238B147FAE3D08C77 /* OwnerViewTests.swift in Sources */,
 				00C57CAD4D19823917B62DFF /* ProfileTests.swift in Sources */,
 				F42711049E90261D511B21A1 /* SectionsAndAppearanceTests.swift in Sources */,
 				539FD22A5C14EAFD1E4E0D9D /* ThemeConfigIntegrationTests.swift in Sources */,
@@ -373,6 +380,7 @@
 				951157544F8EAEA6A79F588F /* NoteView.swift in Sources */,
 				49A81CA514577E60691BA45C /* NotesFolderPresenter.swift in Sources */,
 				171B0677970FA6787208CA74 /* NotesFolderWatcher.swift in Sources */,
+				671E7E7853F19B99BEB9DBFF /* OwnerControl.swift in Sources */,
 				3522BC83D67633EA0C9FE636 /* PRCard.swift in Sources */,
 				F5ED1C9F5985FC52D537F1E0 /* ProfileManager.swift in Sources */,
 				1C0BEB775F084C612B0AD961 /* ProfileSession.swift in Sources */,

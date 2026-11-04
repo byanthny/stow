@@ -29,6 +29,7 @@ struct BoardView: View {
                         .accessibilityHidden(true)
                 }
                 Spacer()
+                if store.showsOwnerControl { OwnerControl(store: store) }
                 if store.isRefreshing {
                     ProgressView().controlSize(.mini).scaleEffect(0.7).frame(width: 20)
                 } else {
@@ -159,10 +160,12 @@ struct BoardView: View {
 
     private var notesSection: some View {
         let collapsible = store.state.boardLayout.notesCanCollapse
+        let notes = store.visibleNotes
+        let heading = NotesHeading(store: store)
         return pinnedSection(
-            "Notes", count: store.state.notes.count, id: BoardLayout.Section.notes.rawValue,
+            "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue,
             collapsible: collapsible,
-            summary: store.state.notes.first?.markdown.split(separator: "\n").first.map(String.init)
+            summary: notes.first?.markdown.split(separator: "\n").first.map(String.init)
         ) {
             if store.state.notes.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -173,7 +176,7 @@ struct BoardView: View {
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                     .background(.stowSurface, in: RoundedRectangle(cornerRadius: 9))
             }
-            ForEach(store.state.notes) { note in
+            ForEach(notes) { note in
                 Group {
                     if note.isDetached {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
@@ -190,7 +193,7 @@ struct BoardView: View {
     private func prSection(_ title: String, section: AttentionSection) -> some View {
         let cards = store.cards(in: section)
         let expanded = expandedSections.contains(section)
-        let shown = store.state.boardLayout.shownPullRequests(of: cards.count, expanded: expanded)
+        let listed = SectionCards(cards, layout: store.state.boardLayout, expanded: expanded)
         let limited = store.state.boardLayout.shownPullRequests(of: cards.count, expanded: false) < cards.count
         return pinnedSection(
             title, count: cards.count, id: section.rawValue, collapsible: true,
@@ -201,9 +204,12 @@ struct BoardView: View {
                 Text(section == .needsYou ? "Nothing needs you right now." : "No pull requests waiting.")
                     .font(theme.font(size: 11)).foregroundStyle(.stowMuted).padding(.vertical, 3)
             }
-            ForEach(cards.prefix(shown)) { pr in PRCard(store: store, pr: pr) }
+            ForEach(listed.groups) { group in
+                if let owner = group.owner { OwnerSubheading(owner: owner, count: group.count) }
+                ForEach(group.cards) { pr in PRCard(store: store, pr: pr) }
+            }
             if limited {
-                Button(expanded ? "Show fewer" : "Show \(cards.count - shown) more") {
+                Button(expanded ? "Show fewer" : "Show \(listed.moreCount) more") {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
                         if expanded { expandedSections.remove(section) } else { expandedSections.insert(section) }
                     }
@@ -215,7 +221,7 @@ struct BoardView: View {
     }
 
     private func pinnedSection<Content: View>(
-        _ title: String, count: Int, id: String, collapsible: Bool, summary: String?,
+        _ title: String, count: Int, detail: String? = nil, id: String, collapsible: Bool, summary: String?,
         needsAttention: Bool = false, @ViewBuilder content: () -> Content
     ) -> some View {
         let isCollapsed = collapsible && store.sectionIsCollapsed(id)
@@ -233,7 +239,7 @@ struct BoardView: View {
             .padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 18)
         } header: {
             BoardSectionHeader(
-                title: title, count: count, isCollapsed: isCollapsed, collapsible: collapsible,
+                title: title, count: count, detail: detail, isCollapsed: isCollapsed, collapsible: collapsible,
                 needsAttention: needsAttention
             ) { store.toggleSection(id) }
             .padding(.horizontal, 14).padding(.vertical, 4)
@@ -266,6 +272,8 @@ extension BoardLayout.Section {
 private struct BoardSectionHeader: View {
     let title: String
     let count: Int
+    /// Words after the count, such as how many notes an owner filter hides.
+    var detail: String?
     let isCollapsed: Bool
     let collapsible: Bool
     @Environment(\.stowTheme) private var theme
@@ -280,14 +288,16 @@ private struct BoardSectionHeader: View {
             } label: {
                 row
             }.buttonStyle(.plain)
-                .accessibilityLabel("\(title), \(count)")
+                .accessibilityLabel(label)
                 .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
                 .help("\(isCollapsed ? "Expand" : "Collapse") \(title)")
         } else {
-            row.accessibilityElement(children: .ignore).accessibilityLabel("\(title), \(count)")
+            row.accessibilityElement(children: .ignore).accessibilityLabel(label)
                 .accessibilityAddTraits(.isHeader)
         }
     }
+
+    private var label: String { detail.map { "\(title), \(count), \($0)" } ?? "\(title), \(count)" }
 
     private var row: some View {
         HStack(spacing: 6) {
@@ -296,9 +306,77 @@ private struct BoardSectionHeader: View {
                 .opacity(collapsible ? 1 : 0)
             Text(title).font(theme.font(size: 11, weight: .semibold))
             Text(verbatim: "\(count)").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
+            if let detail { Text(verbatim: "· \(detail)").font(theme.font(size: 10)).foregroundStyle(.stowMuted) }
             if needsAttention && isCollapsed { Circle().fill(.stowAmber).frame(width: 4, height: 4) }
             Spacer()
         }.padding(.vertical, 3).contentShape(Rectangle())
+    }
+}
+
+/// What the Notes header counts: the notes the board lists, and how many linked notes an owner filter hides.
+struct NotesHeading: Equatable {
+    var count: Int
+    var hiddenCount: Int
+    /// What the header says after the count while notes are hidden.
+    var detail: String? { hiddenCount > 0 ? "\(hiddenCount) hidden" : nil }
+}
+
+extension NotesHeading {
+    @MainActor init(store: AppStore) {
+        let listed = store.visibleNotes.count
+        self.init(count: listed, hiddenCount: store.state.notes.count - listed)
+    }
+}
+
+/// A pull-request section's cards as the board lists them: under owner subheadings when Settings → Board groups by
+/// owner, and only as many as show before Show more, which still counts cards per section.
+struct SectionCards {
+    struct Group: Identifiable {
+        /// The subheading, or nil while the board does not group by owner.
+        let owner: String?
+        /// The owner's cards in the section, counting those after Show more.
+        let count: Int
+        /// The cards that show, in the section's order.
+        let cards: [PullRequestSnapshot]
+        var id: String { owner?.lowercased() ?? "" }
+    }
+
+    /// Groups with at least one card showing; an owner whose cards all come after Show more waits for it.
+    let groups: [Group]
+    /// The cards after Show more.
+    let moreCount: Int
+
+    init(_ cards: [PullRequestSnapshot], layout: BoardLayout, expanded: Bool) {
+        var remaining = layout.shownPullRequests(of: cards.count, expanded: expanded)
+        moreCount = cards.count - remaining
+        let owners: [(owner: String?, cards: [PullRequestSnapshot])] =
+            layout.groupByOwner
+            ? groupedByOwner(cards, order: layout.ownerOrder).map { ($0.owner, $0.cards) } : [(nil, cards)]
+        var groups: [Group] = []
+        for (owner, ownerCards) in owners where remaining > 0 {
+            let shown = Array(ownerCards.prefix(remaining))
+            remaining -= shown.count
+            groups.append(Group(owner: owner, count: ownerCards.count, cards: shown))
+        }
+        self.groups = groups
+    }
+}
+
+/// An owner's name and card count above its cards while the board groups pull requests by owner.
+private struct OwnerSubheading: View {
+    let owner: String
+    let count: Int
+    @Environment(\.stowTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text(verbatim: owner).font(theme.font(size: 10, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: "\(count)").font(theme.font(size: 10))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.stowMuted).padding(.leading, 2).padding(.top, 2)
+        .accessibilityElement(children: .ignore).accessibilityLabel(Text(verbatim: "\(owner), \(count)"))
+        .accessibilityAddTraits(.isHeader)
     }
 }
 

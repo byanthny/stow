@@ -15,7 +15,7 @@ struct SettingsView: View {
                 Divider()
                 AppearanceView(store: store)
                 Divider()
-                BoardSettingsView(store: store)
+                BoardSettingsView(store: store, profile: profile)
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
                     Text("GitHub").font(theme.font(size: 14, weight: .semibold))
@@ -110,9 +110,11 @@ struct SettingsView: View {
     }
 }
 
-/// Board layout preferences. Each has a default; nothing here is required.
+/// Board layout preferences, then how the profile keeps cards and notes. Each has a default; nothing here is
+/// required.
 private struct BoardSettingsView: View {
     @Bindable var store: AppStore
+    let profile: ProfileHandle
     @Environment(\.stowTheme) private var theme
     private var layout: BoardLayout { store.state.boardLayout }
 
@@ -162,13 +164,48 @@ private struct BoardSettingsView: View {
             SettingsToggle(
                 "Open one note at a time",
                 isOn: Binding(get: { layout.oneNoteOpenAtATime }, set: { store.setOneNoteOpenAtATime($0) }))
+            Text("Owners").font(theme.font(size: 11)).foregroundStyle(.secondary)
+            SettingsToggle(
+                "Group by owner", identifier: "board.groupByOwner",
+                isOn: Binding(get: { layout.groupByOwner }, set: { store.setGroupByOwner($0) }))
+            HStack {
+                Text("Owner order")
+                Spacer()
+                Picker(
+                    "Owner order", selection: Binding(get: { layout.ownerOrder }, set: { store.setOwnerOrder($0) })
+                ) {
+                    Text("A to Z").tag(BoardLayout.OwnerOrder.alphabetical)
+                    Text("Most cards first").tag(BoardLayout.OwnerOrder.mostCards)
+                }.pickerStyle(.segmented).labelsHidden().fixedSize().accessibilityIdentifier("board.ownerOrder")
+            }.font(theme.font(size: 12))
+            SettingsToggle(
+                "Always show owner control", identifier: "board.alwaysShowOwnerControl",
+                isOn: Binding(get: { layout.alwaysShowOwnerControl }, set: { store.setAlwaysShowOwnerControl($0) }))
+            SettingsToggle(
+                "Hide notes linked to hidden owners", identifier: "board.hidesNotesForHiddenOwners",
+                isOn: Binding(
+                    get: { layout.hidesNotesForHiddenOwners }, set: { store.setHidesNotesForHiddenOwners($0) }))
             HStack {
                 Text(
-                    "Defaults: title shown; Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time."
+                    "Defaults: title shown; Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time; owners A to Z and not grouped; the owner control shows only when needed; owner filters never hide notes."
                 )
                 .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Reset") { store.resetBoardLayout() }.disabled(layout == BoardLayout())
+            }
+            SettingsToggle(
+                "Keep only selected owners on disk", identifier: "board.keepsOnlySelectedOwners",
+                isOn: Binding(
+                    get: { store.state.keepsOnlySelectedOwners }, set: { store.setKeepsOnlySelectedOwners($0) }))
+            Text("Leaves other owners’ pull requests out of this profile’s files and backups. Pins are kept.")
+                .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            // Only a profile among several can hide.
+            if (profile.manager?.profiles.count ?? 1) > 1 {
+                SettingsToggle(
+                    "Keep always-on-top notes visible when hiding", identifier: "board.hideKeepsAlwaysOnTopNotes",
+                    isOn: Binding(
+                        get: { store.state.hideKeepsAlwaysOnTopNotes }, set: { store.setHideKeepsAlwaysOnTopNotes($0) }
+                    ))
             }
         }
     }

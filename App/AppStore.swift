@@ -21,6 +21,9 @@ final class AppStore {
     /// A new installation asks once before using an existing GitHub CLI login.
     var offersGitHubSetup = false
     var storageNeedsRecovery = false
+    /// Other owners' cards from the latest refresh while the profile keeps only its selected owners on disk. They
+    /// stay in memory for the owner control's counts and are never saved.
+    private var memoryOnlyPullRequests: [PullRequestSnapshot] = []
     var expandedPRs: Set<String> = []
     /// Board notes shown open this session; `boardLayout` decides the starting state.
     var expandedNoteIDs: Set<UUID> = []
@@ -260,7 +263,7 @@ final class AppStore {
         defer { if generation == sessionGeneration { isRefreshing = false } }
         do {
             let result = try await coordinator.refresh(
-                pins: state.pins, previous: state.pullRequests, expectedViewerLogin: state.viewerLogin)
+                pins: state.pins, previous: knownPullRequests, expectedViewerLogin: state.viewerLogin)
             guard generation == sessionGeneration, state.githubEnabled else { return }
             if let expected = state.viewerLogin,
                 expected.caseInsensitiveCompare(result.viewerLogin) != .orderedSame
@@ -271,9 +274,9 @@ final class AppStore {
             }
             accountMismatch = nil
             state.viewerLogin = result.viewerLogin
-            state.pullRequests = reconcileSnapshots(
-                previous: state.pullRequests, incoming: result.snapshots,
-                pins: state.pins, now: result.fetchedAt)
+            setPullRequests(
+                reconcileSnapshots(
+                    previous: knownPullRequests, incoming: result.snapshots, pins: state.pins, now: result.fetchedAt))
             isRefreshing = false
             state.lastRefreshAt = result.fetchedAt
             githubMessage =
@@ -290,11 +293,16 @@ final class AppStore {
         }
     }
 
+    /// Cards kept only in memory go stale too, so an owner selected afterwards never shows readiness it lost.
     private func markCardsStale() {
-        for index in state.pullRequests.indices {
-            state.pullRequests[index].isStale = true
-            state.pullRequests[index].readinessIsComplete = false
+        func markStale(_ cards: inout [PullRequestSnapshot]) {
+            for index in cards.indices {
+                cards[index].isStale = true
+                cards[index].readinessIsComplete = false
+            }
         }
+        markStale(&state.pullRequests)
+        markStale(&memoryOnlyPullRequests)
     }
 
     /// Pauses GitHub for this profile: cached cards stay, marked stale, and no details are fetched.
@@ -311,6 +319,7 @@ final class AppStore {
         accountMismatch = nil
         state.viewerLogin = actual
         state.pullRequests = []
+        memoryOnlyPullRequests = []
         state.dismissedIDs = []
         expandedPRs = []
         cancelDetails()
@@ -367,14 +376,92 @@ final class AppStore {
         return state.pullRequests.filter { !state.dismissedIDs.contains($0.id) }
     }
 
+    /// A section's cards, newest first. The owner selection leaves out other owners' cards, except pinned ones, and
+    /// never changes how a card is classified.
     func cards(in section: AttentionSection) -> [PullRequestSnapshot] {
-        visiblePRs.filter { classify($0, isPinned: state.pins.contains($0.reference)).section == section }
-            .sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+        visiblePRs.filter {
+            isShown($0, selection: state.ownerSelection, pins: state.pins)
+                && classify($0, isPinned: state.pins.contains($0.reference)).section == section
+        }
+        .sorted { ($0.updatedAt ?? .distantPast) > ($1.updatedAt ?? .distantPast) }
+    }
+
+    /// Every card the profile knows now: the saved ones, then those kept only in memory.
+    private var knownPullRequests: [PullRequestSnapshot] { state.pullRequests + memoryOnlyPullRequests }
+
+    /// Replaces the cards. While the profile keeps only its selected owners on disk, other owners' cards go to
+    /// memory instead of the saved state, unless they are pinned.
+    private func setPullRequests(_ cards: [PullRequestSnapshot]) {
+        guard state.keepsOnlySelectedOwners else {
+            state.pullRequests = cards
+            memoryOnlyPullRequests = []
+            return
+        }
+        let kept = retainingSelectedOwners(cards, selection: state.ownerSelection, pins: state.pins)
+        let keptIDs = Set(kept.map(\.id))
+        state.pullRequests = kept
+        memoryOnlyPullRequests = cards.filter { !keptIDs.contains($0.id) }
+    }
+
+    /// Moves cards between the saved state and memory after the selection, the pins, or the storage setting change.
+    private func reapplyKeptOwners() {
+        guard state.keepsOnlySelectedOwners || !memoryOnlyPullRequests.isEmpty else { return }
+        setPullRequests(knownPullRequests)
+    }
+
+    /// The owners the owner control lists: from cards, pins, and the selection, with counts of cards that are not
+    /// dismissed. While the profile keeps only its selected owners on disk, other owners' counts come from the
+    /// latest refresh, kept in memory.
+    var ownerSummaries: [OwnerSummary] {
+        StowCore.ownerSummaries(
+            pullRequests: knownPullRequests, pins: state.pins, dismissedIDs: state.dismissedIDs,
+            selection: state.ownerSelection, order: state.boardLayout.ownerOrder)
+    }
+
+    /// The board header shows the owner control with GitHub on and cards from more than one owner, whenever a
+    /// selection is active, so it never hides cards silently, or always when Settings → Board asks.
+    var showsOwnerControl: Bool {
+        StowCore.showsOwnerControl(
+            githubEnabled: state.githubEnabled, pullRequests: visiblePRs, selection: state.ownerSelection,
+            alwaysShow: state.boardLayout.alwaysShowOwnerControl)
+    }
+
+    /// Chooses whose pull requests show, and saves. A profile that keeps only its selected owners on disk also
+    /// refreshes at once, so an owner just added gets its cards.
+    func setOwnerSelection(_ selection: OwnerSelection) {
+        guard selection != state.ownerSelection else { return }
+        state.ownerSelection = selection
+        reapplyKeptOwners()
+        changed()
+        if state.keepsOnlySelectedOwners { Task { await refresh() } }
+    }
+
+    /// Settings → Board → Keep only selected owners on disk. Turning it on takes other owners' cards out of the
+    /// saved state at once, keeping pins; turning it off saves the cards held in memory again.
+    func setKeepsOnlySelectedOwners(_ keeps: Bool) {
+        guard keeps != state.keepsOnlySelectedOwners else { return }
+        state.keepsOnlySelectedOwners = keeps
+        reapplyKeptOwners()
+        changed()
+    }
+
+    /// The notes the board lists. With Settings → Board → Hide notes linked to hidden owners on, a note linked to
+    /// another owner's pull request hides, unless that card is pinned and so shows. Standalone notes always show,
+    /// and hiding never closes a detached note's window.
+    var visibleNotes: [Note] {
+        // Without GitHub there is no owner control to show the selection, so it hides nothing.
+        guard state.githubEnabled, state.boardLayout.hidesNotesForHiddenOwners else { return state.notes }
+        return state.notes.filter { note in
+            isNoteShown(note, selection: state.ownerSelection, hidesLinkedNotes: true)
+                || note.pullRequest.map { state.pins.contains($0) } == true
+        }
     }
 
     func pin(_ reference: PullRequestReference) {
         if !state.pins.contains(reference) { state.pins.append(reference) }
         state.dismissedIDs.removeAll { $0 == reference.id }
+        // A card held only in memory is saved again once pinned.
+        reapplyKeptOwners()
         if !state.pullRequests.contains(where: { $0.id == reference.id }) {
             state.pullRequests.append(.init(reference: reference, title: reference.displayName, isStale: true))
         }
@@ -385,6 +472,8 @@ final class AppStore {
     func togglePin(_ reference: PullRequestReference) {
         if state.pins.contains(reference) {
             state.pins.removeAll { $0 == reference }
+            // Unpinned, a card of an owner outside the selection is no longer saved.
+            reapplyKeptOwners()
             changed()
         } else {
             pin(reference)
@@ -422,6 +511,32 @@ final class AppStore {
 
     func setShowsBoardTitle(_ shown: Bool) {
         state.boardLayout.showsTitle = shown
+        changed()
+    }
+
+    func setGroupByOwner(_ grouped: Bool) {
+        state.boardLayout.groupByOwner = grouped
+        changed()
+    }
+
+    func setOwnerOrder(_ order: BoardLayout.OwnerOrder) {
+        state.boardLayout.ownerOrder = order
+        changed()
+    }
+
+    func setAlwaysShowOwnerControl(_ shown: Bool) {
+        state.boardLayout.alwaysShowOwnerControl = shown
+        changed()
+    }
+
+    func setHidesNotesForHiddenOwners(_ hides: Bool) {
+        state.boardLayout.hidesNotesForHiddenOwners = hides
+        changed()
+    }
+
+    /// Settings → Board → Keep always-on-top notes visible when hiding, read when this profile hides.
+    func setHideKeepsAlwaysOnTopNotes(_ keeps: Bool) {
+        state.hideKeepsAlwaysOnTopNotes = keeps
         changed()
     }
 
@@ -870,6 +985,7 @@ final class AppStore {
             accessoryTokens.removeAll()
             accessoryResults.removeAll()
             state = result.state
+            memoryOnlyPullRequests = []
             deletedNoteIDs.removeAll()
             conflictNoteIDs.removeAll()
             noteFileMessage = nil
