@@ -114,7 +114,8 @@ final class AppStoreCancellationTests: XCTestCase {
         XCTAssertFalse(store.isNoteExpanded(ids[0]))
 
         store.setNotesStartCollapsed(false)
-        XCTAssertTrue(await store.flush())
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
         let relaunched = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
         await relaunched.start()
         relaunched.stop()
