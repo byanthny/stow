@@ -2445,7 +2445,7 @@ final class ProfileTests: XCTestCase {
 
         // A launch a day after the last check asks again, and a newer release shows despite the dismissal.
         var aged = try saved()
-        aged.lastCheckAt = Date.now.addingTimeInterval(-UpdateCheck.interval)
+        aged.lastCheckAt = Date.now.addingTimeInterval(-UpdatePolicy.standard.interval)
         try await ProfileCatalog(dataFolder: folder).setUpdateSettings(aged)
         feed.answer(["v1.2.0", "v1.1.0"])
         let manager = makeManager(folder, updateFetch: feed.fetch)
@@ -2493,7 +2493,7 @@ final class ProfileTests: XCTestCase {
             return XCTFail("Expected an available release, got \(reports.outcomes)")
         }
         XCTAssertEqual(release.version.description, newer)
-        XCTAssertEqual(reports.outcomes[2], .failed("GitHub is limiting requests from this network. Try again later."))
+        XCTAssertEqual(reports.outcomes[2], .failed(.rateLimited))
         // With the setting off, the board offers nothing and nothing is saved.
         XCTAssertNil(manager.updates.notice)
         XCTAssertFalse(exists(ProfileIndex.filename, in: folder))
@@ -2747,10 +2747,12 @@ private final class ReleaseFeed: @unchecked Sendable {
         }
     }
 
+    /// Answers with these tags as pre-releases, as every Stow release is during the alpha.
     func answer(_ tags: [String]) {
         let releases = tags.compactMap { tag in
             ReleaseVersion(tag).flatMap {
-                StowRelease(version: $0, page: "https://github.com/byanthny/stow/releases/tag/\(tag)")
+                StowRelease(
+                    version: $0, page: "https://github.com/byanthny/stow/releases/tag/\(tag)", isPrerelease: true)
             }
         }
         XCTAssertEqual(releases.count, tags.count, "Every synthetic tag is a release")
@@ -2769,7 +2771,7 @@ private final class ReleaseFeed: @unchecked Sendable {
 /// What Check for updates… reported.
 @MainActor
 private final class OutcomeLog {
-    var outcomes: [UpdateMonitor.Outcome] = []
+    var outcomes: [UpdateOutcome] = []
 }
 
 /// Records which profiles the manager asked or told about, and answers from a script.

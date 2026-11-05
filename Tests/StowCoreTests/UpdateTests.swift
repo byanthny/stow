@@ -6,10 +6,6 @@ import XCTest
 final class UpdateTests: XCTestCase {
     private let pages = "https://github.com/byanthny/stow/releases/tag/"
 
-    override func setUp() {
-        StubReplies.shared.reset()
-    }
-
     // MARK: versions
 
     func testVersionsReadReleaseTags() throws {
@@ -70,23 +66,23 @@ final class UpdateTests: XCTestCase {
             #"{"tag_name":7,"html_url":"https://github.com/byanthny/stow/releases/tag/v9.3.0"}"#,
             entry(tag: "v0.2.1", page: pages + "v0.2.1", prerelease: false),
         ]
-        let releases = try UpdateCheck.releases(from: Data("[\(list.joined(separator: ","))]".utf8))
+        let releases = try ReleaseSource.stow.releases(from: Data("[\(list.joined(separator: ","))]".utf8))
         XCTAssertEqual(releases.map(\.version.description), ["0.3.0", "0.2.1"])
         XCTAssertEqual(releases.map(\.page.absoluteString), [pages + "v0.3.0", pages + "v0.2.1"])
     }
 
     func testRepliesThatAreNotAListAreUnreadable() throws {
         for reply in [#"{"message":"Not Found"}"#, "not json", ""] {
-            XCTAssertThrowsError(try UpdateCheck.releases(from: Data(reply.utf8)), reply) {
+            XCTAssertThrowsError(try ReleaseSource.stow.releases(from: Data(reply.utf8)), reply) {
                 XCTAssertEqual($0 as? UpdateCheckError, .unreadable, reply)
             }
         }
-        XCTAssertEqual(try UpdateCheck.releases(from: Data("[]".utf8)), [])
+        XCTAssertEqual(try ReleaseSource.stow.releases(from: Data("[]".utf8)), [])
     }
 
     func testReleasePagesStayUnderStowReleases() {
         for page in [pages + "v0.2.1", pages + "v1.0.0-beta.2"] {
-            XCTAssertEqual(UpdateCheck.releasePage(page)?.absoluteString, page)
+            XCTAssertEqual(ReleaseSource.stow.releasePage(page)?.absoluteString, page)
         }
         for page in [
             "http://github.com/byanthny/stow/releases/tag/v1.0.0",
@@ -102,30 +98,65 @@ final class UpdateTests: XCTestCase {
             "https://github.com/byanthny/stow/releases/tag/v1 0",
             "https://github.com/byanthny/stow/releases/tag/v1.0.0\n",
         ] {
-            XCTAssertNil(UpdateCheck.releasePage(page), page)
+            XCTAssertNil(ReleaseSource.stow.releasePage(page), page)
         }
     }
 
-    func testNewestReleaseAboveRunningVersionIncludesPrereleases() throws {
-        let releases = try ["v0.2.0", "v0.3.0-beta.1", "v0.2.1", "v0.3.0-alpha.2"].map(release)
-        func newest(above running: String) throws -> String? {
-            UpdateCheck.newest(releases, above: try XCTUnwrap(ReleaseVersion(running)))?.version.description
+    func testPrereleasesCountOnlyUntilAStableReleaseIsOut() throws {
+        func newest(_ tags: [(String, Bool)], above running: String) throws -> String? {
+            let releases = try tags.map { try release($0.0, prerelease: $0.1) }
+            return UpdatePolicy.standard.newest(releases, above: try XCTUnwrap(ReleaseVersion(running)))?.version
+                .description
         }
-        XCTAssertEqual(try newest(above: "0.2.1"), "0.3.0-beta.1")
-        XCTAssertEqual(try newest(above: "0.1.0"), "0.3.0-beta.1")
-        XCTAssertEqual(try newest(above: "0.3.0-alpha.2"), "0.3.0-beta.1")
-        XCTAssertNil(try newest(above: "0.3.0-beta.1"))
-        XCTAssertNil(try newest(above: "0.3.0"))
+        // While every release is a pre-release, as during the alpha, the newest one is offered.
+        let alpha = [("v0.2.0", true), ("v0.3.0-beta.1", true), ("v0.2.1", true), ("v0.3.0-alpha.2", true)]
+        XCTAssertEqual(try newest(alpha, above: "0.2.1"), "0.3.0-beta.1")
+        XCTAssertEqual(try newest(alpha, above: "0.3.0-alpha.2"), "0.3.0-beta.1")
+        XCTAssertNil(try newest(alpha, above: "0.3.0-beta.1"))
+        XCTAssertNil(try newest(alpha, above: "0.3.0"))
+        // Once a stable release is out, only stable releases are offered.
+        let stable = alpha + [("v0.3.0", false), ("v0.4.0", true), ("v0.4.0-rc.1", false)]
+        XCTAssertEqual(try newest(stable, above: "0.2.1"), "0.3.0")
+        XCTAssertNil(try newest(stable, above: "0.3.0"), "Pre-releases, by flag or by version, are not offered")
+    }
+
+    func testAnotherSourceKeepsToItsOwnPages() throws {
+        let source = ReleaseSource(owner: "example", repository: "app")
+        XCTAssertEqual(
+            source.releasesURL.absoluteString, "https://api.github.com/repos/example/app/releases?per_page=10")
+        let page = "https://github.com/example/app/releases/tag/v1.0.0"
+        XCTAssertEqual(source.releasePage(page)?.absoluteString, page)
+        XCTAssertNil(source.releasePage(pages + "v1.0.0"), "Stow's pages are not another source's")
+        let list = "[\(entry(tag: "v1.0.0", page: page)),\(entry(tag: "v2.0.0", page: pages + "v2.0.0"))]"
+        XCTAssertEqual(try source.releases(from: Data(list.utf8)).map(\.version.description), ["1.0.0"])
+    }
+
+    func testRecordingAChecksResult() throws {
+        let running = try XCTUnwrap(ReleaseVersion("0.2.1"))
+        let time = Date(timeIntervalSince1970: 1_800_000_000)
+        var settings = UpdateSettings()
+        let found = try release("v0.3.0", prerelease: true)
+        XCTAssertEqual(settings.record(.success([found]), running: running, at: time), .available(found))
+        XCTAssertEqual(settings.available, found)
+        XCTAssertEqual(settings.lastCheckAt, time)
+        // A failed check keeps offering what was found before.
+        let later = time.addingTimeInterval(60)
+        XCTAssertEqual(settings.record(.failure(.rateLimited), running: running, at: later), .failed(.rateLimited))
+        XCTAssertEqual(settings.available, found)
+        XCTAssertEqual(settings.lastCheckAt, later)
+        // An empty list means up to date, and clears the old release.
+        XCTAssertEqual(settings.record(.success([]), running: running, at: later), .upToDate)
+        XCTAssertNil(settings.available)
     }
 
     func testChecksAreDueOnceADay() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        XCTAssertTrue(UpdateCheck.isDue(lastCheck: nil, now: now))
-        XCTAssertFalse(UpdateCheck.isDue(lastCheck: now, now: now))
-        XCTAssertFalse(UpdateCheck.isDue(lastCheck: now.addingTimeInterval(-86_399), now: now))
-        XCTAssertTrue(UpdateCheck.isDue(lastCheck: now.addingTimeInterval(-86_400), now: now))
+        XCTAssertTrue(UpdatePolicy.standard.isDue(lastCheck: nil, now: now))
+        XCTAssertFalse(UpdatePolicy.standard.isDue(lastCheck: now, now: now))
+        XCTAssertFalse(UpdatePolicy.standard.isDue(lastCheck: now.addingTimeInterval(-86_399), now: now))
+        XCTAssertTrue(UpdatePolicy.standard.isDue(lastCheck: now.addingTimeInterval(-86_400), now: now))
         // A clock set back never postpones the next check by more than a day.
-        XCTAssertTrue(UpdateCheck.isDue(lastCheck: now.addingTimeInterval(3_600), now: now))
+        XCTAssertTrue(UpdatePolicy.standard.isDue(lastCheck: now.addingTimeInterval(3_600), now: now))
     }
 
     // MARK: settings
@@ -183,77 +214,11 @@ final class UpdateTests: XCTestCase {
         XCTAssertNil(settings.notice(running: try XCTUnwrap(ReleaseVersion("0.3.1"))))
     }
 
-    // MARK: request
-
-    func testRequestAndSessionCarryNoCredentialsOrCookies() {
-        let request = UpdateCheck.request()
-        XCTAssertEqual(request.url?.absoluteString, "https://api.github.com/repos/byanthny/stow/releases?per_page=10")
-        XCTAssertEqual(request.httpMethod, "GET")
-        XCTAssertFalse(request.httpShouldHandleCookies)
-        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
-        // The default agent names this Mac's macOS and CFNetwork versions.
-        XCTAssertEqual(request.value(forHTTPHeaderField: "User-Agent"), "Stow")
-        let configuration = UpdateCheck.sessionConfiguration()
-        XCTAssertNil(configuration.httpCookieStorage)
-        XCTAssertNil(configuration.urlCredentialStorage)
-        XCTAssertNil(configuration.urlCache)
-        XCTAssertFalse(configuration.httpShouldSetCookies)
-        XCTAssertEqual(configuration.httpCookieAcceptPolicy, .never)
-        XCTAssertLessThanOrEqual(configuration.timeoutIntervalForResource, 60)
-    }
-
-    func testFetchReadsReleasesWithoutCredentials() async throws {
-        StubReplies.shared.reply = .init(
-            status: 200, body: Data("[\(entry(tag: "v0.3.0", page: pages + "v0.3.0"))]".utf8))
-        let releases = try await UpdateCheck.fetchReleases(configuration: stubbed())
-        XCTAssertEqual(releases.map(\.version.description), ["0.3.0"])
-        let requests = StubReplies.shared.requests
-        XCTAssertEqual(requests.count, 1)
-        let request = try XCTUnwrap(requests.first)
-        XCTAssertEqual(request.url?.absoluteString, "https://api.github.com/repos/byanthny/stow/releases?per_page=10")
-        XCTAssertEqual(request.httpMethod, "GET")
-        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
-        XCTAssertNil(request.value(forHTTPHeaderField: "Cookie"))
-    }
-
-    func testFetchReportsRefusalsAsErrors() async throws {
-        let cases: [(Int, UpdateCheckError)] = [
-            (403, .rateLimited), (429, .rateLimited), (404, .unavailable), (500, .unavailable),
-        ]
-        for (status, expected) in cases {
-            // A body that would parse must not count when GitHub refuses.
-            StubReplies.shared.reply = .init(status: status, body: Data("[]".utf8))
-            do {
-                _ = try await UpdateCheck.fetchReleases(configuration: stubbed())
-                XCTFail("HTTP \(status) must fail")
-            } catch {
-                XCTAssertEqual(error as? UpdateCheckError, expected, "HTTP \(status)")
-            }
-        }
-    }
-
-    func testFetchStopsReadingPastTheSizeLimit() async throws {
-        let limit = UpdateCheck.maximumResponseBytes
-        // A list padded to exactly the limit is read.
-        let padded = "[" + String(repeating: " ", count: limit - 2) + "]"
-        StubReplies.shared.reply = .init(status: 200, body: Data(padded.utf8))
-        let releases = try await UpdateCheck.fetchReleases(configuration: stubbed())
-        XCTAssertEqual(releases, [])
-        StubReplies.shared.reply = .init(
-            status: 200, body: Data(("[" + String(repeating: " ", count: limit - 1) + "]").utf8))
-        do {
-            _ = try await UpdateCheck.fetchReleases(configuration: stubbed())
-            XCTFail("A reply over the limit must fail")
-        } catch {
-            XCTAssertEqual(error as? UpdateCheckError, .tooLarge)
-        }
-    }
-
     // MARK: helpers
 
-    private func release(_ tag: String) throws -> StowRelease {
+    private func release(_ tag: String, prerelease: Bool = false) throws -> StowRelease {
         let version = try XCTUnwrap(ReleaseVersion(tag), tag)
-        return try XCTUnwrap(StowRelease(version: version, page: pages + tag), tag)
+        return try XCTUnwrap(StowRelease(version: version, page: pages + tag, isPrerelease: prerelease), tag)
     }
 
     /// One release as GitHub lists it, with synthetic values in the fields Stow does not read.
@@ -270,71 +235,4 @@ final class UpdateTests: XCTestCase {
         "zipball_url":"https://api.github.com/repos/byanthny/stow/zipball/\(tag)","body":"Synthetic release notes."}
         """
     }
-
-    /// The update check's own session settings, answered by `StubProtocol` instead of the network.
-    private func stubbed() -> URLSessionConfiguration {
-        let configuration = UpdateCheck.sessionConfiguration()
-        configuration.protocolClasses = [StubProtocol.self]
-        return configuration
-    }
-}
-
-/// What `StubProtocol` answers, and the requests it saw. Tests in one class run one at a time.
-private final class StubReplies: @unchecked Sendable {
-    struct Reply {
-        var status: Int
-        var body: Data
-    }
-
-    static let shared = StubReplies()
-    private let lock = NSLock()
-    private var storedReply = Reply(status: 500, body: Data())
-    private var storedRequests: [URLRequest] = []
-
-    var reply: Reply {
-        get { locked { storedReply } }
-        set { locked { storedReply = newValue } }
-    }
-
-    var requests: [URLRequest] { locked { storedRequests } }
-
-    func reset() {
-        locked {
-            storedReply = Reply(status: 500, body: Data())
-            storedRequests = []
-        }
-    }
-
-    fileprivate func answer(_ request: URLRequest) -> Reply {
-        locked {
-            storedRequests.append(request)
-            return storedReply
-        }
-    }
-
-    private func locked<T>(_ body: () -> T) -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return body()
-    }
-}
-
-/// Answers every request from `StubReplies`, so no test reaches the network.
-private final class StubProtocol: URLProtocol {
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-
-    override func startLoading() {
-        let reply = StubReplies.shared.answer(request)
-        guard let url = request.url,
-            let response = HTTPURLResponse(
-                url: url, statusCode: reply.status, httpVersion: "HTTP/1.1",
-                headerFields: ["Content-Type": "application/json; charset=utf-8"])
-        else { return client?.urlProtocol(self, didFailWithError: URLError(.badURL)) ?? () }
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: reply.body)
-        client?.urlProtocolDidFinishLoading(self)
-    }
-
-    override func stopLoading() {}
 }

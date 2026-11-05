@@ -101,25 +101,32 @@ public struct ReleaseVersion: Hashable, Comparable, Sendable, CustomStringConver
     }
 }
 
-/// A published Stow release: its version and its page on github.com.
+/// A published Stow release: its version, its page on github.com, and whether it's a pre-release.
 public struct StowRelease: Codable, Equatable, Sendable {
     public let version: ReleaseVersion
-    /// Always one of Stow's release pages.
+    /// Always one of the source's release pages.
     public let page: URL
+    /// Marked as a pre-release on GitHub, or carrying a pre-release version.
+    public let isPrerelease: Bool
 
-    /// Nil unless `page` is one of Stow's release pages.
-    public init?(version: ReleaseVersion, page: String) {
-        guard let url = UpdateCheck.releasePage(page) else { return nil }
+    /// Nil unless `page` is one of the source's release pages.
+    public init?(version: ReleaseVersion, page: String, isPrerelease: Bool = false, source: ReleaseSource = .stow) {
+        guard let url = source.releasePage(page) else { return nil }
         self.version = version
         self.page = url
+        self.isPrerelease = isPrerelease || !version.prerelease.isEmpty
     }
 
-    private enum CodingKeys: String, CodingKey { case version, page }
+    private enum CodingKeys: String, CodingKey { case version, page, isPrerelease }
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let version = try container.decode(ReleaseVersion.self, forKey: .version)
-        guard let release = StowRelease(version: version, page: try container.decode(String.self, forKey: .page)) else {
+        let prerelease = (try? container.decodeIfPresent(Bool.self, forKey: .isPrerelease)) ?? false
+        guard
+            let release = StowRelease(
+                version: version, page: try container.decode(String.self, forKey: .page), isPrerelease: prerelease)
+        else {
             throw DecodingError.dataCorruptedError(
                 forKey: .page, in: container, debugDescription: "Not a Stow release page.")
         }
@@ -130,7 +137,114 @@ public struct StowRelease: Codable, Equatable, Sendable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(version, forKey: .version)
         try container.encode(page.absoluteString, forKey: .page)
+        try container.encode(isPrerelease, forKey: .isPrerelease)
     }
+}
+
+/// Where releases come from: a GitHub repository's release list and pages.
+public struct ReleaseSource: Equatable, Sendable {
+    public var owner: String
+    public var repository: String
+
+    public init(owner: String, repository: String) {
+        self.owner = owner
+        self.repository = repository
+    }
+
+    /// Stow's own releases.
+    public static let stow = ReleaseSource(owner: "byanthny", repository: "stow")
+
+    /// The ten most recent releases, newest first, pre-releases included.
+    public var releasesURL: URL {
+        URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases?per_page=10")!
+    }
+
+    /// Release pages start here; a release with any other page is ignored.
+    public var releasePagePrefix: String { "https://github.com/\(owner)/\(repository)/releases/" }
+
+    /// The URL when `text` is a release page under `releasePagePrefix` with no dot segments, else nil.
+    public func releasePage(_ text: String) -> URL? {
+        let prefix = releasePagePrefix.utf8
+        guard text.utf8.starts(with: prefix) else { return nil }
+        let path = text.utf8.dropFirst(prefix.count)
+        let allowed = path.allSatisfy { byte in
+            switch byte {
+            case UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
+                UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"),
+                UInt8(ascii: "/"):
+                return true
+            default: return false
+            }
+        }
+        guard !path.isEmpty, allowed else { return nil }
+        let segments = String(decoding: path, as: UTF8.self).split(separator: "/", omittingEmptySubsequences: false)
+        guard !segments.contains(where: { $0 == "." || $0 == ".." }) else { return nil }
+        return URL(string: text)
+    }
+
+    /// Releases from GitHub's list, skipping entries without a version tag or one of this source's pages.
+    public func releases(from data: Data) throws -> [StowRelease] {
+        guard let entries = try? JSONDecoder().decode([Entry].self, from: data) else {
+            throw UpdateCheckError.unreadable
+        }
+        return entries.compactMap { entry in
+            guard let tag = entry.tag, let version = ReleaseVersion(tag), let page = entry.page else { return nil }
+            return StowRelease(version: version, page: page, isPrerelease: entry.prerelease ?? false, source: self)
+        }
+    }
+
+    /// One listed release; a missing or mistyped field reads as nil.
+    private struct Entry: Decodable {
+        var tag: String?
+        var page: String?
+        var prerelease: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case tag = "tag_name"
+            case page = "html_url"
+            case prerelease
+        }
+
+        init(from decoder: any Decoder) throws {
+            let container = try? decoder.container(keyedBy: CodingKeys.self)
+            tag = try? container?.decodeIfPresent(String.self, forKey: .tag)
+            page = try? container?.decodeIfPresent(String.self, forKey: .page)
+            prerelease = try? container?.decodeIfPresent(Bool.self, forKey: .prerelease)
+        }
+    }
+}
+
+/// When to check, and which releases to offer.
+public struct UpdatePolicy: Equatable, Sendable {
+    /// Automatic checks wait this long after the last one.
+    public var interval: TimeInterval
+
+    public init(interval: TimeInterval = 24 * 60 * 60) {
+        self.interval = interval
+    }
+
+    public static let standard = UpdatePolicy()
+
+    /// Whether `interval` has passed since the last check, or the clock was set back.
+    public func isDue(lastCheck: Date?, now: Date) -> Bool {
+        guard let lastCheck else { return true }
+        let elapsed = now.timeIntervalSince(lastCheck)
+        return elapsed >= interval || elapsed < 0
+    }
+
+    /// The newest release above the running version. Pre-releases count only until a stable release is out.
+    public func newest(_ releases: [StowRelease], above running: ReleaseVersion) -> StowRelease? {
+        let stableIsOut = releases.contains { !$0.isPrerelease }
+        return releases.filter { (!stableIsOut || !$0.isPrerelease) && running < $0.version }
+            .max { $0.version < $1.version }
+    }
+}
+
+/// What one check found.
+public enum UpdateOutcome: Equatable, Sendable {
+    case available(StowRelease)
+    case upToDate
+    case failed(UpdateCheckError)
 }
 
 /// Settings → Updates, kept in the profile index for every profile, and what the last check found.
@@ -162,10 +276,25 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
         if let dismissedVersion, !(dismissedVersion < available.version) { return nil }
         return available
     }
+
+    /// Records a check that started at `time`. A failed check keeps offering the release found before.
+    public mutating func record(
+        _ result: Result<[StowRelease], UpdateCheckError>, running: ReleaseVersion, at time: Date,
+        policy: UpdatePolicy = .standard
+    ) -> UpdateOutcome {
+        lastCheckAt = time
+        switch result {
+        case .success(let releases):
+            available = policy.newest(releases, above: running)
+            return available.map(UpdateOutcome.available) ?? .upToDate
+        case .failure(let error):
+            return .failed(error)
+        }
+    }
 }
 
 public enum UpdateCheckError: Error, LocalizedError, Equatable, Sendable {
-    case unreachable, rateLimited, unavailable, tooLarge, unreadable
+    case unreachable, rateLimited, unavailable, tooLarge, unreadable, unknownVersion
 
     public var errorDescription: String? {
         switch self {
@@ -174,139 +303,7 @@ public enum UpdateCheckError: Error, LocalizedError, Equatable, Sendable {
         case .unavailable: "GitHub didn’t return Stow’s releases. Try again later."
         case .tooLarge: "GitHub’s reply was too large to read."
         case .unreadable: "GitHub’s reply couldn’t be read."
-        }
-    }
-}
-
-/// The opt-in check for a newer Stow: one unauthenticated request to GitHub, with nothing downloaded.
-public enum UpdateCheck {
-    /// Stow's ten most recent releases, newest first, pre-releases included.
-    public static let releasesURL = URL(string: "https://api.github.com/repos/byanthny/stow/releases?per_page=10")!
-    /// Release pages start here; a release with any other page is ignored.
-    public static let releasePagePrefix = "https://github.com/byanthny/stow/releases/"
-    /// Replies longer than this are refused.
-    public static let maximumResponseBytes = 1024 * 1024
-    /// Automatic checks wait this long after the last one.
-    public static let interval: TimeInterval = 24 * 60 * 60
-
-    /// Whether a day has passed since the last check, or the clock was set back.
-    public static func isDue(lastCheck: Date?, now: Date) -> Bool {
-        guard let lastCheck else { return true }
-        let elapsed = now.timeIntervalSince(lastCheck)
-        return elapsed >= interval || elapsed < 0
-    }
-
-    /// The URL when `text` is a release page under `releasePagePrefix` with no dot segments, else nil.
-    public static func releasePage(_ text: String) -> URL? {
-        let prefix = releasePagePrefix.utf8
-        guard text.utf8.starts(with: prefix) else { return nil }
-        let path = text.utf8.dropFirst(prefix.count)
-        let allowed = path.allSatisfy { byte in
-            switch byte {
-            case UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
-                UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"),
-                UInt8(ascii: "/"):
-                return true
-            default: return false
-            }
-        }
-        guard !path.isEmpty, allowed else { return nil }
-        let segments = String(decoding: path, as: UTF8.self).split(separator: "/", omittingEmptySubsequences: false)
-        guard !segments.contains(where: { $0 == "." || $0 == ".." }) else { return nil }
-        return URL(string: text)
-    }
-
-    /// Releases from GitHub's list, skipping entries without a version tag or a release page.
-    public static func releases(from data: Data) throws -> [StowRelease] {
-        guard let entries = try? JSONDecoder().decode([Entry].self, from: data) else {
-            throw UpdateCheckError.unreadable
-        }
-        return entries.compactMap { entry in
-            guard let tag = entry.tag, let version = ReleaseVersion(tag), let page = entry.page else { return nil }
-            return StowRelease(version: version, page: page)
-        }
-    }
-
-    /// The newest release above the running version, pre-releases included.
-    public static func newest(_ releases: [StowRelease], above running: ReleaseVersion) -> StowRelease? {
-        releases.filter { running < $0.version }.max { $0.version < $1.version }
-    }
-
-    /// A GET with fixed headers and no cookies or credentials.
-    public static func request() -> URLRequest {
-        var request = URLRequest(url: releasesURL, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
-        request.httpMethod = "GET"
-        request.httpShouldHandleCookies = false
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
-        request.setValue("Stow", forHTTPHeaderField: "User-Agent")
-        request.setValue("en", forHTTPHeaderField: "Accept-Language")
-        return request
-    }
-
-    /// An ephemeral session with no cookies, credentials, or cache.
-    public static func sessionConfiguration() -> URLSessionConfiguration {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieStorage = nil
-        configuration.httpCookieAcceptPolicy = .never
-        configuration.httpShouldSetCookies = false
-        configuration.urlCredentialStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-        configuration.timeoutIntervalForRequest = 20
-        configuration.timeoutIntervalForResource = 30
-        configuration.waitsForConnectivity = false
-        return configuration
-    }
-
-    /// Asks GitHub for Stow's releases and reads at most `maximumResponseBytes` of the reply.
-    public static func fetchReleases(configuration: URLSessionConfiguration = sessionConfiguration()) async throws
-        -> [StowRelease]
-    {
-        let session = URLSession(configuration: configuration)
-        // Also stops a reply that runs past the limit.
-        defer { session.invalidateAndCancel() }
-        let bytes: URLSession.AsyncBytes
-        let response: URLResponse
-        do {
-            (bytes, response) = try await session.bytes(for: request())
-        } catch {
-            throw UpdateCheckError.unreachable
-        }
-        guard let status = (response as? HTTPURLResponse)?.statusCode else { throw UpdateCheckError.unreadable }
-        switch status {
-        case 200: break
-        case 403, 429: throw UpdateCheckError.rateLimited
-        default: throw UpdateCheckError.unavailable
-        }
-        var data = Data()
-        do {
-            for try await byte in bytes {
-                guard data.count < maximumResponseBytes else { throw UpdateCheckError.tooLarge }
-                data.append(byte)
-            }
-        } catch let error as UpdateCheckError {
-            throw error
-        } catch {
-            throw UpdateCheckError.unreachable
-        }
-        return try releases(from: data)
-    }
-
-    /// One listed release; a missing or mistyped field reads as nil.
-    private struct Entry: Decodable {
-        var tag: String?
-        var page: String?
-
-        private enum CodingKeys: String, CodingKey {
-            case tag = "tag_name"
-            case page = "html_url"
-        }
-
-        init(from decoder: any Decoder) throws {
-            let container = try? decoder.container(keyedBy: CodingKeys.self)
-            tag = try? container?.decodeIfPresent(String.self, forKey: .tag)
-            page = try? container?.decodeIfPresent(String.self, forKey: .page)
+        case .unknownVersion: "Stow couldn’t read its own version."
         }
     }
 }
