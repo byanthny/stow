@@ -78,7 +78,8 @@ extension PullRequestSnapshot {
             status.headline = reason
             status.tone = classification.tone
             let aboutReview = ["Changes requested", "Review required", "Review requested", "Waiting for review"]
-            if let review, !aboutReview.contains(reason) { status.notes.append(review.text) }
+            let repeats = review?.text == reason || (aboutReview.contains(reason) && review?.text == "Review pending")
+            if let review, !repeats { status.notes.append(review.text) }
         }
         if mergeStateStatus == "BEHIND", reason != "Behind base branch" { status.notes.append("Behind base") }
         return status

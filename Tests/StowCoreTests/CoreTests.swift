@@ -159,6 +159,15 @@ final class AttentionTests: XCTestCase {
             CardStatus(
                 headline: "Resolve conflicts", tone: .failure, notes: ["Approved", "Behind base"], checks: passed))
 
+        // Someone else's pull request still shows its review.
+        var others = ready()
+        others.isViewerAuthor = false
+        XCTAssertEqual(
+            others.cardStatus(under: classify(others)),
+            CardStatus(headline: "Waiting for review", tone: .pending, notes: ["Approved"], checks: passed))
+        others.reviewDecision = "REVIEW_REQUIRED"
+        XCTAssertEqual(others.cardStatus(under: classify(others)).notes, [])
+
         var behind = ready()
         behind.mergeStateStatus = "BEHIND"
         XCTAssertFalse(
