@@ -11,6 +11,8 @@ struct BoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
     @State private var expandedSections: Set<AttentionSection> = []
+    /// The height of the board's scrolling area. The note being edited grows up to about this tall.
+    @State private var visibleHeight: CGFloat = 0
 
     var body: some View {
         let header = BoardHeader(profile: profile, layout: store.state.boardLayout)
@@ -66,6 +68,11 @@ struct BoardView: View {
                         AccessoryViews(store: store)
                     }.accessibilityElement(children: .contain).accessibilityLabel("Board contents").padding(.bottom, 14)
                 }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: { height in
+                    visibleHeight = height
+                }
                 .onChange(of: store.focusRequestID) { _, _ in
                     guard let id = store.focusNoteID else { return }
                     Task { @MainActor in
@@ -77,21 +84,18 @@ struct BoardView: View {
                 }
             }
             HStack(spacing: 5) {
-                Circle()
-                    .fill(
-                        store.githubMessage == nil
-                            ? AnyShapeStyle(StowColor(role: .green).opacity(0.75)) : AnyShapeStyle(.stowAmber)
-                    )
-                    .frame(width: 4, height: 4)
+                Spacer()
                 if !store.state.githubEnabled {
                     Text("Notes only")
                 } else if let refreshed = store.state.lastRefreshAt {
-                    Text("Updated \(refreshed, style: .relative) ago")
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text("Updated \(refreshed.shortAge(relativeTo: context.date))")
+                    }
                 } else {
                     Text("Notes are saved on this Mac")
                 }
-                Spacer()
-            }.font(theme.font(size: 9)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.bottom, 9)
+            }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.top, 6)
+                .padding(.bottom, 9)
         }
         .foregroundStyle(.stowText).background(.stowBackground)
         .preferredColorScheme(theme.colorScheme)
@@ -161,13 +165,11 @@ struct BoardView: View {
     }
 
     private var notesSection: some View {
-        let collapsible = store.state.boardLayout.notesCanCollapse
         let notes = store.visibleNotes
         let heading = NotesHeading(store: store)
         return pinnedSection(
             "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue,
-            collapsible: collapsible,
-            summary: notes.first?.markdown.split(separator: "\n").first.map(String.init)
+            summary: notes.first?.boardTitle
         ) {
             // Click and start typing; a started note that stays empty goes away again.
             if store.draftNoteID == nil {
@@ -178,7 +180,10 @@ struct BoardView: View {
                     if note.isDetached {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
                     } else if store.isNoteExpanded(note.id) {
-                        NoteView(store: store, noteID: note.id) { store.toggleNoteExpanded(note.id) }
+                        // Leaves room for the pinned section header and the note's own header.
+                        NoteView(store: store, noteID: note.id, editorHeightLimit: max(176, visibleHeight - 96)) {
+                            store.toggleNoteExpanded(note.id)
+                        }
                     } else {
                         CollapsedNoteRow(store: store, note: note)
                     }
@@ -194,7 +199,7 @@ struct BoardView: View {
         let listed = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: expanded)
         let limited = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: false).moreCount > 0
         return pinnedSection(
-            title, count: cards.count, id: section.rawValue, collapsible: true,
+            title, count: cards.count, id: section.rawValue,
             summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
             needsAttention: section == .needsYou && !cards.isEmpty
         ) {
@@ -219,10 +224,10 @@ struct BoardView: View {
     }
 
     private func pinnedSection<Content: View>(
-        _ title: String, count: Int, detail: String? = nil, id: String, collapsible: Bool, summary: String?,
+        _ title: String, count: Int, detail: String? = nil, id: String, summary: String?,
         needsAttention: Bool = false, @ViewBuilder content: () -> Content
     ) -> some View {
-        let isCollapsed = collapsible && store.sectionIsCollapsed(id)
+        let isCollapsed = store.sectionIsCollapsed(id)
         return Section {
             VStack(alignment: .leading, spacing: 9) {
                 if isCollapsed {
@@ -237,8 +242,7 @@ struct BoardView: View {
             .padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 18)
         } header: {
             BoardSectionHeader(
-                title: title, count: count, detail: detail, isCollapsed: isCollapsed, collapsible: collapsible,
-                needsAttention: needsAttention
+                title: title, count: count, detail: detail, isCollapsed: isCollapsed, needsAttention: needsAttention
             ) { store.toggleSection(id) }
             .padding(.horizontal, 14).padding(.vertical, 4)
             // A pinned header covers cards scrolling beneath it, even on a translucent board.
@@ -273,26 +277,20 @@ private struct BoardSectionHeader: View {
     /// Words after the count, such as how many notes an owner filter hides.
     var detail: String?
     let isCollapsed: Bool
-    let collapsible: Bool
     @Environment(\.stowTheme) private var theme
     var needsAttention = false
     var toggle: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if collapsible {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { toggle() }
-            } label: {
-                row
-            }.buttonStyle(.plain)
-                .accessibilityLabel(label)
-                .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
-                .help("\(isCollapsed ? "Expand" : "Collapse") \(title)")
-        } else {
-            row.accessibilityElement(children: .ignore).accessibilityLabel(label)
-                .accessibilityAddTraits(.isHeader)
-        }
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { toggle() }
+        } label: {
+            row
+        }.buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+            .help("\(isCollapsed ? "Expand" : "Collapse") \(title)")
     }
 
     private var label: String { detail.map { "\(title), \(count), \($0)" } ?? "\(title), \(count)" }
@@ -301,7 +299,6 @@ private struct BoardSectionHeader: View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.right").font(theme.font(size: 8, weight: .semibold))
                 .rotationEffect(.degrees(isCollapsed ? 0 : 90)).frame(width: 9)
-                .opacity(collapsible ? 1 : 0)
             Text(title).font(theme.font(size: 11, weight: .semibold))
             Text(verbatim: "\(count)").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
             if let detail { Text(verbatim: "· \(detail)").font(theme.font(size: 10)).foregroundStyle(.stowMuted) }
@@ -344,7 +341,7 @@ struct SectionCards {
     /// The cards after Show more.
     let moreCount: Int
 
-    /// Pinned cards always show; the section's limit counts only unpinned cards.
+    /// Pinned cards always show and count toward the section's limit.
     init(_ cards: [PullRequestSnapshot], layout: BoardLayout, pins: [PullRequestReference], expanded: Bool) {
         let owners: [(owner: String?, cards: [PullRequestSnapshot])] =
             layout.groupByOwner

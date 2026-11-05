@@ -885,14 +885,6 @@ p kbd {
   font-size: 10px;
 }
 
-.note-kind {
-  display: none;
-  flex-grow: 1;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 500;
-}
-
 /* An open note keeps the same toggle, shrunk to its chevron, so focus never moves. */
 .note.is-open .note-row {
   gap: 2px;
@@ -916,8 +908,8 @@ p kbd {
   white-space: nowrap;
 }
 
-.note.is-open .note-kind {
-  display: block;
+.note.is-open .note-row .icon-btn {
+  margin-left: auto;
 }
 
 .note-body {

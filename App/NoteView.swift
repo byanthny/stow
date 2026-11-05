@@ -11,9 +11,12 @@ struct NoteView: View {
     /// A detached note's profile. Its color shows as a thin accent and its name in the title area once profile
     /// names show.
     var profile: ProfileHandle?
+    /// How tall a board note's editor may grow while it is edited.
+    var editorHeightLimit: CGFloat = 176
     /// Board notes can fold back into a one-line row.
     var onCollapse: (() -> Void)?
-    @State private var isPreview = false
+    /// A board note shows a few lines, and its whole text only while it is being edited.
+    @State private var isEditing = false
     /// Only a detached note's header shares its window's title bar row.
     private var headerChrome: WindowChrome { detached ? chrome : WindowChrome() }
 
@@ -25,34 +28,46 @@ struct NoteView: View {
                     if let onCollapse {
                         Button(action: onCollapse) {
                             Image(systemName: "chevron.down").font(theme.font(size: 8, weight: .semibold))
-                                .frame(width: 9)
+                                .frame(width: 18, height: 22).contentShape(Rectangle())
                         }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                             .accessibilityLabel("Collapse note").help("Collapse note")
                     }
-                    Label(identity?.name ?? (detached ? "Note" : "Markdown"), systemImage: "doc.text")
-                        .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
+                    if let identity {
+                        Label(identity.name, systemImage: "doc.text")
+                            .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
+                    }
                     Spacer(minLength: 0)
-                    Button(isPreview ? "Edit" : "Preview") { isPreview.toggle() }
-                        .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)
-                        .accessibilityIdentifier("note.previewToggle")
+                    headerButton("folder", "Show Markdown file", "note.showFile") {
+                        DataTransferActions.showNoteFile(note, store: store)
+                    }
+                    headerButton("square.and.arrow.up", "Export Markdown…", "note.export") {
+                        DataTransferActions.exportNote(note, store: store)
+                    }
+                    headerButton("trash", "Delete note…", "note.delete") { confirmDelete() }
                     if detached {
-                        QuietIconButton(
-                            symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top", scale: .small
+                        headerButton(
+                            note.isAlwaysOnTop ? "pin.fill" : "pin", "Always on top", "note.alwaysOnTop", scale: .small
                         ) {
                             store.toggleAlwaysOnTop(noteID)
                         }
                     } else {
-                        QuietIconButton(symbol: "arrow.up.right.square", label: "Detach note") {
-                            store.detachNote(noteID)
-                        }
+                        headerButton("arrow.up.right.square", "Detach note", "note.detach") { store.detachNote(noteID) }
                     }
-                    PullDownMenu(
-                        symbol: "ellipsis", sections: actions(for: note), label: "Note actions",
-                        identifier: "note.actions", tint: theme.color(.muted)
-                    ).fixedSize()
+                    let menu = actions(for: note)
+                    if !menu.isEmpty {
+                        PullDownMenu(
+                            symbol: "ellipsis", sections: menu, label: "Note actions",
+                            identifier: "note.actions", tint: theme.color(.muted), symbolSize: detached ? 13 : 9,
+                            symbolWeight: detached ? .regular : .medium
+                        ).fixedSize()
+                    }
                 }
                 .windowHeaderRow(headerChrome, horizontal: 10, vertical: 0)
                 .padding(.top, headerChrome.isInline ? 0 : 6)
+                // On the board, a click anywhere else in the header folds the note too.
+                .background {
+                    if let onCollapse { Color.clear.contentShape(Rectangle()).onTapGesture(perform: onCollapse) }
+                }
 
                 if let reference = note.pullRequest {
                     Button {
@@ -68,25 +83,26 @@ struct NoteView: View {
                         .accessibilityAction(named: "Remove pull request link") { store.unlinkPullRequest(noteID) }
                 }
 
-                if isPreview {
-                    ScrollView {
-                        MarkdownPreview(source: note.markdown.isEmpty ? "*Nothing here yet.*" : note.markdown)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12)
+                // Board notes grow to their whole text while edited; detached notes fill their window.
+                NativeEditor(
+                    text: Binding(
+                        get: { store.note(noteID)?.markdown ?? "" },
+                        set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
+                    focusRequestID: store.focusRequestID, appearance: theme.settings,
+                    fitsText: detached ? nil : 104...(isEditing ? max(176, editorHeightLimit) : 176),
+                    onEditingChange: { editing in
+                        isEditing = editing
+                        if editing { store.focusTaken(by: noteID) }
                     }
-                    .frame(minHeight: detached ? 120 : 100, maxHeight: detached ? .infinity : 240)
-                } else {
-                    NativeEditor(
-                        text: Binding(
-                            get: { store.note(noteID)?.markdown ?? "" },
-                            set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
-                        focusRequestID: store.focusRequestID, appearance: theme.settings
-                    )
-                    .frame(minHeight: detached ? 120 : 104, maxHeight: detached ? .infinity : 176)
-                    .padding(.horizontal, 8)
-                }
+                )
+                .frame(minHeight: detached ? 120 : nil, maxHeight: detached ? .infinity : nil)
+                .padding(.horizontal, 8)
                 AccessoryViews(store: store, noteID: noteID)
             }
-            .background(.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
+            // Detached notes take the board's background.
+            .background(
+                detached ? StowColor.stowBackground : .stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9)
+            )
             .overlay { if !detached { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) } }
             .overlay(alignment: .top) {
                 if let identity {
@@ -95,22 +111,36 @@ struct NoteView: View {
             }
             .preferredColorScheme(theme.colorScheme)
             .disabled(store.isRestoringBackup)
+            .background {
+                if detached { WindowTitle(title: note.windowTitle(profileName: identity?.name)) }
+            }
         }
     }
 
+    /// Board notes use the card icon size; a detached note's header matches the board's window header.
+    @ViewBuilder private func headerButton(
+        _ symbol: String, _ label: String, _ identifier: String, scale: Image.Scale = .medium,
+        action: @escaping () -> Void
+    ) -> some View {
+        if detached {
+            QuietIconButton(symbol: symbol, label: label, scale: scale, action: action)
+        } else {
+            CardIconButton(symbol: symbol, label: label, identifier: identifier, scale: scale, action: action)
+        }
+    }
+
+    /// The ⋯ menu offers the sample accessory only once it is on in Settings, or already on for this note.
     private func actions(for note: Note) -> [[PullDownMenu.Item]] {
-        let sample = store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
-        let link: [[PullDownMenu.Item]] =
-            note.pullRequest == nil
-            ? [] : [[.init(title: "Remove pull request link") { store.unlinkPullRequest(noteID) }]]
-        return link + [
-            [.init(title: sample) { store.toggleSample(noteID: noteID) }],
-            [
-                .init(title: "Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) },
-                .init(title: "Export Markdown…") { DataTransferActions.exportNote(note, store: store) },
-            ],
-            [.init(title: "Delete note…") { confirmDelete() }],
-        ]
+        var sections: [[PullDownMenu.Item]] = []
+        if note.pullRequest != nil {
+            sections.append([.init(title: "Remove pull request link") { store.unlinkPullRequest(noteID) }])
+        }
+        let sampleOnHere = store.sampleEnabled(noteID: noteID)
+        if sampleOnHere || store.sampleEnabled() {
+            let title = sampleOnHere ? "Disable sample accessory" : "Enable sample accessory"
+            sections.append([.init(title: title) { store.toggleSample(noteID: noteID) }])
+        }
+        return sections
     }
 
     /// Deleting a note also deletes its Markdown file, so a note with text asks first.
@@ -136,8 +166,9 @@ struct DetachedNoteLauncher: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "arrow.up.right.square").foregroundStyle(.stowMuted)
-                Text(note.markdown.split(separator: "\n").first.map(String.init) ?? "Untitled note")
+                Image(systemName: "arrow.up.right.square").font(theme.font(size: 9, weight: .medium))
+                    .foregroundStyle(.stowMuted)
+                Text(verbatim: note.boardTitle)
                     .font(theme.font(size: 12)).lineLimit(1)
                 Spacer()
                 Text("Open").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
@@ -146,7 +177,6 @@ struct DetachedNoteLauncher: View {
     }
 }
 
-/// A board note folded into one line: open it inline, or pop it out into its own window.
 /// The Notes area's typing spot: clicking it starts a note with the cursor ready.
 struct NoteComposerRow: View {
     /// With no notes yet, the row also explains what the area is for.
@@ -175,6 +205,7 @@ struct NoteComposerRow: View {
     }
 }
 
+/// A board note folded into one line: open it inline, or pop it out into its own window.
 struct CollapsedNoteRow: View {
     @Bindable var store: AppStore
     let note: Note
@@ -192,7 +223,9 @@ struct CollapsedNoteRow: View {
                         Text(verbatim: note.boardTitle).font(theme.font(size: 12, weight: .medium)).lineLimit(1)
                         HStack(spacing: 6) {
                             if let reference = note.pullRequest { Text(verbatim: reference.displayName) }
-                            Text("Edited \(note.updatedAt, style: .relative) ago")
+                            TimelineView(.periodic(from: .now, by: 60)) { context in
+                                Text("Edited \(note.updatedAt.shortAge(relativeTo: context.date))")
+                            }
                         }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
@@ -200,7 +233,9 @@ struct CollapsedNoteRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(note.boardTitle).accessibilityHint("Opens the note")
-            QuietIconButton(symbol: "arrow.up.right.square", label: "Detach note") { store.detachNote(note.id) }
+            CardIconButton(symbol: "arrow.up.right.square", label: "Detach note", identifier: "note.detach") {
+                store.detachNote(note.id)
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(.stowNote, in: RoundedRectangle(cornerRadius: 9))
@@ -208,12 +243,25 @@ struct CollapsedNoteRow: View {
     }
 }
 
-extension Note {
-    /// The first non-empty line without Markdown heading marks, for one-line rows.
-    var boardTitle: String {
-        let line = markdown.split(whereSeparator: \.isNewline)
-            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            .map { $0.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.trimmingCharacters(in: .whitespaces) }
-        return line.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled note"
+/// Names the hosting window, for the Window menu, Mission Control, and VoiceOver.
+private struct WindowTitle: NSViewRepresentable {
+    let title: String
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ view: NSView, context: Context) {
+        let title = title
+        // The view joins its window after its first update.
+        DispatchQueue.main.async {
+            if let window = view.window, window.title != title { window.title = title }
+        }
     }
+}
+
+extension Note {
+    /// A detached note's window title: its title line, with the profile's name once names show.
+    func windowTitle(profileName: String?) -> String {
+        profileName.map { "\(boardTitle) — \($0)" } ?? boardTitle
+    }
+
+    /// The note's title for one-line rows.
+    var boardTitle: String { title ?? "Untitled note" }
 }

@@ -18,14 +18,18 @@ final class BoardCardsTests: XCTestCase {
         XCTAssertEqual(pinnedFirst(cards, pins: []).map(\.reference.number), [3, 1, 2, 4])
     }
 
-    func testPinnedCardsAlwaysShowAndTheLimitCountsOnlyUnpinnedCards() {
+    func testPinnedCardsCountTowardTheLimitButAlwaysShow() {
         let cards = (1...6).map { card($0, updated: Double($0)) }
         var layout = BoardLayout()
         layout.visiblePullRequests = 3
-        // A pinned card after the limit still shows, and Show more counts only the hidden unpinned cards.
-        let pinnedLast = layout.visibleCards(cards, pins: [cards[5].reference], expanded: false)
-        XCTAssertEqual(pinnedLast.shown.map(\.reference.number), [1, 2, 3, 6])
-        XCTAssertEqual(pinnedLast.hidden, 2)
+        // One pin leaves room for two more cards before Show more.
+        let onePin = layout.visibleCards(cards, pins: [cards[5].reference], expanded: false)
+        XCTAssertEqual(onePin.shown.map(\.reference.number), [1, 2, 6])
+        XCTAssertEqual(onePin.hidden, 3)
+        // More pins than the limit all show, and nothing else does until Show more.
+        let manyPins = layout.visibleCards(cards, pins: cards[2...].map(\.reference), expanded: false)
+        XCTAssertEqual(manyPins.shown.map(\.reference.number), [3, 4, 5, 6])
+        XCTAssertEqual(manyPins.hidden, 2)
         let expanded = layout.visibleCards(cards, pins: [cards[5].reference], expanded: true)
         XCTAssertEqual(expanded.shown.count, 6)
         XCTAssertEqual(expanded.hidden, 0)

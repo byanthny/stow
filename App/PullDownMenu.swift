@@ -20,10 +20,15 @@ struct PullDownMenu: NSViewRepresentable {
     var identifier: String?
     var tint: Color?
     var font: NSFont?
+    /// A symbol face's size and weight, so it matches the icon buttons beside it.
+    var symbolSize: CGFloat = 13
+    var symbolWeight: NSFont.Weight = .regular
 
     func makeNSView(context: Context) -> NSPopUpButton {
         let button = NSPopUpButton(frame: .zero, pullsDown: true)
         button.isBordered = symbol == nil
+        // Symbol faces drop the pull-down arrow.
+        if symbol != nil { (button.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow }
         button.contentTintColor = tint.map(NSColor.init)
         context.coordinator.shownTint = tint
         button.toolTip = label
@@ -54,7 +59,8 @@ struct PullDownMenu: NSViewRepresentable {
         let menu = NSMenu()
         // A pull-down button draws its first item as the face and leaves it out of the open menu.
         let face = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        face.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: label) }
+        face.image = symbol.flatMap { NSImage(systemSymbolName: $0, accessibilityDescription: label) }?
+            .withSymbolConfiguration(.init(pointSize: symbolSize, weight: symbolWeight))
         menu.addItem(face)
         var index = 0
         for (number, section) in sections.enumerated() {

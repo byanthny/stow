@@ -245,7 +245,7 @@ struct GitHubTests {
             #"{"data":{"repository":{"pullRequest":{"statusCheckRollup":{"contexts":{"nodes":[{"__typename":"StatusContext","context":"Legacy","state":"SUCCESS","targetUrl":"https://example.com/status"}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}}"#
         )
         let reviews1 = json(
-            #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[{"author":{"login":"reviewer"},"state":"APPROVED"}],"pageInfo":{"hasNextPage":true,"endCursor":"reviews-2"}}}}}}"#
+            #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[{"author":{"login":"reviewer"},"state":"APPROVED"}],"pageInfo":{"hasNextPage":true,"endCursor":"reviews-2"}},"commits":{"nodes":[{"commit":{"messageHeadline":"Older synthetic commit","committedDate":"2026-01-01T00:00:00Z"}},{"commit":{"messageHeadline":"Newest synthetic commit","committedDate":"2026-01-02T00:00:00Z"}}]}}}}}"#
         )
         let reviews2 = json(
             #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}"#
@@ -269,6 +269,9 @@ struct GitHubTests {
         #expect(details.unresolvedThreadCount == 1)
         #expect(details.latestComment == "Newest synthetic comment")
         #expect(details.latestCommentAuthor == "newer")
+        // Commits come with the first reviews page, newest first, and need no request of their own.
+        #expect(details.commits?.map(\.headline) == ["Newest synthetic commit", "Older synthetic commit"])
+        #expect(await transport.count == 6)
     }
 
     @Test func lazyDetailsBoundPagesItemsNamesAndLinks() async throws {

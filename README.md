@@ -39,7 +39,7 @@ Use Xcode 16.4 or later with its command line tools selected. Open the checked-i
 open Stow.xcodeproj
 ```
 
-Choose the **Stow** scheme and run. Xcode downloads the pinned MarkdownUI dependency on the first build. XcodeGen is only needed when changing `project.yml`; project generation is not a setup prerequisite.
+Choose the **Stow** scheme and run. Stow has no third-party dependencies. XcodeGen is only needed when changing `project.yml`; project generation is not a setup prerequisite.
 
 From the repository root:
 
@@ -55,12 +55,13 @@ The scripts put their output in `build/`. Pass another directory as the second b
 
 For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [installation](docs/install.md).
 
-- Create a note with **Command-N**. Switch between editing and Markdown preview from the note controls.
-- Keep code snippets in notes. Inline code and fenced code blocks are styled as code while you type and in the preview.
+- Create a note with **Command-N**. Its first line is its title. Markdown shows as you type: headings, bold, italic, strikethrough, quotes, lists, links, and code. The marks stay visible, and the file stays plain Markdown.
+- Keep code snippets in notes. Inline code and fenced code blocks show in a fixed-width font.
+- Open a link in a note with **Command**-click, or **Open Link** in its context menu. An open note on the board shows a few lines, grows to all of its text while you type in it, and shrinks back when you click elsewhere. Its header buttons show the Markdown file, export it, or delete the note.
 - Paste a canonical `https://github.com/example/project/pull/42` URL outside the editor to pin a pull request. Text following one URL becomes an attached note. Other or ambiguous text stays intact as a note.
 - Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note into its own window with the arrow button in its header. Use **Command-0** or the Dock icon to reopen the board.
-- The board shows **Needs you**, **Notes**, then **Waiting**. Section titles stay visible while you scroll, and each pull request section shows three cards before **Show more**. Click **Needs you** or **Waiting** to collapse it; Stow remembers the choice. Notes show as one-line rows: click one to open it, opening another closes it, and the pop-out button gives a note its own window. Change the order, the card count, how notes open, and whether the header shows the title in Settings → **Board**.
+- The board shows **Needs you**, **Notes**, then **Waiting**. Section titles stay visible while you scroll, and each pull request section shows three cards before **Show more**. Pinned cards come first and count toward the three, but always show. Click a section's title to collapse it; Stow remembers the choice. Each card shows its repository's name in that repository's own color, and a GitHub-style icon for its checks: a green check when they passed, a red cross when they failed, and an amber dot while they run. Notes show as one-line rows: click one to open it to a few lines, keep as many open as you like, and the one you type in opens fully. The pop-out button gives a note its own window. Each card says when its pull request was last active, like "Active 2h ago", and a small clock marks a card Stow couldn't refresh. Expanding a card shows its checks, reviews, latest comment, and last three commits, fetched in the same request as its reviews. Change the order, the card count, whether notes start folded, and whether the header shows the title in Settings → **Board**.
 - On first launch, Stow asks before using GitHub; change it later in Settings. Install [GitHub CLI](https://cli.github.com/) and authenticate outside Stow with `gh auth login --hostname github.com`. Stow uses that existing login; it does not extract or save a token. Use **Choose gh…** if automatic discovery fails.
 - Click a pull request to load details. Stow reads GitHub state; it does not merge, review, or modify pull requests.
 
@@ -92,4 +93,4 @@ See [contributing](CONTRIBUTING.md).
 
 ## License
 
-Stow is free software under the [GNU General Public License v3.0 or later](LICENSE). Third-party dependencies keep their own licenses; [their notices](App/ThirdPartyNotices.txt) ship in the app bundle.
+Stow is free software under the [GNU General Public License v3.0 or later](LICENSE).

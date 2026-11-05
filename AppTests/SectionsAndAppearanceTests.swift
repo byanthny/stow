@@ -208,9 +208,11 @@ final class SectionsAndAppearanceTests: XCTestCase {
         appearance.editorLineHeight = 1.8
         appearance.colors.text = "#DDEEFF"
         XCTAssertTrue(app.store.applyAppearance(appearance))
+        // Typing uses the note's font, not the title's.
         let updated = await waitUntil {
             panel.contentView?.layoutSubtreeIfNeeded()
-            return editor.font?.pointSize == 19 && editor.defaultParagraphStyle?.lineHeightMultiple == 1.8
+            return (editor.typingAttributes[.font] as? NSFont)?.pointSize == 19
+                && editor.defaultParagraphStyle?.lineHeightMultiple == 1.8
         }
         XCTAssertTrue(updated)
         XCTAssertTrue(textViews(in: panel.contentView).first === editor)
@@ -218,7 +220,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
         XCTAssertEqual(editor.selectedRange(), selection)
         XCTAssertEqual(app.store.note(note.id), originalNote)
         if let name = appearance.editorFontName, let expected = NSFont(name: name, size: 19) {
-            XCTAssertEqual(editor.font?.fontName, expected.fontName)
+            XCTAssertEqual((editor.typingAttributes[.font] as? NSFont)?.fontName, expected.fontName)
         }
         XCTAssertEqual(editor.textColor?.alphaComponent ?? 0, 1, accuracy: 0.001)
     }

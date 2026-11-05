@@ -77,7 +77,7 @@ final class ProfileTests: XCTestCase {
         let board = try XCTUnwrap(session.board)
         let noteWindow = try XCTUnwrap(session.noteWindows[note.id])
         XCTAssertTrue(noteWindow.isVisible)
-        XCTAssertEqual(noteWindow.title, "Stow note")
+        XCTAssertEqual(noteWindow.title, "Synthetic profile note")
 
         session.stop()
         XCTAssertNil(session.board)
@@ -91,6 +91,38 @@ final class ProfileTests: XCTestCase {
         guard case .acquired(let lock) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
         else { return XCTFail("Stopping must release the profile lock") }
         lock.release()
+    }
+
+    func testSettingsSharesThePinnedWindowsLevel() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder, detached: true)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        let note = try XCTUnwrap(session.store.state.notes.first)
+        session.showSettings()
+        let settings = try XCTUnwrap(session.settingsWindow)
+        // The board and detached notes start pinned.
+        XCTAssertEqual(settings.level, .floating, "A pinned board never covers Settings")
+
+        session.store.toggleBoardAlwaysOnTop()
+        session.store.toggleAlwaysOnTop(note.id)
+        XCTAssertEqual(session.board?.level, .normal)
+        XCTAssertEqual(session.noteWindows[note.id]?.level, .normal)
+        XCTAssertEqual(settings.level, .normal, "With nothing pinned, Settings is an ordinary window")
+
+        session.store.toggleAlwaysOnTop(note.id)
+        XCTAssertEqual(settings.level, .floating, "Nor does a note kept on top")
+
+        session.noteWindows[note.id]?.close()
+        XCTAssertEqual(settings.level, .normal, "Closing the last pinned window brings Settings back down")
+        session.store.detachNote(note.id)
+        XCTAssertEqual(settings.level, .floating)
+        session.store.deleteNote(note.id)
+        XCTAssertEqual(settings.level, .normal, "So does deleting its note")
     }
 
     func testTwoProfilesStayIsolated() async throws {
@@ -114,7 +146,7 @@ final class ProfileTests: XCTestCase {
         let mainNote = main.store.addNote("Synthetic note kept in Stow")
         let workNote = work.store.addNote("Synthetic note kept in Work")
         work.store.detachNote(workNote)
-        XCTAssertEqual(work.noteWindows[workNote]?.title, "Work note")
+        XCTAssertEqual(work.noteWindows[workNote]?.title, "Synthetic note kept in Work — Work")
         work.showSettings()
         XCTAssertEqual(work.settingsWindow?.title, "Work settings")
         let mainSaved = await main.store.flush()
@@ -2118,13 +2150,13 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(header(of: main).title, "Home")
         XCTAssertNil(header(of: main).tint)
         XCTAssertEqual(main.board.title, "Stow")
-        XCTAssertEqual(note.title, "Stow note")
+        XCTAssertEqual(note.title, "Synthetic profile note")
 
         try await manager.setAlwaysShowProfileName(true)
         XCTAssertTrue(manager.alwaysShowsProfileName)
         XCTAssertTrue(manager.showsProfileNames)
         XCTAssertEqual(main.board.title, "Home")
-        XCTAssertEqual(note.title, "Home note")
+        XCTAssertEqual(note.title, "Synthetic profile note — Home")
         XCTAssertEqual(header(of: main).tint, "#FF375F")
 
         try await manager.setAlwaysShowProfileName(false)

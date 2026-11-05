@@ -27,7 +27,6 @@ final class AppStore {
     var expandedPRs: Set<String> = []
     /// Board notes shown open this session; `boardLayout` decides the starting state.
     var expandedNoteIDs: Set<UUID> = []
-    @ObservationIgnored private var lastExpandedNoteID: UUID?
     var loadingDetails: Set<String> = []
     var accessoryResults: [UUID: AccessoryResult] = [:]
     var focusNoteID: UUID?
@@ -131,8 +130,7 @@ final class AppStore {
         }
         theme.apply(state.appearance)
         if !state.boardLayout.notesStartCollapsed {
-            let open = state.boardLayout.oneNoteOpenAtATime ? Array(state.notes.prefix(1)) : state.notes
-            expandedNoteIDs = Set(open.map(\.id))
+            expandedNoteIDs = Set(state.notes.map(\.id))
         }
         isLoaded = true
         if !storageNeedsRecovery {
@@ -192,13 +190,6 @@ final class AppStore {
     func setVisiblePullRequests(_ count: Int) {
         guard BoardLayout.visiblePullRequestRange.contains(count) else { return }
         state.boardLayout.visiblePullRequests = count
-        changed()
-    }
-
-    func setNotesCanCollapse(_ allowed: Bool) {
-        state.boardLayout.notesCanCollapse = allowed
-        // Turning collapsing off must never leave Notes hidden.
-        if !allowed { state.collapsedSections.removeAll { $0 == BoardLayout.Section.notes.rawValue } }
         changed()
     }
 
@@ -545,8 +536,7 @@ final class AppStore {
 
     private func expandNote(_ id: UUID) {
         discardEmptyDraft(keeping: id)
-        if state.boardLayout.oneNoteOpenAtATime { expandedNoteIDs = [id] } else { expandedNoteIDs.insert(id) }
-        lastExpandedNoteID = id
+        expandedNoteIDs.insert(id)
     }
 
     func setShowsBoardTitle(_ shown: Bool) {
@@ -591,13 +581,9 @@ final class AppStore {
         changed()
     }
 
-    func setOneNoteOpenAtATime(_ enabled: Bool) {
-        state.boardLayout.oneNoteOpenAtATime = enabled
-        if enabled, expandedNoteIDs.count > 1 {
-            // Keep the note opened most recently; close the rest.
-            expandedNoteIDs = lastExpandedNoteID.map { expandedNoteIDs.contains($0) ? [$0] : [] } ?? []
-        }
-        changed()
+    /// Ends a focus request once its note's editor has focus.
+    func focusTaken(by id: UUID) {
+        if focusNoteID == id { focusNoteID = nil }
     }
 
     func requestFocus(_ id: UUID) {
@@ -1056,7 +1042,7 @@ final class AppStore {
     }
 
     static func openLink(_ url: URL) {
-        guard ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
+        guard url.isWebLink else { return }
         NSWorkspace.shared.open(url)
     }
 }

@@ -4,13 +4,13 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 
 | component | responsibility |
 | --- | --- |
-| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, and cache reconciliation |
+| `StowCore` | models, live Markdown storage and metadata index, Markdown styling ranges, repository colors, transfer codecs, paste parsing, attention classification, and cache reconciliation |
 | `StowGitHub` | GitHub CLI process transport, GraphQL decoding and pagination, refresh coordination, and lazy details |
 | `StowExtensionSDK` | plain versioned request, descriptor, configuration, and snapshot values plus `AccessoryProvider` |
 | `StowExtensions` | provider registry, validation, timeout, cancellation, cache, and adapters |
 | `StowSampleExtension` | optional synthetic provider with no network or host-state dependency |
 | `StowCore` profiles | profile identity, the index, discovery, deletion to the Trash, and owner selection and grouping |
-| `App` | AppKit lifecycle and panels, SwiftUI rendering, native text editing, and observable orchestration |
+| `App` | AppKit lifecycle and panels, SwiftUI rendering, native text editing that applies those styling ranges, and observable orchestration |
 
 ## State and windows
 
@@ -42,12 +42,12 @@ Owners are the repository owners in pull request references, compared ignoring c
 
 `GHProcessTransport` starts `gh api` directly for `github.com`, supplies JSON over standard input, and drains process output with bounded buffers. It reuses the CLI’s existing authentication and sanitizes user-facing errors. Stow does not have a token store.
 
-`GHClient` discovers the authenticated viewer, fetches authored and directly requested pull requests, resolves pins, paginates connections, and loads details on demand. Details fetch at most three pages per connection and keep at most 100 checks and 100 reviews, preferring checks that need attention, so a very large pull request cannot bloat the saved index. A new installation leaves GitHub off until the user opts in. `RefreshCoordinator` coalesces overlapping refreshes. The app refreshes on activation and periodically while GitHub is enabled.
+`GHClient` discovers the authenticated viewer, fetches authored and directly requested pull requests, resolves pins, paginates connections, and loads details on demand. Details fetch at most three pages per connection and keep at most 100 checks and 100 reviews, preferring checks that need attention, so a very large pull request cannot bloat the saved index. The last three commits come with the first page of reviews. A new installation leaves GitHub off until the user opts in. `RefreshCoordinator` coalesces overlapping refreshes. The app refreshes on activation and periodically while GitHub is enabled.
 
 Classification distinguishes observed facts from incomplete readiness. Conflicts, requested changes, failing checks, direct review requests, and complete merge readiness can need attention. Draft and terminal states override readiness. Unknown checks, mergeability, review data, or incomplete pagination cannot establish “Ready to merge.” “Behind base branch” is informational. Pins preserve watched cards; dismissals hide cards without deleting notes. Terminal unpinned cards expire 24 hours after first observation.
 
 ## Dependency direction
 
-The SDK depends only on Foundation. Core may store SDK configuration values, but providers receive only their explicit request. The host owns placement and rendering. The app links the modules; module tests do not depend on the app or MarkdownUI.
+The SDK depends only on Foundation. Core may store SDK configuration values, but providers receive only their explicit request. The host owns placement and rendering. The app links the modules; module tests do not depend on the app.
 
 The JSON adapter exercises a serialization boundary in-process. It does not launch an executable, isolate code, or promise a stable binary ABI. A later host may carry the same values over a process transport without introducing macOS view types into the contract.
