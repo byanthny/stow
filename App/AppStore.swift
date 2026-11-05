@@ -1056,7 +1056,7 @@ final class AppStore {
     }
 
     static func openLink(_ url: URL) {
-        guard ["https", "http"].contains(url.scheme?.lowercased() ?? "") else { return }
+        guard url.isWebLink else { return }
         NSWorkspace.shared.open(url)
     }
 }

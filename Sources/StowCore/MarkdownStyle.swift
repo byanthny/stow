@@ -32,22 +32,13 @@ public enum MarkdownStyle {
         let blocks = codeSpans.filter { $0.kind == .block }.map(\.range)
         let code = codeSpans.map(\.range)
         var spans = code.map { Span(kind: .code, range: $0) }
+        if let title = titleLine(in: text, outside: blocks) { spans.append(Span(kind: .title, range: title)) }
 
-        func overlaps(_ range: NSRange, _ ranges: [NSRange]) -> Bool {
-            ranges.contains { NSIntersectionRange($0, range).length > 0 }
-        }
-
-        // Line styles: the title, headings, quotes, and list markers. Lines inside fenced blocks stay code.
-        var hasTitle = false
+        // Line styles: headings, quotes, and list markers. Lines inside fenced blocks stay code.
         text.enumerateSubstrings(
             in: NSRange(location: 0, length: text.length), options: [.byLines, .substringNotRequired]
         ) { _, line, _, _ in
             guard line.length > 0, !overlaps(line, blocks) else { return }
-            let content = text.substring(with: line)
-            if !hasTitle, !content.allSatisfy(\.isWhitespace) {
-                hasTitle = true
-                spans.append(Span(kind: .title, range: line))
-            }
             if let match = headingPattern.firstMatch(in: source, range: line) {
                 let marks = match.range(at: 1)
                 spans.append(Span(kind: .heading(level: marks.length), range: line))
@@ -75,7 +66,7 @@ public enum MarkdownStyle {
         inline(underscoreItalicPattern, .italic)
 
         for match in linkPattern.matches(in: source, range: whole) where !overlaps(match.range, code) {
-            guard let url = webURL(text.substring(with: match.range(at: 3))) else { continue }
+            guard let url = URL(string: text.substring(with: match.range(at: 3))), url.isWebLink else { continue }
             let label = match.range(at: 2)
             spans.append(Span(kind: .link(url), range: label))
             spans.append(Span(kind: .marker, range: match.range(at: 1)))
@@ -84,18 +75,38 @@ public enum MarkdownStyle {
             spans.append(Span(kind: .marker, range: NSRange(location: tail, length: NSMaxRange(match.range) - tail)))
         }
         for match in bareLinkPattern.matches(in: source, range: whole) where !overlaps(match.range, code) {
-            guard let url = webURL(text.substring(with: match.range)) else { continue }
+            guard let url = URL(string: text.substring(with: match.range)), url.isWebLink else { continue }
             spans.append(Span(kind: .link(url), range: match.range))
         }
         return spans
     }
 
-    /// An http or https URL with a host, or nil.
-    private static func webURL(_ string: String) -> URL? {
-        guard let url = URL(string: string), let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
-            url.host?.isEmpty == false
-        else { return nil }
-        return url
+    /// A note's title: its first line with text outside fenced code, without heading marks.
+    public static func title(in source: String) -> String? {
+        let text = source as NSString
+        let blocks = MarkdownCode.spans(in: source).filter { $0.kind == .block }.map(\.range)
+        guard let line = titleLine(in: text, outside: blocks) else { return nil }
+        let title = text.substring(with: line).trimmingCharacters(in: .whitespaces).drop { $0 == "#" }
+            .trimmingCharacters(in: .whitespaces)
+        return title.isEmpty ? nil : title
+    }
+
+    /// The first line with text outside fenced code blocks.
+    private static func titleLine(in text: NSString, outside blocks: [NSRange]) -> NSRange? {
+        var title: NSRange?
+        text.enumerateSubstrings(
+            in: NSRange(location: 0, length: text.length), options: [.byLines, .substringNotRequired]
+        ) { _, line, _, stop in
+            guard line.length > 0, !overlaps(line, blocks), !text.substring(with: line).allSatisfy(\.isWhitespace)
+            else { return }
+            title = line
+            stop.pointee = true
+        }
+        return title
+    }
+
+    private static func overlaps(_ range: NSRange, _ ranges: [NSRange]) -> Bool {
+        ranges.contains { NSIntersectionRange($0, range).length > 0 }
     }
 
     private static func regex(_ pattern: String) -> NSRegularExpression {

@@ -148,7 +148,7 @@ struct PRCard: View {
                 }
             } label: {
                 Label(
-                    note.markdown.split(separator: "\n").first.map(String.init) ?? "Personal note",
+                    note.title ?? "Personal note",
                     systemImage: "doc.text"
                 )
                 .lineLimit(1).font(theme.font(size: 10))

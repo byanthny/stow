@@ -224,11 +224,6 @@ extension Note {
         profileName.map { "\(boardTitle) — \($0)" } ?? boardTitle
     }
 
-    /// The first non-empty line without Markdown heading marks, for one-line rows.
-    var boardTitle: String {
-        let line = markdown.split(whereSeparator: \.isNewline)
-            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            .map { $0.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.trimmingCharacters(in: .whitespaces) }
-        return line.flatMap { $0.isEmpty ? nil : $0 } ?? "Untitled note"
-    }
+    /// The note's title for one-line rows.
+    var boardTitle: String { title ?? "Untitled note" }
 }

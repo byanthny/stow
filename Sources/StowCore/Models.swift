@@ -58,6 +58,11 @@ public struct Note: Codable, Equatable, Sendable, Identifiable {
     }
 }
 
+extension Note {
+    /// The note's title: its first line with text outside fenced code, without heading marks.
+    public var title: String? { MarkdownStyle.title(in: markdown) }
+}
+
 public struct CheckSummary: Codable, Equatable, Sendable {
     public var name: String
     public var state: String

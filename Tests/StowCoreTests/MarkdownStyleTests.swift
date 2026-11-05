@@ -19,6 +19,14 @@ final class MarkdownStyleTests: XCTestCase {
         XCTAssertEqual(styled("```\ncode first\n```", .title), [], "A fenced block is never the title")
     }
 
+    func testOneTitleRuleForEditorRowsAndExports() {
+        XCTAssertEqual(MarkdownStyle.title(in: "  ## Groceries  \n- milk"), "Groceries")
+        XCTAssertEqual(MarkdownStyle.title(in: "```swift\nlet x = 1\n```\nAfter the code"), "After the code")
+        XCTAssertNil(MarkdownStyle.title(in: "\n   \n"))
+        XCTAssertNil(MarkdownStyle.title(in: "#"))
+        XCTAssertEqual(Note(markdown: "```\ncode\n```\nPlan").title, "Plan")
+    }
+
     func testHeadingsQuotesAndListMarkers() {
         let source = "# Title\n## Sub\n> quoted\n- one\n12. two\n#nospace"
         XCTAssertEqual(styled(source, .heading(level: 1)), ["# Title"])

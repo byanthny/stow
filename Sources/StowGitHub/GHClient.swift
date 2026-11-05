@@ -164,7 +164,7 @@ extension GHClient {
     private static func displayName(_ name: String) -> String { String(name.prefix(200)) }
     private static func safeURL(_ string: String?) -> URL? {
         guard let string, string.utf8.count <= 2_048, let url = URL(string: string),
-            url.scheme == "https" || url.scheme == "http"
+            url.isWebLink
         else {
             return nil
         }

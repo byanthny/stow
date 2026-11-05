@@ -145,7 +145,7 @@ struct NativeEditor: NSViewRepresentable {
                 let heading = headingScales[min(level, headingScales.count) - 1]
                 let scale = max(heading, span.range == title ? titleScale : 1)
                 storage.addAttribute(.font, value: scaled(base, by: scale, weight: .bold), range: span.range)
-            default: break
+            case .bold, .italic, .strikethrough, .code, .link, .quote, .marker: break
             }
         }
         for span in spans {
