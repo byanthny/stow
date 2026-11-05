@@ -139,6 +139,18 @@ final class UpdateTests: XCTestCase {
         XCTAssertEqual(try source.releases(from: Data(list.utf8)).map(\.version.description), ["1.0.0"])
     }
 
+    func testAStableReleaseOnceSeenKeepsPrereleasesAway() throws {
+        let running = try XCTUnwrap(ReleaseVersion("1.0.0"))
+        var settings = UpdateSettings()
+        XCTAssertEqual(
+            settings.record(.success([try release("v1.0.0")]), running: running, at: .now), .upToDate)
+        // Ten betas later, GitHub's short list holds no stable release, and none is offered still.
+        let betas = try (1...10).map { try release("v1.1.0-beta.\($0)", prerelease: true) }
+        XCTAssertEqual(settings.record(.success(betas), running: running, at: .now), .upToDate)
+        XCTAssertNil(settings.available)
+        XCTAssertTrue(try JSONDecoder().decode(UpdateSettings.self, from: JSONEncoder().encode(settings)).sawStableRelease)
+    }
+
     func testRecordingAChecksResult() throws {
         let running = try XCTUnwrap(ReleaseVersion("0.2.1"))
         let time = Date(timeIntervalSince1970: 1_800_000_000)

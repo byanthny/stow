@@ -220,9 +220,12 @@ public struct UpdatePolicy: Equatable, Sendable {
         return elapsed >= interval || elapsed < 0
     }
 
-    /// The newest release above the running version. Pre-releases count only until a stable release is out.
-    public func newest(_ releases: [StowRelease], above running: ReleaseVersion) -> StowRelease? {
-        let stableIsOut = releases.contains { !$0.isPrerelease }
+    /// The newest release above the running version. Pre-releases count only until a stable release is out,
+    /// in `releases` or, by `stableIsOut`, seen before.
+    public func newest(
+        _ releases: [StowRelease], above running: ReleaseVersion, stableIsOut: Bool = false
+    ) -> StowRelease? {
+        let stableIsOut = stableIsOut || releases.contains { !$0.isPrerelease }
         return releases.filter { (!stableIsOut || !$0.isPrerelease) && running < $0.version }
             .max { $0.version < $1.version }
     }
@@ -244,10 +247,14 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
     public var available: StowRelease?
     /// The version whose notice was dismissed; a newer release shows again.
     public var dismissedVersion: ReleaseVersion?
+    /// Set once a check finds a stable release; pre-releases aren't offered after that.
+    public var sawStableRelease = false
 
     public init() {}
 
-    private enum CodingKeys: String, CodingKey { case checksForUpdates, lastCheckAt, available, dismissedVersion }
+    private enum CodingKeys: String, CodingKey {
+        case checksForUpdates, lastCheckAt, available, dismissedVersion, sawStableRelease
+    }
 
     /// A field that doesn't decode reads as its default.
     public init(from decoder: any Decoder) throws {
@@ -256,6 +263,7 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
         lastCheckAt = try? container.decodeIfPresent(Date.self, forKey: .lastCheckAt)
         available = try? container.decodeIfPresent(StowRelease.self, forKey: .available)
         dismissedVersion = try? container.decodeIfPresent(ReleaseVersion.self, forKey: .dismissedVersion)
+        sawStableRelease = (try? container.decodeIfPresent(Bool.self, forKey: .sawStableRelease)) ?? false
     }
 
     /// The release to offer: newer than `running`, with checks on and its notice not dismissed.
@@ -273,7 +281,8 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
         lastCheckAt = time
         switch result {
         case .success(let releases):
-            available = policy.newest(releases, above: running)
+            sawStableRelease = sawStableRelease || releases.contains { !$0.isPrerelease }
+            available = policy.newest(releases, above: running, stableIsOut: sawStableRelease)
             return available.map(UpdateOutcome.available) ?? .upToDate
         case .failure(let error):
             return .failed(error)
