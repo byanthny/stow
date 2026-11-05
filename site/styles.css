@@ -73,9 +73,10 @@ a:hover {
   color: var(--accent-hover);
 }
 
+/* In-text links keep an underline at 3:1 or better against the cards. */
 p a {
   text-decoration: underline;
-  text-decoration-color: var(--outline-hover);
+  text-decoration-color: var(--muted);
   text-underline-offset: 0.2em;
 }
 
