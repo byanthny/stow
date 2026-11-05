@@ -230,6 +230,8 @@ struct NativeEditor: NSViewRepresentable {
         var focusedRequestID: UUID?
         var appliedAppearance: AppearanceSettings?
         private var clickMonitor: Any?
+        /// The board note being edited, while its window is watched.
+        private weak var watchedEditor: NSTextView?
         /// A focus change the note hasn't heard about yet.
         private var reportedEditing: Bool?
         private var waitsForRelease = false
@@ -252,6 +254,16 @@ struct NativeEditor: NSViewRepresentable {
         /// While a board note is being edited, a click anywhere else in its window ends the editing.
         func editingChanged(_ editing: Bool, in editor: NSTextView) {
             if editing && parent.fitsText != nil { watchClicks(around: editor) } else { stopWatchingClicks() }
+            report(editing)
+        }
+
+        /// With another window or app in front, a board note shrinks but keeps its cursor, and grows again on return.
+        @objc private func windowKeyChanged(_ notification: Notification) {
+            guard let editor = watchedEditor, editor.window?.firstResponder === editor else { return }
+            report(notification.name == NSWindow.didBecomeKeyNotification)
+        }
+
+        private func report(_ editing: Bool) {
             reportedEditing = editing
             guard !waitsForRelease else { return }
             waitsForRelease = true
@@ -274,6 +286,11 @@ struct NativeEditor: NSViewRepresentable {
 
         private func watchClicks(around editor: NSTextView) {
             guard clickMonitor == nil else { return }
+            watchedEditor = editor
+            for name in [NSWindow.didResignKeyNotification, NSWindow.didBecomeKeyNotification] {
+                NotificationCenter.default.addObserver(
+                    self, selector: #selector(windowKeyChanged(_:)), name: name, object: editor.window)
+            }
             clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak editor] event in
                 if let editor, let window = editor.window, event.window === window, window.firstResponder === editor,
                     let scroll = editor.enclosingScrollView,
@@ -288,6 +305,10 @@ struct NativeEditor: NSViewRepresentable {
         func stopWatchingClicks() {
             if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
             clickMonitor = nil
+            for name in [NSWindow.didResignKeyNotification, NSWindow.didBecomeKeyNotification] {
+                NotificationCenter.default.removeObserver(self, name: name, object: nil)
+            }
+            watchedEditor = nil
         }
     }
 }
