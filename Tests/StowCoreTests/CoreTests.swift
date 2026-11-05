@@ -135,6 +135,15 @@ final class AttentionTests: XCTestCase {
         failing.reviewDecision = nil
         XCTAssertNil(failing.cardStatus(under: classify(failing)).headline)
 
+        var running = ready()
+        running.checksState = "PENDING"
+        running.reviewDecision = "REVIEW_REQUIRED"
+        XCTAssertEqual(
+            running.cardStatus(under: classify(running)),
+            CardStatus(
+                headline: "Review pending", tone: .pending, notes: [],
+                checks: ChecksStatus(label: "Checks running", tone: .pending)))
+
         var changes = ready()
         changes.reviewDecision = "CHANGES_REQUESTED"
         XCTAssertEqual(
