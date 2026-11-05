@@ -43,7 +43,7 @@ extension PullRequestSnapshot {
         case "SUCCESS": ChecksStatus(label: "Checks passed", tone: .success)
         case "FAILURE", "ERROR": ChecksStatus(label: "Checks failing", tone: .failure)
         case "PENDING", "EXPECTED": ChecksStatus(label: "Checks running", tone: .pending)
-        default: ChecksStatus(label: checksKnown ? "No checks" : "Checks unknown", tone: nil)
+        default: ChecksStatus(label: checksKnown && checksState == nil ? "No checks" : "Checks unknown", tone: nil)
         }
     }
 }

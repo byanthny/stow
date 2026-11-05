@@ -107,7 +107,7 @@ final class AttentionTests: XCTestCase {
             ("SUCCESS", true, "Checks passed", .success), ("FAILURE", true, "Checks failing", .failure),
             ("ERROR", true, "Checks failing", .failure), ("PENDING", true, "Checks running", .pending),
             ("EXPECTED", true, "Checks running", .pending), (nil, true, "No checks", nil),
-            (nil, false, "Checks unknown", nil),
+            (nil, false, "Checks unknown", nil), ("NEUTRAL", true, "Checks unknown", nil),
         ]
         for (state, known, label, tone) in cases {
             var pullRequest = ready()
