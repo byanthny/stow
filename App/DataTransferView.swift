@@ -200,7 +200,7 @@ enum DataTransferActions {
     }
 
     static func showNotesFolder(store: AppStore) {
-        if !NSWorkspace.shared.open(store.notesDirectory) {
+        if !store.notesDirectory.isRealFolder || !NSWorkspace.shared.open(store.notesDirectory) {
             showError("The notes folder could not be opened. Check the storage folder and try again.")
         }
     }
