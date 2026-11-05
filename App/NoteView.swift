@@ -37,21 +37,30 @@ struct NoteView: View {
                             .font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted).lineLimit(1)
                     }
                     Spacer(minLength: 0)
+                    headerButton("folder", "Show Markdown file", "note.showFile") {
+                        DataTransferActions.showNoteFile(note, store: store)
+                    }
+                    headerButton("square.and.arrow.up", "Export Markdown…", "note.export") {
+                        DataTransferActions.exportNote(note, store: store)
+                    }
+                    headerButton("trash", "Delete note…", "note.delete") { confirmDelete() }
                     if detached {
-                        QuietIconButton(
-                            symbol: note.isAlwaysOnTop ? "pin.fill" : "pin", label: "Always on top", scale: .small
+                        headerButton(
+                            note.isAlwaysOnTop ? "pin.fill" : "pin", "Always on top", "note.alwaysOnTop", scale: .small
                         ) {
                             store.toggleAlwaysOnTop(noteID)
                         }
                     } else {
-                        QuietIconButton(symbol: "arrow.up.right.square", label: "Detach note") {
-                            store.detachNote(noteID)
-                        }
+                        headerButton("arrow.up.right.square", "Detach note", "note.detach") { store.detachNote(noteID) }
                     }
-                    PullDownMenu(
-                        symbol: "ellipsis", sections: actions(for: note), label: "Note actions",
-                        identifier: "note.actions", tint: theme.color(.muted)
-                    ).fixedSize()
+                    let menu = actions(for: note)
+                    if !menu.isEmpty {
+                        PullDownMenu(
+                            symbol: "ellipsis", sections: menu, label: "Note actions",
+                            identifier: "note.actions", tint: theme.color(.muted), symbolSize: detached ? 13 : 9,
+                            symbolWeight: detached ? .regular : .medium
+                        ).fixedSize()
+                    }
                 }
                 .windowHeaderRow(headerChrome, horizontal: 10, vertical: 0)
                 .padding(.top, headerChrome.isInline ? 0 : 6)
@@ -102,19 +111,30 @@ struct NoteView: View {
         }
     }
 
+    /// Board notes use the card icon size; a detached note's header matches the board's window header.
+    @ViewBuilder private func headerButton(
+        _ symbol: String, _ label: String, _ identifier: String, scale: Image.Scale = .medium,
+        action: @escaping () -> Void
+    ) -> some View {
+        if detached {
+            QuietIconButton(symbol: symbol, label: label, scale: scale, action: action)
+        } else {
+            CardIconButton(symbol: symbol, label: label, identifier: identifier, scale: scale, action: action)
+        }
+    }
+
+    /// The ⋯ menu offers the sample accessory only once it is on in Settings, or already on for this note.
     private func actions(for note: Note) -> [[PullDownMenu.Item]] {
-        let sample = store.sampleEnabled(noteID: noteID) ? "Disable sample accessory" : "Enable sample accessory"
-        let link: [[PullDownMenu.Item]] =
-            note.pullRequest == nil
-            ? [] : [[.init(title: "Remove pull request link") { store.unlinkPullRequest(noteID) }]]
-        return link + [
-            [.init(title: sample) { store.toggleSample(noteID: noteID) }],
-            [
-                .init(title: "Show Markdown file") { DataTransferActions.showNoteFile(note, store: store) },
-                .init(title: "Export Markdown…") { DataTransferActions.exportNote(note, store: store) },
-            ],
-            [.init(title: "Delete note…") { confirmDelete() }],
-        ]
+        var sections: [[PullDownMenu.Item]] = []
+        if note.pullRequest != nil {
+            sections.append([.init(title: "Remove pull request link") { store.unlinkPullRequest(noteID) }])
+        }
+        let sampleOnHere = store.sampleEnabled(noteID: noteID)
+        if sampleOnHere || store.sampleEnabled() {
+            let title = sampleOnHere ? "Disable sample accessory" : "Enable sample accessory"
+            sections.append([.init(title: title) { store.toggleSample(noteID: noteID) }])
+        }
+        return sections
     }
 
     /// Deleting a note also deletes its Markdown file, so a note with text asks first.
@@ -140,8 +160,9 @@ struct DetachedNoteLauncher: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "arrow.up.right.square").foregroundStyle(.stowMuted)
-                Text(note.markdown.split(separator: "\n").first.map(String.init) ?? "Untitled note")
+                Image(systemName: "arrow.up.right.square").font(theme.font(size: 9, weight: .medium))
+                    .foregroundStyle(.stowMuted)
+                Text(verbatim: note.boardTitle)
                     .font(theme.font(size: 12)).lineLimit(1)
                 Spacer()
                 Text("Open").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
@@ -204,7 +225,9 @@ struct CollapsedNoteRow: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(note.boardTitle).accessibilityHint("Opens the note")
-            QuietIconButton(symbol: "arrow.up.right.square", label: "Detach note") { store.detachNote(note.id) }
+            CardIconButton(symbol: "arrow.up.right.square", label: "Detach note", identifier: "note.detach") {
+                store.detachNote(note.id)
+            }
         }
         .padding(.horizontal, 10).padding(.vertical, 8)
         .background(.stowNote, in: RoundedRectangle(cornerRadius: 9))

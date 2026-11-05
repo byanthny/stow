@@ -350,6 +350,23 @@ final class AppearanceIntegrationTests: XCTestCase {
         return (window, buttons(in: hosting))
     }
 
+    func testNoteMenuAppearsOnlyWithSomethingToOffer() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        let id = store.addNote("Synthetic note")
+        func noteMenu() -> NSPopUpButton? {
+            let (window, buttons) = hostPullDowns(NoteView(store: store, noteID: id) {}.themed(by: store.theme))
+            defer { window.close() }
+            return buttons.first { $0.accessibilityLabel() == "Note actions" }
+        }
+        XCTAssertNil(noteMenu(), "A note with no link and the sample off has no ⋯ menu")
+
+        store.toggleSample()
+        let titles = try XCTUnwrap(noteMenu()?.menu?.items.map(\.title))
+        XCTAssertTrue(titles.contains("Enable sample accessory"))
+    }
+
     func testDetachedNoteWindowsAreNamedAfterTheirNotes() {
         XCTAssertEqual(Note(markdown: "# Groceries\n- synthetic").windowTitle(profileName: nil), "Groceries")
         XCTAssertEqual(Note(markdown: "Standup\nnotes").windowTitle(profileName: "Work"), "Standup — Work")

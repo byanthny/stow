@@ -42,7 +42,7 @@ struct SettingsView: View {
                     SettingsToggle(
                         "Sample board accessory",
                         isOn: Binding(get: { store.sampleEnabled() }, set: { _ in store.toggleSample() }))
-                    Text("A small bundled example. Note accessories can be enabled from each note’s actions menu.")
+                    Text("A small bundled example. Once it’s on, each note’s ⋯ menu can add it to that note.")
                         .font(theme.font(size: 11)).foregroundStyle(.secondary)
                     ForEach(store.state.extensionInstances.filter { $0.moduleID != store.sampleID }) { instance in
                         HStack {
