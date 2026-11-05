@@ -102,6 +102,14 @@ final class AttentionTests: XCTestCase {
         XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Checks pending"))
     }
 
+    func testPullRequestLinksStayOnGitHub() {
+        let tricked = PullRequestReference(host: "github.com@evil.example", owner: "byanthny", repository: "stow", number: 12)
+        XCTAssertEqual(tricked.url.absoluteString, "https://github.com/byanthny/stow/pull/12")
+        let odd = PullRequestReference(host: "not a host", owner: "a?b", repository: "c#d", number: 3)
+        XCTAssertEqual(odd.url.host, "github.com")
+        XCTAssertEqual(odd.url.path, "/a?b/c#d/pull/3")
+    }
+
     func testChecksShowGitHubStyleStatus() {
         let cases: [(String?, Bool, String, AttentionTone?)] = [
             ("SUCCESS", true, "Checks passed", .success), ("FAILURE", true, "Checks failing", .failure),
