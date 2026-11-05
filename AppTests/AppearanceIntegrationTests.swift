@@ -153,6 +153,14 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertNil(editor.typingAttributes[.noteLink])
     }
 
+    func testLinksTheTextViewFindsGoThroughTheWebLinkCheck() {
+        let coordinator = NativeEditor(text: .constant(""), focusRequestID: UUID(), appearance: .paper).makeCoordinator()
+        let editor = NSTextView()
+        // Claimed, then refused by Stow's web-link check.
+        XCTAssertTrue(coordinator.textView(editor, clickedOnLink: URL(fileURLWithPath: "/Applications"), at: 0))
+        XCTAssertTrue(coordinator.textView(editor, clickedOnLink: "javascript:alert(1)", at: 0))
+    }
+
     func testWebLinksOpenFromTheirContextMenu() throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 200), styleMask: [.titled], backing: .buffered,
