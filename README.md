@@ -16,7 +16,7 @@ Checking for updates is off until you turn it on in Settings → **Updates**. St
 
 ## Requirements
 
-- **Running:** macOS 14 or later. Hands-on testing so far covers macOS 26 on Apple silicon, and automated smoke checks pass on Intel with macOS 15. Stow is untested on macOS 14; see [verification](docs/verification.md).
+- **Running:** macOS 14 or later. Hands-on testing so far covers macOS 26 on Apple silicon and Intel, and automated smoke checks pass on Intel with macOS 15. Stow is untested on macOS 14; see [verification](docs/verification.md).
 - **Building:** Xcode 16.4 or later. Xcode 16.4 needs macOS 15.3 or later, so Stow can't be built on macOS 14.
 - **Pull requests (optional):** [GitHub CLI](https://cli.github.com/), signed in to `github.com`.
 
