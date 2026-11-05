@@ -8,7 +8,7 @@ Stow stores its local setup in `~/Library/Application Support/Stow/`. `state.jso
 
 The folder above is the first profile, named "Stow". Additional profiles live in `profiles/<UUID>/` inside it, each with its own `state.json`, notes, `.stow.lock`, and backups. A profile folder can hold an `identity.json` with its name, color, and optional icon. A small `profiles.json` index records profile order, which profiles were open at quit, and display settings; it holds no notes, cards, or account data. A `.stow-app.lock` file lets only one Stow process run at a time, and each profile has its own lock.
 
-Profiles organize work; they are not a security boundary. Every profile lives in the same macOS account, and anything with access to that account can read all of them. Profile names appear in window titles, which apps with screen-recording or accessibility access can read.
+Profiles organize work; they are not a security boundary. Every profile lives in the same macOS account, and anything with access to that account can read all of them. Profile names, and the title line of each detached note, appear in window titles, which apps with screen-recording or accessibility access can read.
 
 Deleting a profile moves its folder to the Trash, where it stays readable until you empty the Trash. Stow never deletes profile data outright.
 
@@ -16,7 +16,7 @@ A profile's backup contains only that profile, but it includes cached cards from
 
 Every profile uses the account `gh` is signed in as. If a refresh answers as a different account, Stow discards the result, pauses that profile's GitHub use, and asks before clearing its cached cards. A new profile, or a profile folder Stow has not seen before, starts with GitHub and accessories off.
 
-Use Settings → **Show data folder**, **Open notes folder**, or a note's **Show Markdown file** action to reveal the relevant location. Do not manually rename managed note files. Private repository titles, comments, branch names, note contents, and module settings can remain on disk, including in retained backups.
+Use Settings → **Show data folder**, **Open notes folder**, or a note's **Show Markdown file** action to reveal the relevant location. Do not manually rename managed note files. Private repository titles, comments, recent commit messages, branch names, note contents, and module settings can remain on disk, including in retained backups.
 
 There is no analytics, telemetry, cloud sync, or Stow account. Notes are not sent to GitHub. Notes show Markdown as text and never fetch images or links. GitHub is off on a new installation until you choose **Use GitHub**; requests then use the existing GitHub CLI login. Opening a link launches the system browser. Stow currently supports `github.com` only.
 

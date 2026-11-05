@@ -20,7 +20,7 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Manual acceptance
 
-- Start with synthetic state. Create, edit, detach, close, reopen, and explicitly delete notes. Verify selection, undo, copy/paste, Markdown styling while typing, Command-click links, a long note growing on the board, and the last edit after quit and restart.
+- Start with synthetic state. Create, edit, detach, close, reopen, and explicitly delete notes. Verify selection, undo, copy/paste, Markdown styling while typing, Command-click links, a long note growing while you type in it and shrinking after a click elsewhere, the note header's file, export, and delete buttons, and the last edit after quit and restart. Collapse and expand Notes like the other sections, open Settings over a pinned board, pin a card past the first three in a section, and check repository colors and check icons in a light and a dark theme.
 - The board's and each detached note's headers share the title bar row with the window buttons. Drag each window by the header's empty space, and double-click there to zoom or minimize as the system's title bar setting says. Click **Start typing a note…** and type: the note stays. Start another and leave it empty, then open a different note or press **+**: the empty one goes away. Pin, add a personal note to, and dismiss a card from its icons.
 - Keep multiple detached notes open. Change each note’s always-on-top setting. Hide and reopen the board through the Dock and Command-0. Confirm window restoration on one display and after disconnecting another display.
 - Disable GitHub and verify notes-only use. Test missing `gh`, authentication failure, offline refresh, inaccessible pins, rate limits, partial responses, and an account switch. Preserve cached content and keep incomplete readiness conservative.
@@ -53,6 +53,13 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 ## Evidence
 
 Current counts, at 0.2.0: `./scripts/test.sh` runs 322 tests. The package suite in `Tests/` has 160 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 115 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Notes and board polish validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
+
+- `./scripts/test.sh` passed: 178 XCTest and 47 Swift Testing cases in the package, and 126 hosted cases. New coverage includes steady short ages, one title rule for the editor, rows, and exports, repository colors that keep 4.5:1 contrast on every preset, check status icons and tones, checks kept on their own line under a state line that never repeats them, pinned cards counting toward Show more, a board note that stays a few lines until edited and shrinks after a click elsewhere, a note menu that appears only with something to offer, Settings sharing the pinned windows' level, several notes open at once, recent commits fetched with the reviews request without an extra call, and saved layouts that still carry the two removed note settings.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED, and the Debug smoke test wrote 14 checks, all true. Its board capture showed the colored repository names, the check icons, the Notes arrow, and Show more past three demo cards.
+- `./scripts/accessibility.sh` first failed one contrast check: the board footer's 9-point muted text. It's now 10 point, like the card text that failed the same way before, and then all three audits passed, of the board with an open note, a detached note, and Settings, including contrast with the new colors.
+- Not run: keyboard navigation, VoiceOver, and light-theme contrast through the audit. The owner tried the combined build hands-on through several rounds.
 
 Live notes validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
 
