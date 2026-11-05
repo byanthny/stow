@@ -83,24 +83,37 @@ public struct ReviewSummary: Codable, Equatable, Sendable {
     }
 }
 
+public struct CommitSummary: Codable, Equatable, Sendable {
+    /// The first line of the commit message.
+    public var headline: String
+    public var committedAt: Date?
+    public init(headline: String, committedAt: Date? = nil) {
+        self.headline = headline
+        self.committedAt = committedAt
+    }
+}
+
 public struct PullRequestDetails: Codable, Equatable, Sendable {
     public var checks: [CheckSummary]
     public var reviews: [ReviewSummary]
     public var unresolvedThreadCount: Int?
     public var latestComment: String?
     public var latestCommentAuthor: String?
+    /// The last few commits, newest first. Nil in details cached before Stow fetched them.
+    public var commits: [CommitSummary]?
     public var fetchedAt: Date
     public var isComplete: Bool
     public init(
         checks: [CheckSummary] = [], reviews: [ReviewSummary] = [], unresolvedThreadCount: Int? = nil,
-        latestComment: String? = nil, latestCommentAuthor: String? = nil, fetchedAt: Date = .now,
-        isComplete: Bool = true
+        latestComment: String? = nil, latestCommentAuthor: String? = nil, commits: [CommitSummary]? = nil,
+        fetchedAt: Date = .now, isComplete: Bool = true
     ) {
         self.checks = checks
         self.reviews = reviews
         self.unresolvedThreadCount = unresolvedThreadCount
         self.latestComment = latestComment
         self.latestCommentAuthor = latestCommentAuthor
+        self.commits = commits
         self.fetchedAt = fetchedAt
         self.isComplete = isComplete
     }

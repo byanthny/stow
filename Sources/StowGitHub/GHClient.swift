@@ -22,8 +22,9 @@ extension GHClient {
         let selectors: [String: String] = [
             "contexts":
                 "statusCheckRollup { contexts(first:100, after:$cursor) { nodes { __typename ... on CheckRun { name conclusion status detailsUrl } ... on StatusContext { context state targetUrl } } \(Self.pageInfo) } }",
+            // The last few commits ride along with the reviews request, so they cost no extra call.
             "latestReviews":
-                "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) }",
+                "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) } \(Self.recentCommits)",
             "reviewThreads":
                 "reviewThreads(first:100, after:$cursor) { nodes { isResolved comments(last:1) { nodes { body createdAt author { login } } } } \(Self.pageInfo) }",
         ]
@@ -35,6 +36,7 @@ extension GHClient {
         var successfulPages = 0
         var firstFailure: (any Error)?
         var newestComment: (date: Date, body: String, author: String?)?
+        var commits: [CommitSummary]?
         // Fetch each connection independently so a failed or large connection cannot hide the others.
         for name in ["contexts", "latestReviews", "reviewThreads"] {
             guard let selection = selectors[name] else { continue }
@@ -70,6 +72,15 @@ extension GHClient {
                         break
                     }
                     if name == "reviewThreads" { threadsKnown = true }
+                    if name == "latestReviews", pages == 0, case .array = pr["commits"]["nodes"] {
+                        commits = pr["commits"]["nodes"].array.reversed().compactMap { node in
+                            node["commit"]["messageHeadline"].string.map {
+                                CommitSummary(
+                                    headline: Self.displayName($0),
+                                    committedAt: node["commit"]["committedDate"].string.flatMap(Self.date))
+                            }
+                        }
+                    }
                     for node in connection["nodes"].array {
                         switch name {
                         case "contexts":
@@ -156,7 +167,7 @@ extension GHClient {
         }
         return .init(
             checks: checks, reviews: reviews, unresolvedThreadCount: threadsKnown ? unresolved : nil,
-            latestComment: newestComment?.body, latestCommentAuthor: newestComment?.author,
+            latestComment: newestComment?.body, latestCommentAuthor: newestComment?.author, commits: commits,
             fetchedAt: .now, isComplete: complete)
     }
     static let maxDetailPages = 3
@@ -334,6 +345,7 @@ public actor GHClient: GitHubClient {
     }
 
     private static let pageInfo = "pageInfo { hasNextPage endCursor }"
+    private static let recentCommits = "commits(last:3) { nodes { commit { messageHeadline committedDate } } }"
     private static let reviewRequests =
         "reviewRequests(first:100) { nodes { requestedReviewer { __typename ... on User { id login } ... on Team { id name } } } \(pageInfo) }"
     private static let fields = """

@@ -84,21 +84,18 @@ struct BoardView: View {
                 }
             }
             HStack(spacing: 5) {
-                Circle()
-                    .fill(
-                        store.githubMessage == nil
-                            ? AnyShapeStyle(StowColor(role: .green).opacity(0.75)) : AnyShapeStyle(.stowAmber)
-                    )
-                    .frame(width: 4, height: 4)
+                Spacer()
                 if !store.state.githubEnabled {
                     Text("Notes only")
                 } else if let refreshed = store.state.lastRefreshAt {
-                    Text("Updated \(refreshed, style: .relative) ago")
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text("Updated \(refreshed.shortAge(relativeTo: context.date))")
+                    }
                 } else {
                     Text("Notes are saved on this Mac")
                 }
-                Spacer()
-            }.font(theme.font(size: 9)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.bottom, 9)
+            }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.top, 6)
+                .padding(.bottom, 9)
         }
         .foregroundStyle(.stowText).background(.stowBackground)
         .preferredColorScheme(theme.colorScheme)
@@ -168,7 +165,6 @@ struct BoardView: View {
     }
 
     private var notesSection: some View {
-        let collapsible = store.state.boardLayout.notesCanCollapse
         let notes = store.visibleNotes
         let heading = NotesHeading(store: store)
         return pinnedSection(

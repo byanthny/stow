@@ -102,6 +102,60 @@ final class AttentionTests: XCTestCase {
         XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Checks pending"))
     }
 
+    func testChecksShowGitHubStyleStatus() {
+        let cases: [(String?, Bool, String, AttentionTone?)] = [
+            ("SUCCESS", true, "Checks passed", .success), ("FAILURE", true, "Checks failing", .failure),
+            ("ERROR", true, "Checks failing", .failure), ("PENDING", true, "Checks running", .pending),
+            ("EXPECTED", true, "Checks running", .pending), (nil, true, "No checks", nil),
+            (nil, false, "Checks unknown", nil),
+        ]
+        for (state, known, label, tone) in cases {
+            var pullRequest = ready()
+            pullRequest.checksState = state
+            pullRequest.checksKnown = known
+            XCTAssertEqual(pullRequest.checksStatus, ChecksStatus(label: label, tone: tone), state ?? "none")
+        }
+        XCTAssertEqual(checkTone("SUCCESS"), .success)
+        XCTAssertEqual(checkTone("TIMED_OUT"), .failure)
+        XCTAssertEqual(checkTone("IN_PROGRESS"), .pending)
+        XCTAssertEqual(checkTone("SKIPPED"), .neutral)
+    }
+
+    func testCardsKeepChecksBelowAndNeverRepeatTheState() {
+        let passed = ChecksStatus(label: "Checks passed", tone: .success)
+        let failingChecks = ChecksStatus(label: "Checks failing", tone: .failure)
+
+        // Failing checks move to the checks line, and the state line shows the review.
+        var failing = ready()
+        failing.checksState = "FAILURE"
+        failing.reviewDecision = "APPROVED"
+        XCTAssertEqual(
+            failing.cardStatus(under: classify(failing)),
+            CardStatus(headline: "Approved", tone: .success, notes: [], checks: failingChecks))
+        failing.reviewDecision = nil
+        XCTAssertNil(failing.cardStatus(under: classify(failing)).headline)
+
+        var changes = ready()
+        changes.reviewDecision = "CHANGES_REQUESTED"
+        XCTAssertEqual(
+            changes.cardStatus(under: classify(changes)),
+            CardStatus(headline: "Changes requested", tone: .failure, notes: [], checks: passed))
+
+        var conflicts = ready()
+        conflicts.mergeable = "CONFLICTING"
+        conflicts.reviewDecision = "APPROVED"
+        conflicts.mergeStateStatus = "BEHIND"
+        XCTAssertEqual(
+            conflicts.cardStatus(under: classify(conflicts)),
+            CardStatus(
+                headline: "Resolve conflicts", tone: .failure, notes: ["Approved", "Behind base"], checks: passed))
+
+        var behind = ready()
+        behind.mergeStateStatus = "BEHIND"
+        XCTAssertFalse(
+            behind.cardStatus(under: classify(behind)).notes.contains("Behind base"), "It's already the headline")
+    }
+
     func testStatusTonesFollowGitHubColors() {
         let tones: [(String, AttentionTone)] = [
             ("Ready to merge", .success), ("Checks failing", .failure), ("Resolve conflicts", .failure),
