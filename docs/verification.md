@@ -53,14 +53,17 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Evidence
 
-Current counts, at 0.3.0: `./scripts/test.sh` runs 382 tests. The package suite in `Tests/` has 204 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 131 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+Current counts, at 0.3.0: `./scripts/test.sh` runs 383 tests. The package suite in `Tests/` has 204 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 132 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
 
 Release 0.3.0 validation on 2026-11-05, macOS 26.5 (Apple silicon), Xcode 26.6, with live notes, the update check, and the audit fixes merged:
 
 - `./scripts/release.sh 0.3.0` ran `./scripts/test.sh`, which passed: 204 XCTest and 47 Swift Testing cases in the package, and 131 hosted cases. New coverage includes styling a 64 KB line of unclosed marks within 2 seconds (24 seconds before the fix), repository colors at 4.5:1 on 268 surfaces, a new note taking focus once, Settings' level after the last pinned note closes, reviews on other people's cards, release pages tied to their tag, and a stable release keeping pre-releases away.
 - `./scripts/build.sh Release` reported BUILD SUCCEEDED, and a Debug build labeled 0.2.0 was made for hands-on checks.
 - The Debug smoke test against a new synthetic folder exited 0 and wrote 14 checks, all true. Its board capture replaces the README image.
-- Not run: `./scripts/accessibility.sh`, which timed out enabling Automation Mode without someone there to approve it, keyboard navigation, VoiceOver, and the manual checks above.
+- PR 23 then added one hosted test: a board note being typed in shrinks while another app is in front and grows again on return. It failed without the fix, and the 17 hosted editor tests passed with it.
+- `./scripts/accessibility.sh` passed its three audits, of the board, a detached note, and Settings, on the release with that fix. The first two attempts timed out until Automation Mode was approved.
+- The `acceptance` workflow built a universal Debug app and passed its smoke checks on an Intel runner with macOS 15. The owner also tried that build hands-on on an Intel Mac with macOS 26.5.2, which is where the note issue was found.
+- Not run: keyboard navigation, VoiceOver, and the manual checks above.
 
 Update check validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
 
