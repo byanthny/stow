@@ -93,6 +93,31 @@ final class ProfileTests: XCTestCase {
         lock.release()
     }
 
+    func testSettingsSharesThePinnedWindowsLevel() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder, detached: true)
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        let note = try XCTUnwrap(session.store.state.notes.first)
+        session.showSettings()
+        let settings = try XCTUnwrap(session.settingsWindow)
+        // The board and detached notes start on top, so Settings starts at their level.
+        XCTAssertEqual(settings.level, .floating, "A pinned board never covers Settings")
+
+        session.store.toggleBoardAlwaysOnTop()
+        session.store.toggleAlwaysOnTop(note.id)
+        XCTAssertEqual(session.board?.level, .normal)
+        XCTAssertEqual(session.noteWindows[note.id]?.level, .normal)
+        XCTAssertEqual(settings.level, .normal, "With nothing pinned, Settings is an ordinary window")
+
+        session.store.toggleAlwaysOnTop(note.id)
+        XCTAssertEqual(settings.level, .floating, "Nor does a note kept on top")
+    }
+
     func testTwoProfilesStayIsolated() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }

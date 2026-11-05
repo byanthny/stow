@@ -184,6 +184,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
+        applySettingsLevel()
         return panel
     }
 
@@ -204,6 +205,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             window.delegate = self
             settingsWindow = window
         }
+        applySettingsLevel()
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -330,6 +332,13 @@ final class ProfileSession: NSObject, NSWindowDelegate {
 
     private func applyBoardLevel() {
         board?.level = store.state.boardAlwaysOnTop ? .floating : .normal
+        applySettingsLevel()
+    }
+
+    /// Settings shares the level of the profile's pinned windows, so a pinned board or note never covers it.
+    private func applySettingsLevel() {
+        let pinned = store.state.boardAlwaysOnTop || store.state.notes.contains { $0.isDetached && $0.isAlwaysOnTop }
+        settingsWindow?.level = pinned ? .floating : .normal
     }
 
     private func applyWindowAppearance() {
