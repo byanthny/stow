@@ -104,14 +104,14 @@ public struct ReleaseVersion: Hashable, Comparable, Sendable, CustomStringConver
 /// A published Stow release: its version, its page on github.com, and whether it's a pre-release.
 public struct StowRelease: Codable, Equatable, Sendable {
     public let version: ReleaseVersion
-    /// Always one of the source's release pages.
+    /// Always the source's page for this release's tag.
     public let page: URL
     /// Marked as a pre-release on GitHub, or carrying a pre-release version.
     public let isPrerelease: Bool
 
-    /// Nil unless `page` is one of the source's release pages.
+    /// Nil unless `page` is the source's page for `version`.
     public init?(version: ReleaseVersion, page: String, isPrerelease: Bool = false, source: ReleaseSource = .stow) {
-        guard let url = source.releasePage(page) else { return nil }
+        guard let url = source.releasePage(page, for: version) else { return nil }
         self.version = version
         self.page = url
         self.isPrerelease = isPrerelease || !version.prerelease.isEmpty
@@ -159,26 +159,14 @@ public struct ReleaseSource: Equatable, Sendable {
         URL(string: "https://api.github.com/repos/\(owner)/\(repository)/releases?per_page=10")!
     }
 
-    /// Release pages start here; a release with any other page is ignored.
-    public var releasePagePrefix: String { "https://github.com/\(owner)/\(repository)/releases/" }
+    /// A release's page is this followed by its tag; a release with any other page is ignored.
+    public var releasePagePrefix: String { "https://github.com/\(owner)/\(repository)/releases/tag/" }
 
-    /// The URL when `text` is a release page under `releasePagePrefix` with no dot segments, else nil.
-    public func releasePage(_ text: String) -> URL? {
-        let prefix = releasePagePrefix.utf8
-        guard text.utf8.starts(with: prefix) else { return nil }
-        let path = text.utf8.dropFirst(prefix.count)
-        let allowed = path.allSatisfy { byte in
-            switch byte {
-            case UInt8(ascii: "0")...UInt8(ascii: "9"), UInt8(ascii: "A")...UInt8(ascii: "Z"),
-                UInt8(ascii: "a")...UInt8(ascii: "z"), UInt8(ascii: "-"), UInt8(ascii: "."), UInt8(ascii: "_"),
-                UInt8(ascii: "/"):
-                return true
-            default: return false
-            }
-        }
-        guard !path.isEmpty, allowed else { return nil }
-        let segments = String(decoding: path, as: UTF8.self).split(separator: "/", omittingEmptySubsequences: false)
-        guard !segments.contains(where: { $0 == "." || $0 == ".." }) else { return nil }
+    /// The URL when `text` is `version`'s release page: `releasePagePrefix` and a tag naming that version.
+    public func releasePage(_ text: String, for version: ReleaseVersion) -> URL? {
+        guard text.utf8.starts(with: releasePagePrefix.utf8) else { return nil }
+        let tag = String(decoding: text.utf8.dropFirst(releasePagePrefix.utf8.count), as: UTF8.self)
+        guard ReleaseVersion(tag) == version else { return nil }
         return URL(string: text)
     }
 

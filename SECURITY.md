@@ -18,7 +18,7 @@ Stow is a local app. It has no server, account system, analytics, or token store
 
 - Notes, the metadata index, cached pull requests, and backups are plaintext files readable by your macOS user. See [privacy and recovery](docs/privacy.md).
 - GitHub access is opt-in and reuses your local GitHub CLI login. Stow launches `gh` directly and never reads, stores, or logs its token.
-- The update check is opt-in too. It sends one unauthenticated HTTPS request for this repository's releases, without cookies, credentials, or `gh`, and GitHub sees your IP address. Stow reads at most 1 MiB of the reply, offers only versions newer than the one running, and links only to release pages under `https://github.com/byanthny/stow/releases/`. It never downloads or installs anything. See [privacy](docs/privacy.md#update-check).
+- The update check is opt-in too. It sends one unauthenticated HTTPS request for this repository's releases, without cookies, credentials, or `gh`, and GitHub sees your IP address. Stow reads at most 1 MiB of the reply, offers only versions newer than the one running, and links only to the offered release's own page under `https://github.com/byanthny/stow/releases/tag/`. It never downloads or installs anything. See [privacy](docs/privacy.md#update-check).
 - The app is not sandboxed because it launches `gh`. Bundled accessories are trusted in-process code; the accessory SDK is not a permission boundary.
 - Stow runs the chosen `gh` executable as you. It refuses a `gh` that group or other users can write to, but whoever can change that executable or its folders can still run code as you: for example, another administrator who owns Homebrew on a shared Mac.
 

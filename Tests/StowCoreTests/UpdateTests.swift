@@ -60,6 +60,7 @@ final class UpdateTests: XCTestCase {
         let list = [
             entry(tag: "v0.3.0", page: pages + "v0.3.0"),
             entry(tag: "nightly", page: pages + "nightly"),
+            entry(tag: "v9.9.9", page: pages + "v0.1.0"),
             entry(tag: "v9.0.0", page: "https://github.com/example/stow/releases/tag/v9.0.0"),
             entry(tag: "v9.1.0", page: "https://example.com/byanthny/stow/releases/tag/v9.1.0"),
             #"{"tag_name":"v9.2.0","prerelease":false}"#,
@@ -80,11 +81,16 @@ final class UpdateTests: XCTestCase {
         XCTAssertEqual(try ReleaseSource.stow.releases(from: Data("[]".utf8)), [])
     }
 
-    func testReleasePagesStayUnderStowReleases() {
-        for page in [pages + "v0.2.1", pages + "v1.0.0-beta.2"] {
-            XCTAssertEqual(ReleaseSource.stow.releasePage(page)?.absoluteString, page)
+    func testReleasesLinkOnlyToTheirOwnTagPage() throws {
+        for (page, tag) in [(pages + "v0.2.1", "0.2.1"), (pages + "v1.0.0-beta.2", "1.0.0-beta.2"), (pages + "0.3.0", "0.3.0")] {
+            let version = try XCTUnwrap(ReleaseVersion(tag))
+            XCTAssertEqual(ReleaseSource.stow.releasePage(page, for: version)?.absoluteString, page)
         }
+        let version = try XCTUnwrap(ReleaseVersion("1.0.0"))
         for page in [
+            pages + "v0.1.0",
+            "https://github.com/byanthny/stow/releases/download/v1.0.0/Stow-1.0.0.dmg",
+            "https://github.com/byanthny/stow/releases/v1.0.0",
             "http://github.com/byanthny/stow/releases/tag/v1.0.0",
             "https://github.com/byanthny/stow-fork/releases/tag/v1.0.0",
             "https://github.com.example.net/byanthny/stow/releases/tag/v1.0.0",
@@ -97,8 +103,9 @@ final class UpdateTests: XCTestCase {
             "https://github.com/byanthny/stow/releases/tag/v1.0.0#top",
             "https://github.com/byanthny/stow/releases/tag/v1 0",
             "https://github.com/byanthny/stow/releases/tag/v1.0.0\n",
+            "https://github.com/byanthny/stow/releases/tag/v1.0.0/",
         ] {
-            XCTAssertNil(ReleaseSource.stow.releasePage(page), page)
+            XCTAssertNil(ReleaseSource.stow.releasePage(page, for: version), page)
         }
     }
 
@@ -125,8 +132,9 @@ final class UpdateTests: XCTestCase {
         XCTAssertEqual(
             source.releasesURL.absoluteString, "https://api.github.com/repos/example/app/releases?per_page=10")
         let page = "https://github.com/example/app/releases/tag/v1.0.0"
-        XCTAssertEqual(source.releasePage(page)?.absoluteString, page)
-        XCTAssertNil(source.releasePage(pages + "v1.0.0"), "Stow's pages are not another source's")
+        let version = try XCTUnwrap(ReleaseVersion("1.0.0"))
+        XCTAssertEqual(source.releasePage(page, for: version)?.absoluteString, page)
+        XCTAssertNil(source.releasePage(pages + "v1.0.0", for: version), "Stow's pages are not another source's")
         let list = "[\(entry(tag: "v1.0.0", page: page)),\(entry(tag: "v2.0.0", page: pages + "v2.0.0"))]"
         XCTAssertEqual(try source.releases(from: Data(list.utf8)).map(\.version.description), ["1.0.0"])
     }
