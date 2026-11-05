@@ -169,7 +169,6 @@ struct BoardView: View {
         let heading = NotesHeading(store: store)
         return pinnedSection(
             "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue,
-            collapsible: true,
             summary: notes.first?.boardTitle
         ) {
             // Click and start typing; a started note that stays empty goes away again.
@@ -200,7 +199,7 @@ struct BoardView: View {
         let listed = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: expanded)
         let limited = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: false).moreCount > 0
         return pinnedSection(
-            title, count: cards.count, id: section.rawValue, collapsible: true,
+            title, count: cards.count, id: section.rawValue,
             summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
             needsAttention: section == .needsYou && !cards.isEmpty
         ) {
@@ -225,10 +224,10 @@ struct BoardView: View {
     }
 
     private func pinnedSection<Content: View>(
-        _ title: String, count: Int, detail: String? = nil, id: String, collapsible: Bool, summary: String?,
+        _ title: String, count: Int, detail: String? = nil, id: String, summary: String?,
         needsAttention: Bool = false, @ViewBuilder content: () -> Content
     ) -> some View {
-        let isCollapsed = collapsible && store.sectionIsCollapsed(id)
+        let isCollapsed = store.sectionIsCollapsed(id)
         return Section {
             VStack(alignment: .leading, spacing: 9) {
                 if isCollapsed {
@@ -243,8 +242,7 @@ struct BoardView: View {
             .padding(.horizontal, 14).padding(.top, 4).padding(.bottom, 18)
         } header: {
             BoardSectionHeader(
-                title: title, count: count, detail: detail, isCollapsed: isCollapsed, collapsible: collapsible,
-                needsAttention: needsAttention
+                title: title, count: count, detail: detail, isCollapsed: isCollapsed, needsAttention: needsAttention
             ) { store.toggleSection(id) }
             .padding(.horizontal, 14).padding(.vertical, 4)
             // A pinned header covers cards scrolling beneath it, even on a translucent board.
@@ -279,26 +277,20 @@ private struct BoardSectionHeader: View {
     /// Words after the count, such as how many notes an owner filter hides.
     var detail: String?
     let isCollapsed: Bool
-    let collapsible: Bool
     @Environment(\.stowTheme) private var theme
     var needsAttention = false
     var toggle: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        if collapsible {
-            Button {
-                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { toggle() }
-            } label: {
-                row
-            }.buttonStyle(.plain)
-                .accessibilityLabel(label)
-                .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
-                .help("\(isCollapsed ? "Expand" : "Collapse") \(title)")
-        } else {
-            row.accessibilityElement(children: .ignore).accessibilityLabel(label)
-                .accessibilityAddTraits(.isHeader)
-        }
+        Button {
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) { toggle() }
+        } label: {
+            row
+        }.buttonStyle(.plain)
+            .accessibilityLabel(label)
+            .accessibilityValue(isCollapsed ? "Collapsed" : "Expanded")
+            .help("\(isCollapsed ? "Expand" : "Collapse") \(title)")
     }
 
     private var label: String { detail.map { "\(title), \(count), \($0)" } ?? "\(title), \(count)" }
@@ -307,7 +299,6 @@ private struct BoardSectionHeader: View {
         HStack(spacing: 6) {
             Image(systemName: "chevron.right").font(theme.font(size: 8, weight: .semibold))
                 .rotationEffect(.degrees(isCollapsed ? 0 : 90)).frame(width: 9)
-                .opacity(collapsible ? 1 : 0)
             Text(title).font(theme.font(size: 11, weight: .semibold))
             Text(verbatim: "\(count)").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
             if let detail { Text(verbatim: "· \(detail)").font(theme.font(size: 10)).foregroundStyle(.stowMuted) }
@@ -350,7 +341,7 @@ struct SectionCards {
     /// The cards after Show more.
     let moreCount: Int
 
-    /// Pinned cards always show; the section's limit counts only unpinned cards.
+    /// Pinned cards always show and count toward the section's limit.
     init(_ cards: [PullRequestSnapshot], layout: BoardLayout, pins: [PullRequestReference], expanded: Bool) {
         let owners: [(owner: String?, cards: [PullRequestSnapshot])] =
             layout.groupByOwner
