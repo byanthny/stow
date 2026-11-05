@@ -23,7 +23,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     /// once a closing profile's final save is done.
     private(set) var isStopped = false
     /// Window titles carry the profile name once names show, so the Window menu, Mission Control, and VoiceOver
-    /// can tell profiles apart. Otherwise they read "Stow", "Stow note", and "Stow settings".
+    /// can tell profiles apart. Otherwise they read "Stow" and "Stow settings", and a note's window its title.
     var showsName = false {
         didSet { if showsName != oldValue { applyTitles() } }
     }
@@ -174,7 +174,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
                 note.frame,
                 fallback: NSRect(x: screen.midX - 170 + offset, y: screen.midY - 190 - offset, width: 340, height: 380),
                 minimum: NSSize(width: 260, height: 180))
-            panel = makePanel(frame: frame, title: title("note"))
+            panel = makePanel(frame: frame, title: note.windowTitle(profileName: showsName ? entry.name : nil))
             panel.noteID = id
             panel.minSize = NSSize(width: 260, height: 208)
             panel.contentView = describedHost(
@@ -184,6 +184,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             noteWindows[id] = panel
         }
         panel.level = note.isAlwaysOnTop ? .floating : .normal
+        applySettingsLevel()
         return panel
     }
 
@@ -204,6 +205,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             window.delegate = self
             settingsWindow = window
         }
+        applySettingsLevel()
         settingsWindow?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -280,7 +282,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             label: "Board", fillsTitleBar: true)
     }
 
-    /// "Stow", or "Stow note" with a suffix, using the profile's name in place of "Stow" once names show.
+    /// "Stow", or "Stow settings" with a suffix, using the profile's name in place of "Stow" once names show.
     private func title(_ suffix: String? = nil) -> String {
         let name = showsName ? entry.name : "Stow"
         return suffix.map { "\(name) \($0)" } ?? name
@@ -288,7 +290,9 @@ final class ProfileSession: NSObject, NSWindowDelegate {
 
     private func applyTitles() {
         board?.title = title()
-        for panel in noteWindows.values { panel.title = title("note") }
+        for (id, panel) in noteWindows {
+            if let note = store.note(id) { panel.title = note.windowTitle(profileName: showsName ? entry.name : nil) }
+        }
         settingsWindow?.title = title("settings")
     }
 
@@ -328,6 +332,13 @@ final class ProfileSession: NSObject, NSWindowDelegate {
 
     private func applyBoardLevel() {
         board?.level = store.state.boardAlwaysOnTop ? .floating : .normal
+        applySettingsLevel()
+    }
+
+    /// Settings shares the level of the profile's pinned windows, so a pinned board or note never covers it.
+    private func applySettingsLevel() {
+        let pinned = store.state.boardAlwaysOnTop || store.state.notes.contains { $0.isDetached && $0.isAlwaysOnTop }
+        settingsWindow?.level = pinned ? .floating : .normal
     }
 
     private func applyWindowAppearance() {

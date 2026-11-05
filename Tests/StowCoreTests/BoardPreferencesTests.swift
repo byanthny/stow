@@ -67,9 +67,7 @@ final class BoardPreferencesTests: XCTestCase {
         let layout = try decoded(legacy).boardLayout
         XCTAssertEqual(layout.order, [.needsYou, .notes, .waiting])
         XCTAssertEqual(layout.visiblePullRequests, 3)
-        XCTAssertFalse(layout.notesCanCollapse)
         XCTAssertTrue(layout.notesStartCollapsed)
-        XCTAssertTrue(layout.oneNoteOpenAtATime)
         XCTAssertTrue(layout.showsTitle)
         XCTAssertFalse(layout.groupByOwner)
         XCTAssertEqual(layout.ownerOrder, .alphabetical)
@@ -80,13 +78,14 @@ final class BoardPreferencesTests: XCTestCase {
 
     func testBoardLayoutKeepsEachKnownSectionOnceInSavedOrder() throws {
         var object = try encodedObject(fixture())
+        // notesCanCollapse and oneNoteOpenAtATime are settings older versions saved; they're ignored now.
         object["boardLayout"] = [
             "order": ["waiting", "future-section", "waiting"], "visiblePullRequests": 0, "notesCanCollapse": true,
+            "oneNoteOpenAtATime": false,
         ]
         let layout = try decoded(object).boardLayout
         XCTAssertEqual(layout.order, [.waiting, .needsYou, .notes])
         XCTAssertEqual(layout.shownPullRequests(of: 40, expanded: false), 40, "0 shows every card")
-        XCTAssertTrue(layout.notesCanCollapse)
     }
 
     func testBoardLayoutMovesOnePlaceAndCapsCardsUntilExpanded() {
@@ -133,8 +132,8 @@ final class BoardPreferencesTests: XCTestCase {
         let url = try directory().appendingPathComponent("state.json")
         var original = fixture()
         original.boardLayout = BoardLayout(
-            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesCanCollapse: true,
-            notesStartCollapsed: false, oneNoteOpenAtATime: false, showsTitle: false)
+            order: [.notes, .waiting, .needsYou], visiblePullRequests: 10, notesStartCollapsed: false,
+            showsTitle: false)
         original.boardLayout.groupByOwner = true
         original.boardLayout.ownerOrder = .mostCards
         original.boardLayout.alwaysShowOwnerControl = true

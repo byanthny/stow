@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		00C57CAD4D19823917B62DFF /* ProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3727F1F8343238152D9DEA5F /* ProfileTests.swift */; };
-		146C15F0BC8224545A3429EE /* ThirdPartyNotices.txt in Resources */ = {isa = PBXBuildFile; fileRef = 95AE6FC3B5182B400775AF72 /* ThirdPartyNotices.txt */; };
 		171B0677970FA6787208CA74 /* NotesFolderWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ADBB4BA961022731A776296 /* NotesFolderWatcher.swift */; };
 		1C0BEB775F084C612B0AD961 /* ProfileSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2504016B8A69BAA7774CCD3 /* ProfileSession.swift */; };
 		1F76E2619F135DCA5DFC4AE1 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F807A6B24C23D8EE03EBBC8A /* Theme.swift */; };
@@ -42,11 +41,9 @@
 		C16E5DDD28C4A1722F6E5A38 /* StowExtensionSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 23FEB436DD4D679FCE9F5F06 /* StowExtensionSDK */; };
 		CAB304A94A725CD8285465DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 201C19CDEAD22A1FC05D10B0 /* Assets.xcassets */; };
 		D62D71EDC45E41812C9D74E0 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67424E6FD595173BC1EC7C20 /* ProfilesSettingsView.swift */; };
-		E0F46F83696043853EA7CF36 /* MarkdownPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ED6C264979A01D79F5855BF /* MarkdownPreview.swift */; };
 		E2639633E61BC409B0873B48 /* LiveMarkdownIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */; };
 		E47FF48B8EBAE6F9F80398EC /* StowSampleExtension in Frameworks */ = {isa = PBXBuildFile; productRef = A264A05198370049BFD1BF4B /* StowSampleExtension */; };
 		EFBABA910E1A5CFE63E7DB87 /* BoardWindowLevelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C77BAF160150D32A58024D83 /* BoardWindowLevelTests.swift */; };
-		EFF5F201619A164EE025FDC4 /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 6E7F283B04E70711EF7043B1 /* MarkdownUI */; };
 		F420C40DCE76CA1AA9CD0B6F /* SmokeTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = F76A3454156CA963AB6500C3 /* SmokeTest.swift */; };
 		F42711049E90261D511B21A1 /* SectionsAndAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */; };
 		F5ED1C9F5985FC52D537F1E0 /* ProfileManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 568BD814954ADC74850E3880 /* ProfileManager.swift */; };
@@ -82,7 +79,6 @@
 		39A7319D2D8E9F3D12867849 /* NotesFolderPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesFolderPresenter.swift; sourceTree = "<group>"; };
 		568BD814954ADC74850E3880 /* ProfileManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileManager.swift; sourceTree = "<group>"; };
 		56FC667B30A54762087BF23A /* OwnerControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerControl.swift; sourceTree = "<group>"; };
-		5ED6C264979A01D79F5855BF /* MarkdownPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreview.swift; sourceTree = "<group>"; };
 		60BB03D3C6E9C1CA520FBF29 /* AppearanceIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceIntegrationTests.swift; sourceTree = "<group>"; };
 		65FE07DEE8B707F6F7A3E21A /* NativeEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeEditor.swift; sourceTree = "<group>"; };
 		6648BF0294A445DFDF63BC88 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
@@ -92,7 +88,6 @@
 		8351104FE09C8908E1BC4682 /* stow */ = {isa = PBXFileReference; lastKnownFileType = folder; name = stow; path = .; sourceTree = SOURCE_ROOT; };
 		8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SectionsAndAppearanceTests.swift; sourceTree = "<group>"; };
 		8F85FD678524729F2EAC4880 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		95AE6FC3B5182B400775AF72 /* ThirdPartyNotices.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = ThirdPartyNotices.txt; sourceTree = "<group>"; };
 		9A46EDD7D27ADE7A28DF88B0 /* OwnerViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnerViewTests.swift; sourceTree = "<group>"; };
 		9D697814A7679D4593407DE8 /* AccessoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessoryViews.swift; sourceTree = "<group>"; };
 		A2504016B8A69BAA7774CCD3 /* ProfileSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileSession.swift; sourceTree = "<group>"; };
@@ -126,7 +121,6 @@
 				C16E5DDD28C4A1722F6E5A38 /* StowExtensionSDK in Frameworks */,
 				5B81B5EF686EE5C467896E7C /* StowExtensions in Frameworks */,
 				E47FF48B8EBAE6F9F80398EC /* StowSampleExtension in Frameworks */,
-				EFF5F201619A164EE025FDC4 /* MarkdownUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -180,7 +174,6 @@
 				2B984318AC22D6CC4F5676B9 /* DemoContent.swift */,
 				8F85FD678524729F2EAC4880 /* Info.plist */,
 				EAD31FFE1EB0783C12611B81 /* LaunchMetrics.swift */,
-				5ED6C264979A01D79F5855BF /* MarkdownPreview.swift */,
 				65FE07DEE8B707F6F7A3E21A /* NativeEditor.swift */,
 				39A7319D2D8E9F3D12867849 /* NotesFolderPresenter.swift */,
 				0ADBB4BA961022731A776296 /* NotesFolderWatcher.swift */,
@@ -195,7 +188,6 @@
 				F76A3454156CA963AB6500C3 /* SmokeTest.swift */,
 				FE09CDF2EC58B328525A4B53 /* StowApp.swift */,
 				F807A6B24C23D8EE03EBBC8A /* Theme.swift */,
-				95AE6FC3B5182B400775AF72 /* ThirdPartyNotices.txt */,
 				C4D95B3214D2B63E6CADFAAA /* UpdateMonitor.swift */,
 				30BC108E0F506343370A4087 /* Windows.swift */,
 			);
@@ -244,7 +236,6 @@
 				23FEB436DD4D679FCE9F5F06 /* StowExtensionSDK */,
 				A9615F1E5AF51033548B75D8 /* StowExtensions */,
 				A264A05198370049BFD1BF4B /* StowSampleExtension */,
-				6E7F283B04E70711EF7043B1 /* MarkdownUI */,
 			);
 			productName = Stow;
 			productReference = A6940A51DC1C594B393E6028 /* Stow.app */;
@@ -317,7 +308,6 @@
 			mainGroup = 475725C8D35EC5E576A0B28B;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				18F2517895971F2003415FFD /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				91CE9D8203D9B98CD8D3F39C /* XCLocalSwiftPackageReference "." */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -338,7 +328,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				CAB304A94A725CD8285465DC /* Assets.xcassets in Resources */,
-				146C15F0BC8224545A3429EE /* ThirdPartyNotices.txt in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -381,7 +370,6 @@
 				523E84CD5DDE69790C2198C4 /* DataTransferView.swift in Sources */,
 				56BE1A684F9D58C9329C1B1C /* DemoContent.swift in Sources */,
 				78F81CC38809F80FAD9061B4 /* LaunchMetrics.swift in Sources */,
-				E0F46F83696043853EA7CF36 /* MarkdownPreview.swift in Sources */,
 				A1078DAD5CB22BA84D0CF57C /* NativeEditor.swift in Sources */,
 				951157544F8EAEA6A79F588F /* NoteView.swift in Sources */,
 				49A81CA514577E60691BA45C /* NotesFolderPresenter.swift in Sources */,
@@ -702,17 +690,6 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
-/* Begin XCRemoteSwiftPackageReference section */
-		18F2517895971F2003415FFD /* XCRemoteSwiftPackageReference "swift-markdown-ui" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/gonzalezreal/swift-markdown-ui";
-			requirement = {
-				kind = exactVersion;
-				version = 2.4.1;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
 /* Begin XCSwiftPackageProductDependency section */
 		09974DE403FDD0CD305FC757 /* StowCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -729,11 +706,6 @@
 		2E2DDEEF4A72C935B2EE1927 /* StowGitHub */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = StowGitHub;
-		};
-		6E7F283B04E70711EF7043B1 /* MarkdownUI */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 18F2517895971F2003415FFD /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
-			productName = MarkdownUI;
 		};
 		A264A05198370049BFD1BF4B /* StowSampleExtension */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -1,6 +1,6 @@
 # Appearance
 
-Open **Stow → Settings → Appearance** to choose a preset, colors, background opacity, and separate interface and note fonts. Font menus search installed font names; sizes are in points. Note fonts also apply to Markdown previews, while code keeps its monospaced styling. Changes apply to the board and open notes and are saved locally.
+Open **Stow → Settings → Appearance** to choose a preset, colors, background opacity, and separate interface and note fonts. Font menus search installed font names; sizes are in points. Note fonts also set the size of titles and headings, while code keeps its monospaced styling. Changes apply to the board and open notes and are saved locally.
 
 Opacity affects background fills, never text or controls. Overlapping backgrounds can look more opaque than the selected value. macOS **Accessibility → Display → Reduce transparency** keeps backgrounds solid without changing the saved preference. Stow uses native window transparency without blur.
 
@@ -49,7 +49,7 @@ Invalid or unsupported input keeps the current appearance unchanged. **Reset** r
 ## Manual checks
 
 - Change presets, colors, fonts, sizes, line height, and opacity with the board, a detached note, and Settings open. Check that all update and text stays opaque.
-- Select source text, change appearance, and verify selection and source remain intact. Type, change fonts, and undo typing. Check preview headings, lists, links, and code.
+- Select source text, change appearance, and verify selection and source remain intact. Type, change fonts, and undo typing. Check the title, headings, emphasis, lists, links, and code while typing.
 - Copy the config, reset, and apply it in the editor. Export and import a `.conf`; verify the appearance returns. Import the legacy JSON example too.
 - Apply the short Graphite example after a heavily customized theme. Verify omitted settings return to Graphite defaults. Apply a config without `preset` and verify Stow defaults form its base.
 - Test full-line comments and hex colors. Try malformed input, an invalid color, and an out-of-range number; verify the current appearance stays unchanged.

@@ -102,14 +102,11 @@ final class AppStoreCancellationTests: XCTestCase {
         XCTAssertTrue(store.expandedNoteIDs.isEmpty, "Board notes start as one-line rows")
         store.toggleNoteExpanded(ids[0])
         store.toggleNoteExpanded(ids[1])
-        XCTAssertEqual(store.expandedNoteIDs, [ids[1]], "Opening a note closes the open one")
-        store.setOneNoteOpenAtATime(false)
-        store.toggleNoteExpanded(ids[2])
-        XCTAssertEqual(store.expandedNoteIDs, [ids[1], ids[2]])
-        store.setOneNoteOpenAtATime(true)
-        XCTAssertEqual(store.expandedNoteIDs, [ids[2]], "The most recently opened note stays open")
+        XCTAssertEqual(store.expandedNoteIDs, [ids[0], ids[1]], "Several notes can stay open")
+        store.toggleNoteExpanded(ids[0])
+        XCTAssertEqual(store.expandedNoteIDs, [ids[1]], "Folding one leaves the others open")
         let created = store.addNote("New thought")
-        XCTAssertEqual(store.expandedNoteIDs, [created], "A new note opens ready to type")
+        XCTAssertEqual(store.expandedNoteIDs, [ids[1], created], "A new note opens ready to type")
         store.requestFocus(ids[0])
         XCTAssertTrue(store.isNoteExpanded(ids[0]))
         store.deleteNote(ids[0])
@@ -122,7 +119,8 @@ final class AppStoreCancellationTests: XCTestCase {
         await relaunched.start()
         relaunched.stop()
         defer { relaunched.stop() }
-        XCTAssertEqual(relaunched.expandedNoteIDs.count, 1, "Expanded start still opens one note at a time")
+        XCTAssertEqual(
+            relaunched.expandedNoteIDs.count, relaunched.state.notes.count, "Expanded start opens every note")
     }
 
     func testDisablingQueuedAccessoryPreventsItsProviderFromStarting() async throws {

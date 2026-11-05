@@ -140,7 +140,7 @@ public enum MarkdownTransfer {
     public static func files(for notes: [Note]) -> [MarkdownFile] {
         var usedNames = Set<String>()
         return notes.map { note in
-            let title = safeTitle(note.markdown)
+            let title = safeTitle(note.title ?? "")
             let identifier = note.id.uuidString.lowercased()
             var filename = "\(title)-\(identifier).md"
             var duplicate = 2
@@ -160,12 +160,9 @@ public enum MarkdownTransfer {
         return source
     }
 
-    private static func safeTitle(_ source: String) -> String {
-        let firstLine =
-            source.split(whereSeparator: \.isNewline)
-            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ?? ""
+    private static func safeTitle(_ noteTitle: String) -> String {
         var title = ""
-        for scalar in firstLine.unicodeScalars {
+        for scalar in noteTitle.unicodeScalars {
             if (48...57).contains(scalar.value) || (65...90).contains(scalar.value) || (97...122).contains(scalar.value)
             {
                 title += String(scalar).lowercased()

@@ -28,7 +28,8 @@ final class AccessibilityAuditTests: XCTestCase {
     func testDetachedNotePassesAccessibilityAudit() throws {
         try withSyntheticApp { app in
             app.buttons["Detach note"].firstMatch.click()
-            let note = app.windows["Stow note"]
+            // A detached note's window is titled after the note, so find it by its editor.
+            let note = app.windows.containing(.textView, identifier: "note.source").firstMatch
             XCTAssertTrue(note.waitForExistence(timeout: 5), "The detached note did not open")
             XCTAssertTrue(note.textViews["note.source"].exists, "The note editor is not visible to the audit")
             try closeBoard(app)

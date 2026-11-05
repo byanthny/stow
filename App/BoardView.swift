@@ -11,6 +11,8 @@ struct BoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
     @State private var expandedSections: Set<AttentionSection> = []
+    /// The height of the board's scrolling area. The note being edited grows up to about this tall.
+    @State private var visibleHeight: CGFloat = 0
 
     var body: some View {
         let header = BoardHeader(profile: profile, layout: store.state.boardLayout)
@@ -66,6 +68,11 @@ struct BoardView: View {
                         AccessoryViews(store: store)
                     }.accessibilityElement(children: .contain).accessibilityLabel("Board contents").padding(.bottom, 14)
                 }
+                .onGeometryChange(for: CGFloat.self) {
+                    $0.size.height
+                } action: { height in
+                    visibleHeight = height
+                }
                 .onChange(of: store.focusRequestID) { _, _ in
                     guard let id = store.focusNoteID else { return }
                     Task { @MainActor in
@@ -77,21 +84,18 @@ struct BoardView: View {
                 }
             }
             HStack(spacing: 5) {
-                Circle()
-                    .fill(
-                        store.githubMessage == nil
-                            ? AnyShapeStyle(StowColor(role: .green).opacity(0.75)) : AnyShapeStyle(.stowAmber)
-                    )
-                    .frame(width: 4, height: 4)
+                Spacer()
                 if !store.state.githubEnabled {
                     Text("Notes only")
                 } else if let refreshed = store.state.lastRefreshAt {
-                    Text("Updated \(refreshed, style: .relative) ago")
+                    TimelineView(.periodic(from: .now, by: 60)) { context in
+                        Text("Updated \(refreshed.shortAge(relativeTo: context.date))")
+                    }
                 } else {
                     Text("Notes are saved on this Mac")
                 }
-                Spacer()
-            }.font(theme.font(size: 9)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.bottom, 9)
+            }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).padding(.horizontal, 15).padding(.top, 6)
+                .padding(.bottom, 9)
         }
         .foregroundStyle(.stowText).background(.stowBackground)
         .preferredColorScheme(theme.colorScheme)
@@ -180,13 +184,12 @@ struct BoardView: View {
     }
 
     private var notesSection: some View {
-        let collapsible = store.state.boardLayout.notesCanCollapse
         let notes = store.visibleNotes
         let heading = NotesHeading(store: store)
         return pinnedSection(
             "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue,
-            collapsible: collapsible,
-            summary: notes.first?.markdown.split(separator: "\n").first.map(String.init)
+            collapsible: true,
+            summary: notes.first?.boardTitle
         ) {
             // Click and start typing; a started note that stays empty goes away again.
             if store.draftNoteID == nil {
@@ -197,7 +200,10 @@ struct BoardView: View {
                     if note.isDetached {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
                     } else if store.isNoteExpanded(note.id) {
-                        NoteView(store: store, noteID: note.id) { store.toggleNoteExpanded(note.id) }
+                        // Leaves room for the pinned section header and the note's own header.
+                        NoteView(store: store, noteID: note.id, editorHeightLimit: max(176, visibleHeight - 96)) {
+                            store.toggleNoteExpanded(note.id)
+                        }
                     } else {
                         CollapsedNoteRow(store: store, note: note)
                     }

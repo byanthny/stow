@@ -42,7 +42,7 @@ struct SettingsView: View {
                     SettingsToggle(
                         "Sample board accessory",
                         isOn: Binding(get: { store.sampleEnabled() }, set: { _ in store.toggleSample() }))
-                    Text("A small bundled example. Note accessories can be enabled from each note’s actions menu.")
+                    Text("A small bundled example. Once it’s on, each note’s ⋯ menu can add it to that note.")
                         .font(theme.font(size: 11)).foregroundStyle(.secondary)
                     ForEach(store.state.extensionInstances.filter { $0.moduleID != store.sampleID }) { instance in
                         HStack {
@@ -158,14 +158,8 @@ private struct BoardSettingsView: View {
                 }.pickerStyle(.segmented).labelsHidden().fixedSize()
             }.font(theme.font(size: 12))
             SettingsToggle(
-                "Let Notes collapse",
-                isOn: Binding(get: { layout.notesCanCollapse }, set: { store.setNotesCanCollapse($0) }))
-            SettingsToggle(
                 "Notes start collapsed",
                 isOn: Binding(get: { layout.notesStartCollapsed }, set: { store.setNotesStartCollapsed($0) }))
-            SettingsToggle(
-                "Open one note at a time",
-                isOn: Binding(get: { layout.oneNoteOpenAtATime }, set: { store.setOneNoteOpenAtATime($0) }))
             Text("Owners").font(theme.font(size: 11)).foregroundStyle(.secondary)
             SettingsToggle(
                 "Group by owner", identifier: "board.groupByOwner",

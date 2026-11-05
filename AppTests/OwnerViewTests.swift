@@ -346,8 +346,9 @@ final class OwnerViewTests: XCTestCase {
         let waiting = store.cards(in: .waiting)
         XCTAssertEqual(waiting.map(\.reference.number), [5, 1, 2, 3, 4], "A pinned card moves to the top")
         let listed = SectionCards(waiting, layout: store.state.boardLayout, pins: store.state.pins, expanded: false)
-        XCTAssertEqual(listed.groups.flatMap { $0.cards.map(\.reference.number) }, [5, 1, 2, 3])
-        XCTAssertEqual(listed.moreCount, 1, "Show more counts only the unpinned cards it hides")
+        // The pin counts toward the three cards before Show more.
+        XCTAssertEqual(listed.groups.flatMap { $0.cards.map(\.reference.number) }, [5, 1, 2])
+        XCTAssertEqual(listed.moreCount, 2)
     }
 
     func testAddOwnerTakesOnlyGitHubLoginsAndRefreshesWhenKeepingOnlySelectedOwners() async throws {

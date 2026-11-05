@@ -220,25 +220,26 @@ final class AppIntegrationTests: XCTestCase {
             })
     }
 
-    func testMarkdownInlineAndBlockImagesDoNotRequestNetworkResources() async throws {
-        PreviewNetworkTripwire.reset()
-        XCTAssertTrue(URLProtocol.registerClass(PreviewNetworkTripwire.self))
-        defer { URLProtocol.unregisterClass(PreviewNetworkTripwire.self) }
+    func testNoteEditorDoesNotRequestImagesOrLinks() async throws {
+        NoteNetworkTripwire.reset()
+        XCTAssertTrue(URLProtocol.registerClass(NoteNetworkTripwire.self))
+        defer { URLProtocol.unregisterClass(NoteNetworkTripwire.self) }
         let window = NSWindow(
             contentRect: NSRect(x: 10, y: 10, width: 420, height: 400),
             styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let source = """
-            # Synthetic preview
+            # Synthetic note
 
-            ![block image](https://stow-preview.invalid/block.png)
+            ![block image](https://stow-note.invalid/block.png)
 
-            text ![inline image](http://stow-preview.invalid/inline.png) after image
+            text ![inline image](http://stow-note.invalid/inline.png) after image
 
-            [Safe test link](https://stow-preview.invalid/link)
+            [Safe test link](https://stow-note.invalid/link)
             """
-        let host = NSHostingView(rootView: MarkdownPreview(source: source))
+        let host = NSHostingView(
+            rootView: NativeEditor(text: .constant(source), focusRequestID: UUID(), appearance: .paper))
         window.contentView = host
         window.orderFront(nil)
         for _ in 0..<12 {
@@ -248,8 +249,8 @@ final class AppIntegrationTests: XCTestCase {
         }
         XCTAssertGreaterThan(host.bounds.width, 0)
         XCTAssertEqual(
-            PreviewNetworkTripwire.requestCount, 0,
-            "Rendering inline and block image Markdown must not fetch their URLs")
+            NoteNetworkTripwire.requestCount, 0,
+            "Showing image and link Markdown must not fetch their URLs")
     }
 
     private func makeDirectory() throws -> URL {
@@ -303,7 +304,7 @@ final class AppIntegrationTests: XCTestCase {
     }
 }
 
-private final class PreviewRequestCounter: @unchecked Sendable {
+private final class NoteRequestCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
     func increment() {
@@ -323,12 +324,12 @@ private final class PreviewRequestCounter: @unchecked Sendable {
     }
 }
 
-/// Fails closed for synthetic preview URLs if a future renderer tries to load them.
-private final class PreviewNetworkTripwire: URLProtocol, @unchecked Sendable {
-    private static let counter = PreviewRequestCounter()
+/// Fails closed for synthetic note URLs if the editor ever tries to load them.
+private final class NoteNetworkTripwire: URLProtocol, @unchecked Sendable {
+    private static let counter = NoteRequestCounter()
     static var requestCount: Int { counter.value }
     static func reset() { counter.reset() }
-    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "stow-preview.invalid" }
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "stow-note.invalid" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.counter.increment()
