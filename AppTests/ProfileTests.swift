@@ -116,6 +116,13 @@ final class ProfileTests: XCTestCase {
 
         session.store.toggleAlwaysOnTop(note.id)
         XCTAssertEqual(settings.level, .floating, "Nor does a note kept on top")
+
+        session.noteWindows[note.id]?.close()
+        XCTAssertEqual(settings.level, .normal, "Closing the last pinned window brings Settings back down")
+        session.store.detachNote(note.id)
+        XCTAssertEqual(settings.level, .floating)
+        session.store.deleteNote(note.id)
+        XCTAssertEqual(settings.level, .normal, "So does deleting its note")
     }
 
     func testTwoProfilesStayIsolated() async throws {
