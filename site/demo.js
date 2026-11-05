@@ -9,6 +9,8 @@
 
   const notesList = board.querySelector('[data-notes]');
   const notesCount = board.querySelector('[data-notes-count]');
+  const notesToggle = board.querySelector('[aria-controls="notes-body"]');
+  const notesSummary = document.getElementById(notesToggle.dataset.summary);
   const hintRegion = board.querySelector('[data-hint]');
   const status = board.querySelector('[data-status]');
   const template = document.getElementById('note-template');
@@ -47,32 +49,26 @@
     document.getElementById(toggle.dataset.summary).hidden = expanded;
   };
 
+  // A collapsed Notes section shows the first note's title.
+  const updateNotesSummary = () => {
+    notesSummary.textContent = notesList.querySelector('.note-title').textContent;
+  };
+
   const setNoteOpen = (note, open) => {
     note.classList.toggle('is-open', open);
     note.querySelector('.note-toggle').setAttribute('aria-expanded', String(open));
     note.querySelector('.note-body').hidden = !open;
   };
 
-  // Notes open one at a time, like the app's board.
-  const openOnly = (note) => {
-    for (const other of notesList.querySelectorAll('.note.is-open')) {
-      if (other !== note) {
-        setNoteOpen(other, false);
-      }
-    }
-    setNoteOpen(note, true);
-  };
-
+  // Each note opens and closes on its own, so several can stay open, like the app's board.
   const toggleNote = (note) => {
-    if (note.classList.contains('is-open')) {
-      setNoteOpen(note, false);
-    } else {
-      openOnly(note);
-    }
+    setNoteOpen(note, !note.classList.contains('is-open'));
     setHint('');
   };
 
   const addNote = () => {
+    // A new note opens a collapsed Notes section first, as in the app.
+    setSection(notesToggle, true);
     const count = notesList.children.length;
     if (count >= maxNotes) {
       setHint('That is plenty for a demo. The app has no limit.');
@@ -90,11 +86,13 @@
     body.id = `${id}-body`;
     note.querySelector('.note-toggle').setAttribute('aria-controls', body.id);
     note.querySelector('[data-action="pop"]').setAttribute('aria-describedby', title.id);
+    input.setAttribute('aria-labelledby', title.id);
     input.value = newNoteText;
 
     notesList.prepend(note);
     notesCount.textContent = String(count + 1);
-    openOnly(note);
+    updateNotesSummary();
+    setNoteOpen(note, true);
     setHint('');
     input.focus({ preventScroll: true });
     input.setSelectionRange(input.value.length, input.value.length);
@@ -142,10 +140,11 @@
     }
   });
 
-  // Typing keeps the note's one-line title current.
+  // Typing keeps the note's one-line title and the Notes summary current.
   notesList.addEventListener('input', (event) => {
     if (event.target.matches('.note-input')) {
       event.target.closest('.note').querySelector('.note-title').textContent = titleOf(event.target.value);
+      updateNotesSummary();
     }
   });
 
