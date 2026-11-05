@@ -59,7 +59,7 @@ For a local package, unzip `Stow.zip` and move `Stow.app` to Applications. See [
 
 - Create a note with **Command-N**. Its first line is its title. Markdown shows as you type: headings, bold, italic, strikethrough, quotes, lists, links, and code. The marks stay visible, and the file stays plain Markdown.
 - Keep code snippets in notes. Inline code and fenced code blocks show in a fixed-width font.
-- Open a link in a note with **Command**-click, or **Open Link** in its context menu. An open note on the board shows a few lines, grows to all of its text while you type in it, and shrinks back when you click elsewhere. Its header buttons show the Markdown file, export it, or delete the note.
+- Open a link in a note with **Command**-click, or **Open Link** in its context menu. An open note on the board shows a few lines, grows to all of its text while you type in it, and shrinks back when you click elsewhere or switch to another app, opening again when you return. Its header buttons show the Markdown file, export it, or delete the note.
 - Paste a canonical `https://github.com/example/project/pull/42` URL outside the editor to pin a pull request. Text following one URL becomes an attached note. Other or ambiguous text stays intact as a note.
 - Use the header pin to keep the board on top or let it sit behind other windows. Detached notes keep their own pin settings.
 - Detach a note into its own window with the arrow button in its header. Use **Command-0** or the Dock icon to reopen the board.

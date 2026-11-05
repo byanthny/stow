@@ -29,7 +29,7 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 - Edit a managed Markdown file in another editor, including an atomic save; verify source reload, detected conflict copies, clean external deletion, and immediate quit. Export notes and a full backup; restore into disposable state and check the retained old folder, restored windows, pins, and appearance. Reopen external-editor files after restoration.
 - In a disposable state directory, test corrupt and unsupported state. Confirm writes stay blocked, explicit recovery creates a backup, and failed recovery preserves the original. Test an unwritable destination without changing normal user storage.
 - Check keyboard navigation, VoiceOver labels, text scaling, contrast, a 320-point board width, and a 260-point detached note width.
-- Verify appearance changes, theme import/export, opacity, Reduce transparency, and text-editing preservation using the [appearance checklist](appearance.md#manual-checks). Collapse and expand Needs you and Waiting, then relaunch to check persistence. In Settings → Board, reorder sections and change the cards shown before Show more. Collapse Notes, then create a note: Notes should expand again. Scroll a long board and confirm section titles stay pinned. Open and close several board notes, check the start-collapsed setting, and pop a note out from its row.
+- Verify appearance changes, theme import/export, opacity, Reduce transparency, and text-editing preservation using the [appearance checklist](appearance.md#manual-checks). Collapse and expand Needs you and Waiting, then relaunch to check persistence. In Settings → Board, reorder sections and change the cards shown before Show more. Collapse Notes, then create a note: Notes should expand again. Scroll a long board and confirm section titles stay pinned. Open and close several board notes, check the start-collapsed setting, and pop a note out from its row. Type in a board note, then switch to another app: it should shrink, and grow again with its cursor when you come back.
 - Profiles, with synthetic state and at least three profiles. Run each check in one profile and then another, and record what you see.
   - Several profiles on screen: boards and detached notes from different profiles stay separate, each shows its own name, color, and icon, and nothing from one profile appears in another.
   - Create: choose **New profile…** from the File menu, the Dock menu, the board's profile menu, and Settings → Profiles. The sheet asks for a name and a color and shows a message for an empty name or one another profile uses. The new profile opens empty, with GitHub off.
@@ -53,7 +53,14 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Evidence
 
-Current counts, at 0.2.0: `./scripts/test.sh` runs 322 tests. The package suite in `Tests/` has 160 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 115 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+Current counts, at 0.3.0: `./scripts/test.sh` runs 382 tests. The package suite in `Tests/` has 204 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 131 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Release 0.3.0 validation on 2026-11-05, macOS 26.5 (Apple silicon), Xcode 26.6, with live notes, the update check, and the audit fixes merged:
+
+- `./scripts/release.sh 0.3.0` ran `./scripts/test.sh`, which passed: 204 XCTest and 47 Swift Testing cases in the package, and 131 hosted cases. New coverage includes styling a 64 KB line of unclosed marks within 2 seconds (24 seconds before the fix), repository colors at 4.5:1 on 268 surfaces, a new note taking focus once, Settings' level after the last pinned note closes, reviews on other people's cards, release pages tied to their tag, and a stable release keeping pre-releases away.
+- `./scripts/build.sh Release` reported BUILD SUCCEEDED, and a Debug build labeled 0.2.0 was made for hands-on checks.
+- The Debug smoke test against a new synthetic folder exited 0 and wrote 14 checks, all true. Its board capture replaces the README image.
+- Not run: `./scripts/accessibility.sh`, which timed out enabling Automation Mode without someone there to approve it, keyboard navigation, VoiceOver, and the manual checks above.
 
 Update check validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
 
