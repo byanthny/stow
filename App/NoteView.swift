@@ -96,7 +96,10 @@ struct NoteView: View {
                 .padding(.horizontal, 8)
                 AccessoryViews(store: store, noteID: noteID)
             }
-            .background(.stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9))
+            // A detached note is a window like the board, so it takes the board's background.
+            .background(
+                detached ? StowColor.stowBackground : .stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9)
+            )
             .overlay { if !detached { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) } }
             .overlay(alignment: .top) {
                 if let identity {
