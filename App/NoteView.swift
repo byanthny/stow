@@ -90,7 +90,10 @@ struct NoteView: View {
                         set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
                     focusRequestID: store.focusRequestID, appearance: theme.settings,
                     fitsText: detached ? nil : 104...(isEditing ? max(176, editorHeightLimit) : 176),
-                    onEditingChange: { isEditing = $0 }
+                    onEditingChange: { editing in
+                        isEditing = editing
+                        if editing { store.focusTaken(by: noteID) }
+                    }
                 )
                 .frame(minHeight: detached ? 120 : nil, maxHeight: detached ? .infinity : nil)
                 .padding(.horizontal, 8)

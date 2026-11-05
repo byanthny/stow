@@ -267,6 +267,33 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertLessThanOrEqual(scroll.frame.height, 176.5)
     }
 
+    func testANewNoteTakesFocusOnlyOnce() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        let id = store.addNote("Synthetic")
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 500), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.orderFront(nil)
+        func showNote() async throws -> NSTextView {
+            let host = NSHostingView(
+                rootView: AnyView(NoteView(store: store, noteID: id, editorHeightLimit: 300) {}.themed(by: store.theme)))
+            window.contentView = host
+            await settle(host)
+            return try XCTUnwrap(noteScrollViews(in: host).first?.documentView as? NSTextView)
+        }
+        let first = try await showNote()
+        XCTAssertTrue(window.firstResponder === first, "A new note takes focus")
+        window.makeFirstResponder(nil)
+
+        // Rebuilt, as collapsing and expanding Notes does, the note leaves focus where it is.
+        let rebuilt = try await showNote()
+        XCTAssertFalse(window.firstResponder === rebuilt)
+    }
+
     /// Hosts a board-style editor showing `text`, and reports its height and whether its text scrolls inside.
     private func hostedEditor(_ text: String) async throws -> (height: CGFloat, scrolls: Bool) {
         let window = NSWindow(

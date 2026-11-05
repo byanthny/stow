@@ -581,6 +581,11 @@ final class AppStore {
         changed()
     }
 
+    /// Ends a focus request once its note's editor has focus.
+    func focusTaken(by id: UUID) {
+        if focusNoteID == id { focusNoteID = nil }
+    }
+
     func requestFocus(_ id: UUID) {
         expandNote(id)
         if state.collapsedSections.contains("notes") {
