@@ -25,12 +25,14 @@ struct PRCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         // Lead with the repository so cards from different repos are easy to tell apart.
                         if pr.title != pr.reference.displayName {
-                            HStack(spacing: 4) {
-                                Text(verbatim: "\(pr.reference.owner)/\(pr.reference.repository)")
-                                    .font(theme.font(size: 10, weight: .semibold)).foregroundStyle(.stowText)
-                                Text(verbatim: "#\(pr.reference.number)").font(theme.font(size: 10))
-                                    .foregroundStyle(.stowMuted)
-                            }.lineLimit(1).truncationMode(.middle)
+                            // The repository's own color picks out "/repo", so cards from one repo match at a glance.
+                            let surface = theme.settings.colors.surface
+                            let repository = Color(stowHex: RepositoryColor.hex(for: pr.reference, onSurface: surface))
+                            (Text(verbatim: pr.reference.owner).foregroundStyle(.stowText)
+                                + Text(verbatim: "/\(pr.reference.repository)").foregroundStyle(repository)
+                                + Text(verbatim: " #\(pr.reference.number)").font(theme.font(size: 10))
+                                .foregroundStyle(.stowMuted))
+                                .font(theme.font(size: 10, weight: .semibold)).lineLimit(1).truncationMode(.middle)
                         }
                         Text(pr.title).font(theme.font(size: 12, weight: .medium)).foregroundStyle(.stowText)
                             .multilineTextAlignment(.leading).lineLimit(3)
