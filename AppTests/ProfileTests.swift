@@ -2402,11 +2402,143 @@ final class ProfileTests: XCTestCase {
         XCTAssertNil(blocked.prepareToQuit())
     }
 
+    // MARK: Updates
+
+    func testUpdateChecksStayOffByDefault() async throws {
+        // A new installation, then a folder an earlier build saved, which has no update settings.
+        for seeded in [false, true] {
+            let folder = try makeDirectory()
+            defer { try? FileManager.default.removeItem(at: folder) }
+            if seeded { try await seed(folder) }
+            let feed = ReleaseFeed()
+            feed.answer(["v2.0.0"])
+            let manager = makeManager(folder, updateFetch: feed.fetch)
+            defer { stop(manager) }
+            let opened = await manager.start()
+            XCTAssertTrue(opened)
+            // Settings → Updates → Check for updates reads this.
+            XCTAssertFalse(manager.updates.settings.checksForUpdates)
+            // A launch check would have run by now. None does, the board offers nothing, and nothing is saved.
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertEqual(feed.count, 0)
+            XCTAssertNil(manager.updates.notice)
+            XCTAssertFalse(exists(ProfileIndex.filename, in: folder))
+        }
+    }
+
+    func testUpdateChecksRunOnceADayOnceOnAndKeepADismissal() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let feed = ReleaseFeed()
+        feed.answer(["v1.1.0", "v1.0.0", "v0.9.0"])
+        let index = folder.appendingPathComponent(ProfileIndex.filename)
+        func saved() throws -> UpdateSettings { try ProfileIndex.decode(Data(contentsOf: index)).updates }
+
+        do {
+            let manager = makeManager(folder, updateFetch: feed.fetch)
+            defer { stop(manager) }
+            let opened = await manager.start()
+            XCTAssertTrue(opened)
+            try await manager.updates.setChecksForUpdates(true)
+            let found = await waitUntil { manager.updates.notice != nil }
+            XCTAssertTrue(found)
+            XCTAssertEqual(feed.count, 1)
+            XCTAssertEqual(manager.updates.notice?.version.description, "1.1.0")
+            // The setting, the time of the check, and the release found are saved for the next launch.
+            let stored = await waitUntil { (try? saved())?.available != nil }
+            XCTAssertTrue(stored)
+            XCTAssertTrue(try saved().checksForUpdates)
+            XCTAssertNotNil(try saved().lastCheckAt)
+            // Off hides the notice. On again within a day asks nothing new.
+            try await manager.updates.setChecksForUpdates(false)
+            XCTAssertNil(manager.updates.notice)
+            XCTAssertFalse(try saved().checksForUpdates)
+            try await manager.updates.setChecksForUpdates(true)
+            XCTAssertEqual(manager.updates.notice?.version.description, "1.1.0")
+            manager.updates.dismissNotice()
+            XCTAssertNil(manager.updates.notice)
+            let dismissed = await waitUntil { (try? saved())?.dismissedVersion == ReleaseVersion("1.1.0") }
+            XCTAssertTrue(dismissed)
+            XCTAssertEqual(feed.count, 1)
+        }
+
+        // Relaunched within a day: no check, and the dismissal holds.
+        do {
+            let manager = makeManager(folder, updateFetch: feed.fetch)
+            defer { stop(manager) }
+            let opened = await manager.start()
+            XCTAssertTrue(opened)
+            XCTAssertTrue(manager.updates.settings.checksForUpdates)
+            try await Task.sleep(for: .milliseconds(200))
+            XCTAssertEqual(feed.count, 1)
+            XCTAssertNil(manager.updates.notice)
+        }
+
+        // A launch a day after the last check asks again, and a newer release shows despite the dismissal.
+        var aged = try saved()
+        aged.lastCheckAt = Date.now.addingTimeInterval(-UpdatePolicy.standard.interval)
+        try await ProfileCatalog(dataFolder: folder).setUpdateSettings(aged)
+        feed.answer(["v1.2.0", "v1.1.0"])
+        let manager = makeManager(folder, updateFetch: feed.fetch)
+        defer { stop(manager) }
+        let opened = await manager.start()
+        XCTAssertTrue(opened)
+        let rechecked = await waitUntil { manager.updates.notice?.version.description == "1.2.0" }
+        XCTAssertTrue(rechecked)
+        XCTAssertEqual(feed.count, 2)
+    }
+
+    func testCheckForUpdatesAnswersWithTheSettingOffAndSavesNothing() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let feed = ReleaseFeed()
+        let app = try await makeApp(folder, updateFetch: feed.fetch)
+        defer { stop(app) }
+        let manager = try XCTUnwrap(app.manager)
+        let reports = OutcomeLog()
+        manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
+        let appMenu = try XCTUnwrap(NSApp.mainMenu?.items.first?.submenu)
+        XCTAssertEqual(appMenu.items.prefix(2).map(\.title), ["About Stow", "Check for updates…"])
+        func choose() async -> Bool {
+            let before = reports.outcomes.count
+            appMenu.performActionForItem(at: 1)
+            return await waitUntil { reports.outcomes.count > before }
+        }
+
+        // This test host's own version against synthetic releases.
+        let running = try XCTUnwrap(ReleaseVersion.running)
+        feed.answer(["v\(running)"])
+        let first = await choose()
+        XCTAssertTrue(first)
+        let newer = "\(running.major + 1).0.0-beta.1"
+        feed.answer(["v\(newer)", "v\(running)"])
+        let second = await choose()
+        XCTAssertTrue(second)
+        feed.fail(.rateLimited)
+        let third = await choose()
+        XCTAssertTrue(third)
+        XCTAssertEqual(feed.count, 3)
+        XCTAssertEqual(reports.outcomes.first, .upToDate)
+        guard reports.outcomes.count == 3, case .available(let release) = reports.outcomes[1] else {
+            return XCTFail("Expected an available release, got \(reports.outcomes)")
+        }
+        XCTAssertEqual(release.version.description, newer)
+        XCTAssertEqual(reports.outcomes[2], .failed(.rateLimited))
+        // With the setting off, the board offers nothing and nothing is saved.
+        XCTAssertNil(manager.updates.notice)
+        XCTAssertFalse(exists(ProfileIndex.filename, in: folder))
+    }
+
     // MARK: helpers
 
-    private func makeApp(_ folder: URL) async throws -> AppDelegate {
+    private func makeApp(_ folder: URL, updateFetch: @escaping UpdateMonitor.Fetch = unexpectedUpdateCheck)
+        async throws -> AppDelegate
+    {
         let app = AppDelegate()
-        let started = await app.prepare(stateURL: folder.appendingPathComponent("state.json"), isDemo: false)
+        let started = await app.prepare(
+            stateURL: folder.appendingPathComponent("state.json"), isDemo: false, updateFetch: updateFetch)
         XCTAssertTrue(started)
         let manager = try XCTUnwrap(app.manager)
         manager.confirmClosingWithoutSaving = { _ in false }
@@ -2423,6 +2555,7 @@ final class ProfileTests: XCTestCase {
         manager.reportDeletionFailure = { entry, error in
             XCTFail("Unexpected report that \(entry.name) could not be deleted: \(error)")
         }
+        manager.updates.report = { outcome, _ in XCTFail("Unexpected update report: \(outcome)") }
     }
 
     private func stop(_ app: AppDelegate) {
@@ -2454,14 +2587,16 @@ final class ProfileTests: XCTestCase {
     }
 
     /// A manager whose questions fail the test instead of opening a modal alert.
+    /// Update checks answer from `updateFetch`, never GitHub, as Stow 1.0.0.
     private func makeManager(
         _ folder: URL, catalog: ProfileCatalog? = nil,
         githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
-        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()]
+        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()],
+        updateFetch: @escaping UpdateMonitor.Fetch = unexpectedUpdateCheck
     ) -> ProfileManager {
         let manager = ProfileManager(
             dataFolder: folder, isDemo: false, catalog: catalog, githubOverride: githubOverride,
-            accessoryProviders: accessoryProviders)
+            accessoryProviders: accessoryProviders, updateFetch: updateFetch, runningVersion: ReleaseVersion("1.0.0"))
         manager.confirmClosingWithoutSaving = { entry in
             XCTFail("Unexpected question about closing \(entry.name) without saving")
             return false
@@ -2619,6 +2754,56 @@ final class ProfileTests: XCTestCase {
         }
         return await predicate()
     }
+}
+
+/// Fails a test whose update check would otherwise ask GitHub.
+private let unexpectedUpdateCheck: UpdateMonitor.Fetch = {
+    XCTFail("Unexpected update check")
+    throw UpdateCheckError.unreachable
+}
+
+/// Answers update checks in place of GitHub, with synthetic releases, and counts them.
+private final class ReleaseFeed: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reply: Result<[StowRelease], UpdateCheckError> = .success([])
+    private var asked = 0
+
+    var count: Int { locked { asked } }
+
+    var fetch: UpdateMonitor.Fetch {
+        { [self] in
+            try locked {
+                asked += 1
+                return reply
+            }.get()
+        }
+    }
+
+    /// Answers with these tags as pre-releases, as every Stow release is during the alpha.
+    func answer(_ tags: [String]) {
+        let releases = tags.compactMap { tag in
+            ReleaseVersion(tag).flatMap {
+                StowRelease(
+                    version: $0, page: "https://github.com/byanthny/stow/releases/tag/\(tag)", isPrerelease: true)
+            }
+        }
+        XCTAssertEqual(releases.count, tags.count, "Every synthetic tag is a release")
+        locked { reply = .success(releases) }
+    }
+
+    func fail(_ error: UpdateCheckError) { locked { reply = .failure(error) } }
+
+    private func locked<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
+    }
+}
+
+/// What Check for updates… reported.
+@MainActor
+private final class OutcomeLog {
+    var outcomes: [UpdateOutcome] = []
 }
 
 /// Records which profiles the manager asked or told about, and answers from a script.

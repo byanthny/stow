@@ -28,6 +28,8 @@ final class ProfileManager {
     private(set) var indexIsNewer = false
     /// The profile whose Settings shows the New profile sheet.
     var newProfileRequest: UUID?
+    /// Settings → Updates and the board's update notice, shared by every profile.
+    let updates: UpdateMonitor
     /// Set once `start()` has shown a profile. From then on a quit records which profiles are open, even none.
     @ObservationIgnored private(set) var hasStarted = false
     /// Asks whether to close a profile whose changes could not be saved. True closes it without saving.
@@ -107,17 +109,22 @@ final class ProfileManager {
         let task: Task<Void, Never>
     }
 
+    /// Tests replace `updateFetch` and `runningVersion`.
     init(
         dataFolder: URL, isDemo: Bool, catalog: ProfileCatalog? = nil,
         githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()],
-        githubClientMaker: @escaping @MainActor (URL) -> any GitHubClient = { GHClient(executableURL: $0) }
+        githubClientMaker: @escaping @MainActor (URL) -> any GitHubClient = { GHClient(executableURL: $0) },
+        updateFetch: @escaping UpdateMonitor.Fetch = UpdateMonitor.github,
+        runningVersion: ReleaseVersion? = .running
     ) {
+        let catalog = catalog ?? ProfileCatalog(dataFolder: dataFolder)
         self.githubClientMaker = githubClientMaker
-        self.catalog = catalog ?? ProfileCatalog(dataFolder: dataFolder)
+        self.catalog = catalog
         self.isDemo = isDemo
         self.githubOverride = githubOverride
         self.accessoryProviders = accessoryProviders
+        updates = UpdateMonitor(catalog: catalog, running: runningVersion, fetch: updateFetch)
     }
 
     /// The client every profile using this `gh` location shares. Its backoff is the location's, not a profile's.
@@ -203,6 +210,8 @@ final class ProfileManager {
         }
         lastActiveID = front.entry.id
         hasStarted = true
+        // An index that can't be read, or none, leaves update checks off.
+        updates.start(with: snapshot?.index.updates ?? UpdateSettings())
         // The most recently active profile on screen comes forward, as it was at quit.
         if shown.count > 1 { front.show() }
         for entry in openElsewhere { reportOpenElsewhere(entry) }

@@ -622,6 +622,32 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertFalse(try XCTUnwrap(snapshot.profiles.first).isArrival)
     }
 
+    func testUpdateSettingsPersistAndWaitForReset() async throws {
+        let id = try addProfile(name: "Work")
+        let catalog = catalog()
+        var settings = UpdateSettings()
+        settings.checksForUpdates = true
+        settings.lastCheckAt = Date(timeIntervalSince1970: 1_800_000_000)
+        try await catalog.setUpdateSettings(settings)
+        // Later index writes keep them.
+        try await catalog.recordSession(open: [.init(id: id, isHidden: false)], lastActiveID: id)
+        let saved = try await catalog.load().index
+        XCTAssertEqual(saved.updates, settings)
+        XCTAssertEqual(saved.lastActiveID, id)
+
+        let corrupt = "not json"
+        try write(corrupt, ProfileIndex.filename)
+        await assertThrows(.indexNeedsReset) { try await catalog.setUpdateSettings(UpdateSettings()) }
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent(ProfileIndex.filename)), Data(corrupt.utf8))
+    }
+
+    func testUnchangedUpdateSettingsWriteNoIndex() async throws {
+        try write("{}", "state.json")
+        try await catalog().setUpdateSettings(UpdateSettings())
+        XCTAssertFalse(exists(ProfileIndex.filename))
+        XCTAssertFalse(exists(ProfileIdentity.filename))
+    }
+
     // MARK: deleting
 
     private func trashed() throws -> [String] {

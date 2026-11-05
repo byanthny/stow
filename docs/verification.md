@@ -47,12 +47,22 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
   - Older build: with the first profile in the data folder, open it in an older build while the new build is running and confirm the new build leaves that profile closed with a message; other profiles open normally.
   - Index: corrupt `profiles.json` in a disposable folder and confirm every profile is still found, the index is preserved, and **Reset profile list** moves it to a backup first.
 - Owners, with synthetic pull requests from at least three owners: the owner control appears only with more than one owner or an active selection, counts exclude dismissed cards, **Add owner…** works, selection survives restart, and pins stay visible. Confirm warnings, incomplete-data messages, and readiness do not change with the selection. Check **Group by owner**, **Owner order**, **Keep only selected owners on disk** (look at `state.json` and a new backup), and **Hide notes linked to hidden owners**.
+- Updates: on a new installation, Settings → Updates → **Check for updates** is off and Stow sends nothing to `api.github.com`; watch with a network monitor. **Check for updates…** in the Stow menu says "Stow is up to date", offers a newer release, or explains a failure while offline. To see a notice, run a Debug build with a lower `MARKETING_VERSION`, turn the setting on, and confirm "Stow X is available" on every board, **View** opening the release page, and a dismissal lasting until a newer release. A relaunch within a day sends no request.
 - Account mismatch: with a stubbed `gh` answering as a second login, confirm the profile pauses with the banner, keeps its cards marked stale, and fetches no details; **Use X here** clears that profile's cards, details, and dismissals and keeps pins and notes.
 - Run on macOS 14 and a current macOS version. A newer build host does not prove minimum-version runtime behavior. Test Intel hardware when available; a universal binary alone does not prove its runtime behavior.
 
 ## Evidence
 
 Current counts, at 0.2.0: `./scripts/test.sh` runs 322 tests. The package suite in `Tests/` has 160 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 115 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Update check validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
+
+- `./scripts/test.sh` passed: 182 XCTest and 47 Swift Testing cases in the package, and 121 hosted cases. New coverage includes version ordering, release parsing, the release-page check, the daily rule, the request settings, fetches through a stubbed protocol with the size limit, the setting off by default, daily checks once on, a dismissal across relaunches, and Check for updates… with the setting off.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED.
+- The Debug smoke test against a new synthetic folder exited 0 with all 14 checks true; `singleProfileWritesNoIndex` shows the setting, off by default, wrote nothing.
+- The real request and session, sent to a local listener, carried only `Host`, `Accept`, `X-GitHub-Api-Version`, `User-Agent: Stow`, `Accept-Language: en`, `Accept-Encoding`, and `Connection`. One live request to GitHub read releases 0.2.1, 0.2.0, and 0.1.0: nothing newer for 0.2.1, and 0.2.1 offered to 0.2.0.
+- In-process renders of the board notice and Settings → Updates, with synthetic state, were inspected.
+- Not run: `./scripts/accessibility.sh` and the Updates manual check above.
 
 Notes and board polish validation on 2026-11-04, macOS 26.5 (Apple silicon), Xcode 26.6:
 
