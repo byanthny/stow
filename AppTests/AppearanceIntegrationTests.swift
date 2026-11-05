@@ -302,6 +302,55 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertFalse(window.firstResponder === rebuilt)
     }
 
+    func testRestylingWhatAnEditChangedMatchesAFullRestyle() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let source = "# Plan\n\nSome **bold** and *it*.\n```\ncode\n```\n> quote\n- [a](https://example.com) ~~old~~\n"
+        let host = NSHostingView(rootView: GrowingEditorHost(text: source))
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        let editor = try XCTUnwrap(noteScrollViews(in: host).first?.documentView as? NSTextView)
+        let pieces = ["*", "**", "_", "`", "```", "# ", " ", "\n", "x", "> ", "- ", "[b](https://example.org)", "~~"]
+        var seed: UInt64 = 11
+        func next(_ bound: Int) -> Int {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Int((seed >> 33) % UInt64(bound + 1))
+        }
+        for step in 0..<150 {
+            let length = (editor.string as NSString).length
+            let location = next(length)
+            let removed = next(min(3, length - location))
+            let piece = next(1) == 0 ? pieces[next(pieces.count - 1)] : ""
+            editor.insertText(piece, replacementRange: NSRange(location: location, length: removed))
+
+            let reference = NSTextView()
+            reference.isRichText = false
+            reference.string = editor.string
+            NativeEditor.applyAppearance(.paper, to: reference)
+            NativeEditor.styleMarkdown(in: reference, appearance: .paper)
+            let styled = try XCTUnwrap(editor.textStorage)
+            let expected = try XCTUnwrap(reference.textStorage)
+            XCTAssertEqual(styles(of: styled), styles(of: expected), "Step \(step) left stale styles")
+        }
+    }
+
+    /// Each UTF-16 offset's Markdown styles, described so two texts can be compared.
+    private func styles(of storage: NSTextStorage) -> [String] {
+        let keys: [NSAttributedString.Key] = [
+            .foregroundColor, .backgroundColor, .strikethroughStyle, .underlineStyle, .obliqueness, .strokeWidth,
+            .noteLink, .toolTip,
+        ]
+        return (0..<storage.length).map { position in
+            let font = storage.attribute(.font, at: position, effectiveRange: nil) as? NSFont
+            let rest = keys.map { "\(storage.attribute($0, at: position, effectiveRange: nil) ?? "-")" }
+            return ([font.map { "\($0.fontName) \($0.pointSize)" } ?? "-"] + rest).joined(separator: "|")
+        }
+    }
+
     /// Hosts a board-style editor showing `text`, and reports its height and whether its text scrolls inside.
     private func hostedEditor(_ text: String) async throws -> (height: CGFloat, scrolls: Bool) {
         let window = NSWindow(

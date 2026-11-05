@@ -51,7 +51,8 @@ struct NativeEditor: NSViewRepresentable {
         editor.string = text
         Self.applyAppearance(appearance, to: editor)
         context.coordinator.appliedAppearance = appearance
-        Self.styleMarkdown(in: editor, appearance: appearance)
+        context.coordinator.watchEdits(of: editor)
+        context.coordinator.restyle(editor, everything: true)
         scroll.documentView = editor
         return scroll
     }
@@ -69,7 +70,7 @@ struct NativeEditor: NSViewRepresentable {
         if sourceChanged || context.coordinator.appliedAppearance != appearance {
             Self.applyAppearance(appearance, to: editor)
             context.coordinator.appliedAppearance = appearance
-            Self.styleMarkdown(in: editor, appearance: appearance)
+            context.coordinator.restyle(editor, everything: true)
         }
         if shouldFocus && context.coordinator.focusedRequestID != focusRequestID {
             let request = focusRequestID
@@ -130,15 +131,23 @@ struct NativeEditor: NSViewRepresentable {
     }
 
     /// Shows the note's Markdown as it reads, leaving its text, and so its Markdown file, as typed.
-    static func styleMarkdown(in editor: NSTextView, appearance: AppearanceSettings) {
+    /// Restyles only `range`, whole lines, when given, using `spans` parsed from the whole text.
+    static func styleMarkdown(
+        in editor: NSTextView, appearance: AppearanceSettings, spans: [MarkdownStyle.Span]? = nil,
+        range: NSRange? = nil
+    ) {
         // Restyling while an input method is composing would disturb it; the composed text arrives as an edit later.
         guard let storage = editor.textStorage, !editor.hasMarkedText() else { return }
         let base = editorFont(appearance)
         let text = NSColor(Color(stowHex: appearance.colors.text))
         let muted = NSColor(Color(stowHex: appearance.colors.muted))
-        let whole = NSRange(location: 0, length: storage.length)
-        let spans = MarkdownStyle.spans(in: storage.string)
-        let title = spans.first { $0.kind == .title }?.range
+        let whole = range ?? NSRange(location: 0, length: storage.length)
+        let parsed = spans ?? MarkdownStyle.spans(in: storage.string)
+        let title = parsed.first { $0.kind == .title }?.range
+        let spans = parsed.compactMap { span -> MarkdownStyle.Span? in
+            let visible = NSIntersectionRange(span.range, whole)
+            return visible.length > 0 ? MarkdownStyle.Span(kind: span.kind, range: visible) : nil
+        }
         storage.beginEditing()
         storage.addAttributes([.font: base, .foregroundColor: text], range: whole)
         for key in styleKeys { storage.removeAttribute(key, range: whole) }
@@ -223,6 +232,7 @@ struct NativeEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.stopWatchingClicks()
+        NotificationCenter.default.removeObserver(coordinator)
     }
 
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -233,6 +243,11 @@ struct NativeEditor: NSViewRepresentable {
         /// A focus change the note hasn't heard about yet.
         private var reportedEditing: Bool?
         private var waitsForRelease = false
+        /// The spans last styled, and the length of the text they were parsed from.
+        private var styledSpans: [MarkdownStyle.Span] = []
+        private var styledLength = 0
+        /// Text edits since the last restyle.
+        private var edits: [(range: NSRange, delta: Int)] = []
         init(_ parent: NativeEditor) { self.parent = parent }
 
         /// Any link the text view finds itself opens only if it's a web link.
@@ -241,9 +256,36 @@ struct NativeEditor: NSViewRepresentable {
             return true
         }
 
+        func watchEdits(of editor: NSTextView) {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(textStorageEdited(_:)), name: NSTextStorage.didProcessEditingNotification,
+                object: editor.textStorage)
+        }
+
+        @objc private func textStorageEdited(_ notification: Notification) {
+            guard let storage = notification.object as? NSTextStorage, storage.editedMask.contains(.editedCharacters)
+            else { return }
+            edits.append((storage.editedRange, storage.changeInLength))
+        }
+
+        /// Restyles the lines a single edit changed, or the whole text.
+        func restyle(_ editor: NSTextView, everything: Bool) {
+            guard let storage = editor.textStorage, !editor.hasMarkedText() else { return }
+            let spans = MarkdownStyle.spans(in: storage.string)
+            var range: NSRange?
+            if !everything, edits.count == 1, let edit = edits.first, styledLength == storage.length - edit.delta {
+                range = MarkdownStyle.changedRange(
+                    from: styledSpans, to: spans, in: storage.string as NSString, edited: edit.range, delta: edit.delta)
+            }
+            NativeEditor.styleMarkdown(in: editor, appearance: parent.appearance, spans: spans, range: range)
+            styledSpans = spans
+            styledLength = storage.length
+            edits = []
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
-            NativeEditor.styleMarkdown(in: editor, appearance: parent.appearance)
+            restyle(editor, everything: false)
             // A note that fits its text measures itself again.
             if parent.fitsText != nil { editor.enclosingScrollView?.invalidateIntrinsicContentSize() }
             if parent.text != editor.string { parent.text = editor.string }
