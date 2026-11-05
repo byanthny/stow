@@ -174,7 +174,6 @@ struct DetachedNoteLauncher: View {
     }
 }
 
-/// A board note folded into one line: open it inline, or pop it out into its own window.
 /// The Notes area's typing spot: clicking it starts a note with the cursor ready.
 struct NoteComposerRow: View {
     /// With no notes yet, the row also explains what the area is for.
@@ -203,6 +202,7 @@ struct NoteComposerRow: View {
     }
 }
 
+/// A board note folded into one line: open it inline, or pop it out into its own window.
 struct CollapsedNoteRow: View {
     @Bindable var store: AppStore
     let note: Note
