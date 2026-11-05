@@ -234,6 +234,13 @@ struct NativeEditor: NSViewRepresentable {
         private var reportedEditing: Bool?
         private var waitsForRelease = false
         init(_ parent: NativeEditor) { self.parent = parent }
+
+        /// Any link the text view finds itself opens only if it's a web link.
+        func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+            if let url = link as? URL ?? (link as? String).flatMap(URL.init(string:)) { AppStore.openLink(url) }
+            return true
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
             NativeEditor.styleMarkdown(in: editor, appearance: parent.appearance)

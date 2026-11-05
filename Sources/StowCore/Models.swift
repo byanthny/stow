@@ -7,7 +7,14 @@ public struct PullRequestReference: Codable, Hashable, Sendable, Identifiable {
     public var repository: String
     public var number: Int
     public var id: String { "\(host.lowercased())/\(owner.lowercased())/\(repository.lowercased())/\(number)" }
-    public var url: URL { URL(string: "https://\(host)/\(owner)/\(repository)/pull/\(number)")! }
+    /// The pull request on github.com, the only host Stow reads, whatever `host` says.
+    public var url: URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "github.com"
+        components.path = "/\(owner)/\(repository)/pull/\(number)"
+        return components.url ?? URL(string: "https://github.com")!
+    }
     public var displayName: String { "\(owner)/\(repository) #\(number)" }
     public static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
