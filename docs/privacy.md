@@ -26,7 +26,7 @@ Turning off GitHub hides cards and stops new refreshes without erasing the cache
 
 ## Update check
 
-Settings → Updates → **Check for updates** is off until you turn it on, and applies to every profile. While it's on, Stow asks GitHub whether a newer version is out at launch and then once a day. **Check for updates…** in the Stow menu asks once whenever you choose it, even with the setting off.
+Settings → Updates → **Check for updates** is off until you turn it on, and applies to every profile. While it's on, Stow asks GitHub whether a newer version is out at most once a day, at launch or while it runs. **Check for updates…** in the Stow menu asks once whenever you choose it, even with the setting off.
 
 Each check is one HTTPS `GET https://api.github.com/repos/byanthny/stow/releases?per_page=10`. Nothing is sent beyond the request itself: no cookies, credentials, token, or account, and it never uses `gh`. Its headers are fixed, so they name Stow but not its version, your macOS version, or your languages. Like any website, GitHub sees your IP address and the time of the request. Stow reads at most 1 MiB of the reply and shows a newer version as a notice on the board, with a link to that release's page: `https://github.com/byanthny/stow/releases/tag/` and its tag. Nothing is downloaded or installed.
 
