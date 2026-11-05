@@ -739,9 +739,10 @@ p kbd {
 }
 
 .pr-repo {
-  display: flex;
-  gap: 4px;
+  overflow: hidden;
   font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .pr-name {
@@ -749,8 +750,27 @@ p kbd {
   font-weight: 600;
 }
 
+/* Repository colors from RepositoryColor.hex(for:onSurface:) on --surface. */
+.repo-desktop {
+  color: #747BDC;
+}
+
+.repo-website {
+  color: #5C95D6;
+}
+
+.repo-api {
+  color: #9A74DC;
+}
+
+.repo-toolkit {
+  color: #C25CD6;
+}
+
 .pr-num,
-.pr-meta {
+.pr-note,
+.pr-active,
+.pr-checks {
   color: var(--muted);
 }
 
@@ -759,23 +779,41 @@ p kbd {
   font-weight: 500;
 }
 
-.pr-reason {
+/* The state in its tone, then muted notes, then the last activity on the right. */
+.pr-state {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
   font-size: 11px;
+  white-space: nowrap;
 }
 
-.pr-meta {
+.pr-note,
+.pr-active,
+.pr-checks {
   font-size: 10px;
 }
 
-.dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
+.pr-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pr-active {
+  margin-left: auto;
+}
+
+.pr-checks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.checks-mark {
+  stroke: var(--surface);
 }
 
 .tone-red {
@@ -788,10 +826,6 @@ p kbd {
 
 .tone-green {
   color: var(--green);
-}
-
-.tone-muted {
-  color: var(--muted);
 }
 
 .more {
