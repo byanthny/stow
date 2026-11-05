@@ -173,8 +173,8 @@ struct BoardView: View {
         let heading = NotesHeading(store: store)
         return pinnedSection(
             "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue,
-            collapsible: collapsible,
-            summary: notes.first?.markdown.split(separator: "\n").first.map(String.init)
+            collapsible: true,
+            summary: notes.first?.boardTitle
         ) {
             // Click and start typing; a started note that stays empty goes away again.
             if store.draftNoteID == nil {

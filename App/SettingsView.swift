@@ -156,9 +156,6 @@ private struct BoardSettingsView: View {
                 }.pickerStyle(.segmented).labelsHidden().fixedSize()
             }.font(theme.font(size: 12))
             SettingsToggle(
-                "Let Notes collapse",
-                isOn: Binding(get: { layout.notesCanCollapse }, set: { store.setNotesCanCollapse($0) }))
-            SettingsToggle(
                 "Notes start collapsed",
                 isOn: Binding(get: { layout.notesStartCollapsed }, set: { store.setNotesStartCollapsed($0) }))
             SettingsToggle(
