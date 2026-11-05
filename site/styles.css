@@ -422,6 +422,11 @@ pre {
   text-indent: -2ch;
 }
 
+/* A flag never breaks between its dashes. */
+.flag {
+  white-space: nowrap;
+}
+
 /* A shell line continuation, shown only where the command can't fit on one line. */
 .cont {
   display: none;
@@ -507,8 +512,16 @@ p kbd {
   gap: 16px;
 }
 
-.install-grid .card {
+.install-grid .card,
+.card-part {
   gap: 14px;
+}
+
+/* The wide card's two halves. */
+.card-part {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .install-grid .btn {
@@ -516,7 +529,7 @@ p kbd {
 }
 
 /* Two columns start where the GitHub command still fits on one line. */
-@media (min-width: 800px) {
+@media (min-width: 960px) {
   .install-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -526,18 +539,20 @@ p kbd {
   }
 }
 
-@media (min-width: 960px) {
+/* Until the page is near its widest, the clone command needs two lines in its half. */
+@media (min-width: 960px) and (max-width: 1119px) {
+  .cont {
+    display: inline;
+  }
+}
+
+/* From here, the verify command fits on one line beside the download. */
+@media (min-width: 1080px) {
   .install-grid .card-wide {
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    grid-template-rows: auto 1fr;
     align-items: start;
     column-gap: 32px;
-  }
-
-  .card-wide > pre {
-    grid-column: 2;
-    grid-row: 1 / span 2;
   }
 }
 

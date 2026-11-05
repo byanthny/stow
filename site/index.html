@@ -267,7 +267,18 @@ npm test -- --grep upload
     <section class="band" id="install" aria-labelledby="install-title">
       <h2 class="install-title" id="install-title">Get Stow</h2>
       <div class="install-grid">
-        <article class="card card-wide" aria-labelledby="build-title">
+        <article class="card card-wide" id="download" aria-labelledby="download-title">
+          <div class="card-part">
+            <h3 id="download-title">Download</h3>
+            <p>An alpha DMG for Apple silicon and Intel. Open it and drag Stow to Applications. It's unsigned for now, so macOS asks you to allow Stow the first time it opens.</p>
+            <a class="btn btn-primary btn-small" href="https://github.com/byanthny/stow/releases">Download from Releases</a>
+          </div>
+          <div class="card-part">
+            <p>GitHub Actions builds each DMG from its release tag. To check yours, run this command, or compare it with its <code>.sha256</code> file. The <a href="https://github.com/byanthny/stow/blob/main/docs/install.md">installation guide</a> has the details.</p>
+            <pre class="code" translate="no" data-copy="Copy verify command"><code><span class="line">gh attestation verify Stow-0.3.0.dmg <span class="flag">--repo</span> byanthny/stow</span></code></pre>
+          </div>
+        </article>
+        <article class="card" aria-labelledby="build-title">
           <h3 id="build-title">Build from source</h3>
           <p>Needs Xcode 16.4 or later, which runs on macOS 15.3 or later. Unzip <code>build/Stow.zip</code> and move Stow.app to Applications. The package is for your own Mac.</p>
           <pre class="code" translate="no" data-copy="Copy commands"><code><span class="line">git clone <span class="cont" aria-hidden="true">\
@@ -277,11 +288,6 @@ npm test -- --grep upload
           <h3 id="github-title">Connect GitHub, if you want</h3>
           <p>Install the <a href="https://cli.github.com/">GitHub CLI</a> and sign in once. Stow asks before using it, and notes work without it.</p>
           <pre class="code" translate="no" data-copy="Copy command"><code><span class="line">gh auth login --hostname github.com</span></code></pre>
-        </article>
-        <article class="card" id="download" aria-labelledby="download-title">
-          <h3 id="download-title">Download</h3>
-          <p>An unsigned alpha DMG for Apple silicon and Intel. Signed builds come later.</p>
-          <a class="btn btn-primary btn-small" href="https://github.com/byanthny/stow/releases">Download from Releases</a>
         </article>
       </div>
     </section>
