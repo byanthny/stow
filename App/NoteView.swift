@@ -11,10 +11,12 @@ struct NoteView: View {
     /// A detached note's profile. Its color shows as a thin accent and its name in the title area once profile
     /// names show.
     var profile: ProfileHandle?
-    /// How tall a board note's editor may grow with its text before it scrolls.
+    /// How tall a board note's editor may grow while it is edited.
     var editorHeightLimit: CGFloat = 176
     /// Board notes can fold back into a one-line row.
     var onCollapse: (() -> Void)?
+    /// A board note shows a few lines, and its whole text only while it is being edited.
+    @State private var isEditing = false
     /// Only a detached note's header shares its window's title bar row.
     private var headerChrome: WindowChrome { detached ? chrome : WindowChrome() }
 
@@ -26,7 +28,7 @@ struct NoteView: View {
                     if let onCollapse {
                         Button(action: onCollapse) {
                             Image(systemName: "chevron.down").font(theme.font(size: 8, weight: .semibold))
-                                .frame(width: 9)
+                                .frame(width: 18, height: 22).contentShape(Rectangle())
                         }.buttonStyle(.plain).foregroundStyle(.stowMuted)
                             .accessibilityLabel("Collapse note").help("Collapse note")
                     }
@@ -53,6 +55,10 @@ struct NoteView: View {
                 }
                 .windowHeaderRow(headerChrome, horizontal: 10, vertical: 0)
                 .padding(.top, headerChrome.isInline ? 0 : 6)
+                // On the board, a click anywhere else in the header folds the note too.
+                .background {
+                    if let onCollapse { Color.clear.contentShape(Rectangle()).onTapGesture(perform: onCollapse) }
+                }
 
                 if let reference = note.pullRequest {
                     Button {
@@ -68,13 +74,14 @@ struct NoteView: View {
                         .accessibilityAction(named: "Remove pull request link") { store.unlinkPullRequest(noteID) }
                 }
 
-                // A board note shows its whole text, up to the limit; a detached note fills its window.
+                // Board notes grow to their whole text while edited; detached notes fill their window.
                 NativeEditor(
                     text: Binding(
                         get: { store.note(noteID)?.markdown ?? "" },
                         set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
                     focusRequestID: store.focusRequestID, appearance: theme.settings,
-                    fitsText: detached ? nil : 104...max(104, editorHeightLimit)
+                    fitsText: detached ? nil : 104...(isEditing ? max(176, editorHeightLimit) : 176),
+                    onEditingChange: { isEditing = $0 }
                 )
                 .frame(minHeight: detached ? 120 : nil, maxHeight: detached ? .infinity : nil)
                 .padding(.horizontal, 8)

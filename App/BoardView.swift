@@ -11,7 +11,7 @@ struct BoardView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
     @State private var expandedSections: Set<AttentionSection> = []
-    /// The height of the board's scrolling area. An open note grows to show its text up to about this tall.
+    /// The height of the board's scrolling area. The note being edited grows up to about this tall.
     @State private var visibleHeight: CGFloat = 0
 
     var body: some View {

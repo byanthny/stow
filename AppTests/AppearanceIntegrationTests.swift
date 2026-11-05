@@ -224,6 +224,49 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(board.contentView.bounds.maxY, note.maxY - editor.textContainerInset.height - 1)
     }
 
+    func testBoardNotesShowAFewLinesUntilEditedAndShrinkWhenClickedAway() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let board = ScrollView {
+            VStack(spacing: 0) {
+                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                Color.clear.frame(height: 200)
+            }
+        }.themed(by: store.theme)
+        let host = NSHostingView(rootView: board)
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        let scroll = try XCTUnwrap(noteScrollViews(in: host).first)
+        let editor = try XCTUnwrap(scroll.documentView as? NSTextView)
+        window.makeFirstResponder(nil)
+        await settle(host)
+        XCTAssertLessThanOrEqual(scroll.frame.height, 176.5, "A note that isn't being edited shows a few lines")
+
+        window.makeFirstResponder(editor)
+        await settle(host)
+        XCTAssertEqual(scroll.frame.height, 300, accuracy: 0.5, "While edited, it grows to the limit")
+
+        // A click in empty board space below the note ends the editing.
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let click = try XCTUnwrap(
+                NSEvent.mouseEvent(
+                    with: type, location: NSPoint(x: 180, y: 20), modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            NSApp.postEvent(click, atStart: false)
+        }
+        await settle(host)
+        XCTAssertFalse(window.firstResponder === editor)
+        XCTAssertLessThanOrEqual(scroll.frame.height, 176.5)
+    }
+
     /// Hosts a board-style editor showing `text`, and reports its height and whether its text scrolls inside.
     private func hostedEditor(_ text: String) async throws -> (height: CGFloat, scrolls: Bool) {
         let window = NSWindow(

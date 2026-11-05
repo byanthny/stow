@@ -16,6 +16,8 @@ struct NativeEditor: NSViewRepresentable {
     var appearance: AppearanceSettings
     /// When set, the editor fits its text within this range and scrolls past it; otherwise it fills its space.
     var fitsText: ClosedRange<CGFloat>?
+    /// Told when the text gains or loses focus.
+    var onEditingChange: ((Bool) -> Void)?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NoteScrollView()
@@ -40,6 +42,10 @@ struct NativeEditor: NSViewRepresentable {
         editor.minSize = .zero
         editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.delegate = context.coordinator
+        editor.onFocusChange = { [weak coordinator = context.coordinator, weak editor] focused in
+            guard let coordinator, let editor else { return }
+            coordinator.editingChanged(focused, in: editor)
+        }
         editor.setAccessibilityIdentifier(accessibilityID)
         editor.setAccessibilityLabel("Note Markdown source")
         editor.string = text
@@ -215,10 +221,18 @@ struct NativeEditor: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
+    static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
+        coordinator.stopWatchingClicks()
+    }
+
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: NativeEditor
         var focusedRequestID: UUID?
         var appliedAppearance: AppearanceSettings?
+        private var clickMonitor: Any?
+        /// A focus change the note hasn't heard about yet.
+        private var reportedEditing: Bool?
+        private var waitsForRelease = false
         init(_ parent: NativeEditor) { self.parent = parent }
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
@@ -227,11 +241,67 @@ struct NativeEditor: NSViewRepresentable {
             if parent.fitsText != nil { editor.enclosingScrollView?.invalidateIntrinsicContentSize() }
             if parent.text != editor.string { parent.text = editor.string }
         }
+
+        /// While a board note is being edited, a click anywhere else in its window ends the editing.
+        func editingChanged(_ editing: Bool, in editor: NSTextView) {
+            if editing && parent.fitsText != nil { watchClicks(around: editor) } else { stopWatchingClicks() }
+            reportedEditing = editing
+            guard !waitsForRelease else { return }
+            waitsForRelease = true
+            // Focus can move while SwiftUI updates its views, so the note hears about it afterward.
+            DispatchQueue.main.async { [weak self] in self?.reportWhenReleased() }
+        }
+
+        /// Tells the note once no mouse button is held, so nothing resizes under the pointer mid-click.
+        private func reportWhenReleased() {
+            // Text views track their own clicks, so the release is checked for rather than observed.
+            guard NSEvent.pressedMouseButtons == 0 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.reportWhenReleased() }
+                return
+            }
+            waitsForRelease = false
+            guard let editing = reportedEditing else { return }
+            reportedEditing = nil
+            parent.onEditingChange?(editing)
+        }
+
+        private func watchClicks(around editor: NSTextView) {
+            guard clickMonitor == nil else { return }
+            clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak editor] event in
+                if let editor, let window = editor.window, event.window === window, window.firstResponder === editor,
+                    let scroll = editor.enclosingScrollView,
+                    !scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil))
+                {
+                    window.makeFirstResponder(nil)
+                }
+                return event
+            }
+        }
+
+        func stopWatchingClicks() {
+            if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
+            clickMonitor = nil
+        }
     }
 }
 
 /// A note's text. ⌘-click on a link, or Open Link in its context menu, opens it; a plain click edits as usual.
 final class NoteTextView: NSTextView {
+    /// Told when the text gains or loses focus.
+    var onFocusChange: ((Bool) -> Void)?
+
+    override func becomeFirstResponder() -> Bool {
+        let became = super.becomeFirstResponder()
+        if became { onFocusChange?(true) }
+        return became
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { onFocusChange?(false) }
+        return resigned
+    }
+
     override func mouseDown(with event: NSEvent) {
         if event.modifierFlags.contains(.command), let url = link(at: event) {
             AppStore.openLink(url)
