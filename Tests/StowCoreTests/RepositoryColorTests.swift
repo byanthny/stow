@@ -22,14 +22,16 @@ final class RepositoryColorTests: XCTestCase {
         XCTAssertEqual(colors.count, RepositoryColor.hues.count)
     }
 
-    func testColorsReadOnEveryPresetSurface() throws {
-        for settings in [AppearanceSettings.default, .graphite, .paper] {
-            let surface = try XCTUnwrap(RGBColor(hex: settings.colors.surface))
+    func testColorsReadOnAnySurface() throws {
+        let presets = [AppearanceSettings.default, .graphite, .paper].map(\.colors.surface)
+        let grays = (0...255).map { String(format: "#%02X%02X%02X", $0, $0, $0) }
+        let tints = ["#2E3440", "#FDF6E3", "#005F87", "#8A2BE2", "#FFD700", "#B22222"]
+        for surface in presets + grays + tints {
+            let background = try XCTUnwrap(RGBColor(hex: surface))
             for index in 1...24 {
-                let hex = RepositoryColor.hex(
-                    for: reference("example", "project-\(index)"), onSurface: settings.colors.surface)
-                let contrast = try XCTUnwrap(RGBColor(hex: hex)).contrast(with: surface)
-                XCTAssertGreaterThanOrEqual(contrast, 4.5, "\(hex) on \(settings.colors.surface)")
+                let hex = RepositoryColor.hex(for: reference("example", "project-\(index)"), onSurface: surface)
+                let contrast = try XCTUnwrap(RGBColor(hex: hex)).contrast(with: background)
+                XCTAssertGreaterThanOrEqual(contrast, 4.5, "\(hex) on \(surface)")
             }
         }
     }
