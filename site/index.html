@@ -217,7 +217,7 @@
         <li class="card">
           <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7"/><path d="M9 16h5"/></svg>
           <h3>Notes are plain Markdown</h3>
-          <p>Every note is a <code>.md</code> file you can open in any editor. Stow reloads outside changes and keeps both versions if they ever clash.</p>
+          <p>Every note is a <code>.md</code> file you can open in any editor. Markdown shows as you type, and the marks stay visible. Stow reloads outside changes and keeps both versions if they ever clash.</p>
           <pre class="code code-note" translate="no"><code><span class="tok-mark">#</span> <span class="tok-heading">Flaky upload test</span>
 Repro on a slow network:
 
@@ -248,7 +248,7 @@ npm test -- --grep upload
         <li class="card">
           <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
           <h3>Private by design</h3>
-          <p>No account, analytics, or server. Your notes stay on your Mac, and Stow never reads your GitHub token.</p>
+          <p>No account, analytics, or server. Your notes stay on your Mac, and Stow never reads your GitHub token. The update check, also off until you turn it on, is the only request Stow makes without <code>gh</code>.</p>
         </li>
       </ul>
     </section>
