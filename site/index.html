@@ -114,8 +114,12 @@
             </div>
             <p class="summary" id="needs-summary" hidden>desktop: Handle refresh retries · desktop: Preserve window placement</p>
 
-            <div class="section-label">Notes <span class="count" data-notes-count>2</span></div>
-            <div class="notes-wrap">
+            <button type="button" class="section-toggle" data-action="section" aria-expanded="true" aria-controls="notes-body" data-summary="notes-summary">
+              <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+              Notes
+              <span class="count"><span data-notes-count>2</span><span class="sr-only"> notes</span></span>
+            </button>
+            <div class="notes-wrap" id="notes-body">
               <ul class="notes" role="list" data-notes>
                 <li class="note">
                   <div class="note-row">
@@ -131,7 +135,7 @@
                     </button>
                   </div>
                   <div class="note-body" id="note-1-body" hidden>
-                    <textarea class="note-input" aria-label="Note text" rows="5"># A little room to think
+                    <textarea class="note-input" aria-labelledby="note-1-title" rows="5"># A little room to think
 
 - keep the board quiet
 - bring the next action into view</textarea>
@@ -155,7 +159,7 @@
                       <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
                       example/desktop #24
                     </p>
-                    <textarea class="note-input" aria-label="Note text" rows="5">Check the window on the external display.</textarea>
+                    <textarea class="note-input" aria-labelledby="note-2-title" rows="5">Check the window on the external display.</textarea>
                   </div>
                 </li>
               </ul>
@@ -175,11 +179,12 @@
                     </button>
                   </div>
                   <div class="note-body" hidden>
-                    <textarea class="note-input" aria-label="Note text" rows="5"></textarea>
+                    <textarea class="note-input" rows="5"></textarea>
                   </div>
                 </li>
               </template>
             </div>
+            <p class="summary" id="notes-summary" hidden>A little room to think</p>
 
             <button type="button" class="section-toggle" data-action="section" aria-expanded="false" aria-controls="waiting-body" data-summary="waiting-summary">
               <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>

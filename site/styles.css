@@ -671,31 +671,23 @@ p kbd {
   scrollbar-width: thin;
 }
 
-.section-toggle,
-.section-label {
+.section-toggle {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
-  background: var(--bg);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.section-toggle {
   width: 100%;
+  min-height: 44px;
   padding: 0 2px;
   border: 0;
+  background: var(--bg);
   color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
-}
-
-.section-label {
-  padding: 0 2px 0 17px;
 }
 
 [aria-expanded="true"] > .chev {
