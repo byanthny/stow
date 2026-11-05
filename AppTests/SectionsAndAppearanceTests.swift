@@ -208,7 +208,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
         appearance.editorLineHeight = 1.8
         appearance.colors.text = "#DDEEFF"
         XCTAssertTrue(app.store.applyAppearance(appearance))
-        // The first line shows as a larger title, so the note's own font is the one typing uses.
+        // Typing uses the note's font, not the title's.
         let updated = await waitUntil {
             panel.contentView?.layoutSubtreeIfNeeded()
             return (editor.typingAttributes[.font] as? NSFont)?.pointSize == 19

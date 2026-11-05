@@ -22,7 +22,7 @@ extension GHClient {
         let selectors: [String: String] = [
             "contexts":
                 "statusCheckRollup { contexts(first:100, after:$cursor) { nodes { __typename ... on CheckRun { name conclusion status detailsUrl } ... on StatusContext { context state targetUrl } } \(Self.pageInfo) } }",
-            // The last few commits ride along with the reviews request, so they cost no extra call.
+            // Also carries the last three commits.
             "latestReviews":
                 "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) } \(Self.recentCommits)",
             "reviewThreads":

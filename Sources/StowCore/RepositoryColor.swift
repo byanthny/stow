@@ -10,7 +10,7 @@ public enum RepositoryColor {
         let name = "\(reference.owner)/\(reference.repository)".lowercased()
         let hue = hues[Int(name.stableHash % UInt64(hues.count))]
         let background = RGBColor(hex: surface) ?? RGBColor(hue: 0, saturation: 0, lightness: 0.1)
-        // Below this luminance white contrasts more than black, so the color lightens; otherwise it darkens.
+        // Below this luminance, white contrasts more than black.
         let lightens = background.luminance < 0.179
         var lightness = lightens ? 0.6 : 0.42
         var color = RGBColor(hue: hue, saturation: 0.6, lightness: lightness)

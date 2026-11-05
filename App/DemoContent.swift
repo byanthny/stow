@@ -8,7 +8,7 @@ enum DemoContent {
         let first = PullRequestReference(owner: "example", repository: "desktop", number: 24)
         let second = PullRequestReference(owner: "example", repository: "desktop", number: 27)
         let third = PullRequestReference(owner: "example", repository: "toolkit", number: 8)
-        // Enough cards that Needs you and Waiting each pass three, so pinning and Show more can be tried.
+        // Enough cards for Show more in Needs you and Waiting.
         state.pullRequests = [
             .init(
                 reference: first, title: "Preserve window placement", authorLogin: "developer", isViewerAuthor: true,

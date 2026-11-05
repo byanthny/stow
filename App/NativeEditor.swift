@@ -142,7 +142,7 @@ struct NativeEditor: NSViewRepresentable {
         storage.beginEditing()
         storage.addAttributes([.font: base, .foregroundColor: text], range: whole)
         for key in styleKeys { storage.removeAttribute(key, range: whole) }
-        // Line fonts first, then emphasis on top of them, and code last so it wins.
+        // Line fonts, then emphasis, then code on top.
         for span in spans {
             switch span.kind {
             case .title:
@@ -248,13 +248,13 @@ struct NativeEditor: NSViewRepresentable {
             reportedEditing = editing
             guard !waitsForRelease else { return }
             waitsForRelease = true
-            // Focus can move while SwiftUI updates its views, so the note hears about it afterward.
+            // Reports after SwiftUI finishes updating its views.
             DispatchQueue.main.async { [weak self] in self?.reportWhenReleased() }
         }
 
         /// Tells the note once no mouse button is held, so nothing resizes under the pointer mid-click.
         private func reportWhenReleased() {
-            // Text views track their own clicks, so the release is checked for rather than observed.
+            // Polls until the mouse button is up.
             guard NSEvent.pressedMouseButtons == 0 else {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.reportWhenReleased() }
                 return

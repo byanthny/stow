@@ -110,7 +110,7 @@ public enum MarkdownStyle {
     }
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
-        // The patterns are constants, so a failure here is a programming error caught by the tests.
+        // The patterns are constants, covered by the tests.
         try! NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
     }
 

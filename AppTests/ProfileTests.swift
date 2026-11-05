@@ -105,7 +105,7 @@ final class ProfileTests: XCTestCase {
         let note = try XCTUnwrap(session.store.state.notes.first)
         session.showSettings()
         let settings = try XCTUnwrap(session.settingsWindow)
-        // The board and detached notes start on top, so Settings starts at their level.
+        // The board and detached notes start pinned.
         XCTAssertEqual(settings.level, .floating, "A pinned board never covers Settings")
 
         session.store.toggleBoardAlwaysOnTop()

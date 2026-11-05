@@ -96,7 +96,7 @@ struct NoteView: View {
                 .padding(.horizontal, 8)
                 AccessoryViews(store: store, noteID: noteID)
             }
-            // A detached note is a window like the board, so it takes the board's background.
+            // Detached notes take the board's background.
             .background(
                 detached ? StowColor.stowBackground : .stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9)
             )
