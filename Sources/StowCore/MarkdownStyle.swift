@@ -105,22 +105,29 @@ public enum MarkdownStyle {
         return title
     }
 
+    /// Whether `range` overlaps any of `ranges`, which are in order and apart, as code spans are.
     private static func overlaps(_ range: NSRange, _ ranges: [NSRange]) -> Bool {
-        ranges.contains { NSIntersectionRange($0, range).length > 0 }
+        var low = 0
+        var high = ranges.count
+        while low < high {
+            let middle = (low + high) / 2
+            if NSMaxRange(ranges[middle]) <= range.location { low = middle + 1 } else { high = middle }
+        }
+        return range.length > 0 && low < ranges.count && ranges[low].location < NSMaxRange(range)
     }
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
-        // The patterns are constants, so a failure here is a programming error caught by the tests.
+        // The patterns are constants, covered by the tests.
         try! NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
     }
 
     private static let headingPattern = regex(#"^ {0,3}(#{1,6})(?=[ \t]|$)"#)
     private static let quotePattern = regex(#"^ {0,3}(>)"#)
     private static let listPattern = regex(#"^[ \t]*([-*+]|\d{1,9}[.)])(?=[ \t])"#)
-    private static let boldPattern = regex(#"(\*\*|__)(?=\S)([^\n]+?)(?<=\S)(\1)"#)
-    private static let strikePattern = regex(#"(~~)(?=\S)([^\n]+?)(?<=\S)(~~)"#)
+    private static let boldPattern = regex(#"(\*\*|__)(?=\S)((?:(?!\1)[^\n])+?)(?<=\S)(\1)"#)
+    private static let strikePattern = regex(#"(~~)(?=\S)((?:(?!~~)[^\n])+?)(?<=\S)(~~)"#)
     private static let starItalicPattern = regex(#"(?<![*\w])(\*)(?=[^\s*])([^\n*]+?)(?<=[^\s*])(\*)(?![*\w])"#)
     private static let underscoreItalicPattern = regex(#"(?<![_\w])(_)(?=[^\s_])([^\n_]+?)(?<=[^\s_])(_)(?![_\w])"#)
-    private static let linkPattern = regex(#"(\[)([^\]\n]+)\]\(([^)\s]+)\)"#)
+    private static let linkPattern = regex(#"(\[)([^\[\]\n]+)\]\(([^()\[\]\s]+)\)"#)
     private static let bareLinkPattern = regex(#"(?<![\(<\[\w/])https?://[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]"#)
 }

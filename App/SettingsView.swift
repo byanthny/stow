@@ -183,7 +183,7 @@ private struct BoardSettingsView: View {
                     get: { layout.hidesNotesForHiddenOwners }, set: { store.setHidesNotesForHiddenOwners($0) }))
             HStack {
                 Text(
-                    "Defaults: title shown; Needs you, Notes, Waiting; 3 pull requests per section; the Notes section stays open; notes start collapsed and open one at a time; owners A to Z and not grouped; the owner control shows only when needed; owner filters never hide notes."
+                    "Defaults: title shown; Needs you, Notes, Waiting; 3 pull requests per section; notes start collapsed; owners A to Z and not grouped; the owner control shows only when needed; owner filters never hide notes."
                 )
                 .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 Spacer()

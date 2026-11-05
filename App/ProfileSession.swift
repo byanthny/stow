@@ -56,7 +56,10 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             accessoryProviders: accessoryProviders, arrival: entry.isArrival)
         super.init()
         store.onDetach = { [weak self] id in self?.showNote(id) }
-        store.onDelete = { [weak self] id in self?.noteWindows.removeValue(forKey: id)?.orderOut(nil) }
+        store.onDelete = { [weak self] id in
+            self?.noteWindows.removeValue(forKey: id)?.orderOut(nil)
+            self?.applySettingsLevel()
+        }
         store.onShowBoard = { [weak self] in self?.showBoard() }
         store.onAppearanceChange = { [weak self] in self?.applyWindowAppearance() }
         store.onBoardLevelChange = { [weak self] in self?.applyBoardLevel() }
@@ -216,6 +219,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         guard let panel = notification.object as? StowPanel, let id = panel.noteID else { return }
         store.closeDetachedNote(id)
         noteWindows[id] = nil
+        applySettingsLevel()
     }
 
     func windowDidMove(_ notification: Notification) { recordFrame(notification) }

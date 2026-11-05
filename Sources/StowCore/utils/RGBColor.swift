@@ -35,9 +35,18 @@ struct RGBColor: Equatable {
     }
 
     var hex: String {
-        func byte(_ channel: Double) -> Int { Int((min(max(channel, 0), 1) * 255).rounded()) }
-        return String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
+        String(format: "#%02X%02X%02X", Int(Self.byte(red)), Int(Self.byte(green)), Int(Self.byte(blue)))
     }
+
+    /// The color as `hex` writes it, each channel rounded to a whole byte.
+    var rounded: RGBColor {
+        var color = self
+        (color.red, color.green, color.blue) = (Self.byte(red) / 255, Self.byte(green) / 255, Self.byte(blue) / 255)
+        return color
+    }
+
+    /// A channel from 0 to 1 as a byte value from 0 to 255.
+    private static func byte(_ channel: Double) -> Double { (min(max(channel, 0), 1) * 255).rounded() }
 
     /// Relative luminance, as WCAG defines it.
     var luminance: Double {

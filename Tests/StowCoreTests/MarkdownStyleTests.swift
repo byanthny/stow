@@ -61,4 +61,13 @@ final class MarkdownStyleTests: XCTestCase {
         XCTAssertEqual(links.map(\.1.absoluteString), ["https://example.com/docs", "https://example.org/a"])
         XCTAssertEqual(markers(source), ["[", "](https://example.com/docs)"])
     }
+
+    func testLongLinesOfUnclosedMarksStyleQuickly() {
+        for piece in ["**a ", "~~a ", "[", "[a](", "`a` **b** ", "```\nx\n```\n"] {
+            let source = String(repeating: piece, count: 64_000 / piece.utf8.count)
+            let start = Date.now
+            _ = MarkdownStyle.spans(in: source)
+            XCTAssertLessThan(Date.now.timeIntervalSince(start), 2, "\(piece.debugDescription) took too long")
+        }
+    }
 }

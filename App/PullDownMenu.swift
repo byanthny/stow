@@ -27,7 +27,7 @@ struct PullDownMenu: NSViewRepresentable {
     func makeNSView(context: Context) -> NSPopUpButton {
         let button = NSPopUpButton(frame: .zero, pullsDown: true)
         button.isBordered = symbol == nil
-        // A symbol face reads as an icon button, so it drops the pull-down arrow.
+        // Symbol faces drop the pull-down arrow.
         if symbol != nil { (button.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow }
         button.contentTintColor = tint.map(NSColor.init)
         context.coordinator.shownTint = tint

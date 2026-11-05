@@ -107,7 +107,7 @@ final class AttentionTests: XCTestCase {
             ("SUCCESS", true, "Checks passed", .success), ("FAILURE", true, "Checks failing", .failure),
             ("ERROR", true, "Checks failing", .failure), ("PENDING", true, "Checks running", .pending),
             ("EXPECTED", true, "Checks running", .pending), (nil, true, "No checks", nil),
-            (nil, false, "Checks unknown", nil),
+            (nil, false, "Checks unknown", nil), ("NEUTRAL", true, "Checks unknown", nil),
         ]
         for (state, known, label, tone) in cases {
             var pullRequest = ready()
@@ -135,6 +135,15 @@ final class AttentionTests: XCTestCase {
         failing.reviewDecision = nil
         XCTAssertNil(failing.cardStatus(under: classify(failing)).headline)
 
+        var running = ready()
+        running.checksState = "PENDING"
+        running.reviewDecision = "REVIEW_REQUIRED"
+        XCTAssertEqual(
+            running.cardStatus(under: classify(running)),
+            CardStatus(
+                headline: "Review pending", tone: .pending, notes: [],
+                checks: ChecksStatus(label: "Checks running", tone: .pending)))
+
         var changes = ready()
         changes.reviewDecision = "CHANGES_REQUESTED"
         XCTAssertEqual(
@@ -149,6 +158,15 @@ final class AttentionTests: XCTestCase {
             conflicts.cardStatus(under: classify(conflicts)),
             CardStatus(
                 headline: "Resolve conflicts", tone: .failure, notes: ["Approved", "Behind base"], checks: passed))
+
+        // Someone else's pull request still shows its review.
+        var others = ready()
+        others.isViewerAuthor = false
+        XCTAssertEqual(
+            others.cardStatus(under: classify(others)),
+            CardStatus(headline: "Waiting for review", tone: .pending, notes: ["Approved"], checks: passed))
+        others.reviewDecision = "REVIEW_REQUIRED"
+        XCTAssertEqual(others.cardStatus(under: classify(others)).notes, [])
 
         var behind = ready()
         behind.mergeStateStatus = "BEHIND"

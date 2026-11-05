@@ -17,7 +17,7 @@ struct PRCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         // Lead with the repository so cards from different repos are easy to tell apart.
                         if pr.title != pr.reference.displayName {
-                            // The repository's own color picks out "/repo", so cards from one repo match at a glance.
+                            // "/repo" takes the repository's color.
                             let surface = theme.settings.colors.surface
                             let repository = Color(stowHex: RepositoryColor.hex(for: pr.reference, onSurface: surface))
                             (Text(verbatim: pr.reference.owner).foregroundStyle(.stowText)

@@ -90,13 +90,16 @@ struct NoteView: View {
                         set: { store.editNote(noteID, markdown: $0) }), shouldFocus: store.focusNoteID == noteID,
                     focusRequestID: store.focusRequestID, appearance: theme.settings,
                     fitsText: detached ? nil : 104...(isEditing ? max(176, editorHeightLimit) : 176),
-                    onEditingChange: { isEditing = $0 }
+                    onEditingChange: { editing in
+                        isEditing = editing
+                        if editing { store.focusTaken(by: noteID) }
+                    }
                 )
                 .frame(minHeight: detached ? 120 : nil, maxHeight: detached ? .infinity : nil)
                 .padding(.horizontal, 8)
                 AccessoryViews(store: store, noteID: noteID)
             }
-            // A detached note is a window like the board, so it takes the board's background.
+            // Detached notes take the board's background.
             .background(
                 detached ? StowColor.stowBackground : .stowNote, in: RoundedRectangle(cornerRadius: detached ? 0 : 9)
             )
@@ -174,7 +177,6 @@ struct DetachedNoteLauncher: View {
     }
 }
 
-/// A board note folded into one line: open it inline, or pop it out into its own window.
 /// The Notes area's typing spot: clicking it starts a note with the cursor ready.
 struct NoteComposerRow: View {
     /// With no notes yet, the row also explains what the area is for.
@@ -203,6 +205,7 @@ struct NoteComposerRow: View {
     }
 }
 
+/// A board note folded into one line: open it inline, or pop it out into its own window.
 struct CollapsedNoteRow: View {
     @Bindable var store: AppStore
     let note: Note

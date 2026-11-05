@@ -43,7 +43,7 @@ extension PullRequestSnapshot {
         case "SUCCESS": ChecksStatus(label: "Checks passed", tone: .success)
         case "FAILURE", "ERROR": ChecksStatus(label: "Checks failing", tone: .failure)
         case "PENDING", "EXPECTED": ChecksStatus(label: "Checks running", tone: .pending)
-        default: ChecksStatus(label: checksKnown ? "No checks" : "Checks unknown", tone: nil)
+        default: ChecksStatus(label: checksKnown && checksState == nil ? "No checks" : "Checks unknown", tone: nil)
         }
     }
 }
@@ -78,7 +78,8 @@ extension PullRequestSnapshot {
             status.headline = reason
             status.tone = classification.tone
             let aboutReview = ["Changes requested", "Review required", "Review requested", "Waiting for review"]
-            if let review, !aboutReview.contains(reason) { status.notes.append(review.text) }
+            let repeats = review?.text == reason || (aboutReview.contains(reason) && review?.text == "Review pending")
+            if let review, !repeats { status.notes.append(review.text) }
         }
         if mergeStateStatus == "BEHIND", reason != "Behind base branch" { status.notes.append("Behind base") }
         return status

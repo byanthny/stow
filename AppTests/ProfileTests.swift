@@ -105,7 +105,7 @@ final class ProfileTests: XCTestCase {
         let note = try XCTUnwrap(session.store.state.notes.first)
         session.showSettings()
         let settings = try XCTUnwrap(session.settingsWindow)
-        // The board and detached notes start on top, so Settings starts at their level.
+        // The board and detached notes start pinned.
         XCTAssertEqual(settings.level, .floating, "A pinned board never covers Settings")
 
         session.store.toggleBoardAlwaysOnTop()
@@ -116,6 +116,13 @@ final class ProfileTests: XCTestCase {
 
         session.store.toggleAlwaysOnTop(note.id)
         XCTAssertEqual(settings.level, .floating, "Nor does a note kept on top")
+
+        session.noteWindows[note.id]?.close()
+        XCTAssertEqual(settings.level, .normal, "Closing the last pinned window brings Settings back down")
+        session.store.detachNote(note.id)
+        XCTAssertEqual(settings.level, .floating)
+        session.store.deleteNote(note.id)
+        XCTAssertEqual(settings.level, .normal, "So does deleting its note")
     }
 
     func testTwoProfilesStayIsolated() async throws {
