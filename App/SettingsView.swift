@@ -158,9 +158,6 @@ private struct BoardSettingsView: View {
             SettingsToggle(
                 "Notes start collapsed",
                 isOn: Binding(get: { layout.notesStartCollapsed }, set: { store.setNotesStartCollapsed($0) }))
-            SettingsToggle(
-                "Open one note at a time",
-                isOn: Binding(get: { layout.oneNoteOpenAtATime }, set: { store.setOneNoteOpenAtATime($0) }))
             Text("Owners").font(theme.font(size: 11)).foregroundStyle(.secondary)
             SettingsToggle(
                 "Group by owner", identifier: "board.groupByOwner",
