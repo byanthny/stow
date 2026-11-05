@@ -4,8 +4,9 @@ Stow separates local state, GitHub reads, portable accessories, and the macOS in
 
 | component | responsibility |
 | --- | --- |
-| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, cache reconciliation, and the update check |
+| `StowCore` | models, live Markdown storage and metadata index, transfer codecs, paste parsing, attention classification, cache reconciliation, and update versions, policy, and settings |
 | `StowGitHub` | GitHub CLI process transport, GraphQL decoding and pagination, refresh coordination, and lazy details |
+| `StowUpdates` | the update check's one request: a release list read without cookies, credentials, or cache |
 | `StowExtensionSDK` | plain versioned request, descriptor, configuration, and snapshot values plus `AccessoryProvider` |
 | `StowExtensions` | provider registry, validation, timeout, cancellation, cache, and adapters |
 | `StowSampleExtension` | optional synthetic provider with no network or host-state dependency |
@@ -48,7 +49,9 @@ Classification distinguishes observed facts from incomplete readiness. Conflicts
 
 ## Update check
 
-`UpdateCheck` in `StowCore` makes the one request Stow sends without `gh`, and only after the person turns on Settings → Updates or chooses **Check for updates…**. It uses an ephemeral `URLSession` with no cookies, credentials, or cache, fixed headers, and a 30-second limit, and reads at most 1 MiB. Release tags compare as Semantic Versioning, pre-releases included, and a release counts only when its page is under `https://github.com/byanthny/stow/releases/` with no dot segments. `UpdateMonitor` in the app runs one check at a time: at launch and then at most daily while the setting is on, or when asked. It keeps the setting and the last result in `profiles.json`; the board shows a notice until it is dismissed or that version runs. Nothing downloads.
+`ReleaseFeed` in `StowUpdates` makes the one request Stow sends without `gh`, and only after the person turns on Settings → Updates or chooses **Check for updates…**. It uses an ephemeral `URLSession` with no cookies, credentials, or cache, fixed headers, and a 30-second limit, and reads at most 1 MiB. Everything else is plain values in `StowCore`. A `ReleaseSource`, Stow's by default, names the release list and the only pages a release may link to: under `https://github.com/byanthny/stow/releases/`, with no dot segments. An `UpdatePolicy` decides when a check is due and which release to offer: release tags compare as Semantic Versioning, and pre-releases count only until a stable release is out. `UpdateSettings.record` turns a check's result into what the board offers, keeping the earlier release when a check fails. `UpdateMonitor` in the app runs one check at a time: at launch and then at most daily while the setting is on, or when asked. It keeps the setting and the last result in `profiles.json`; the board shows a notice until it is dismissed or that version runs. Nothing downloads.
+
+Older Stow versions don't know the update settings, so one that rewrites `profiles.json` drops them, and a damaged value reads as off. Either way, checks stay off until turned on again.
 
 ## Dependency direction
 
