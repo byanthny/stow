@@ -857,16 +857,21 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertEqual(try trashed(), [])
     }
 
-    func testProfileThatCannotBeLockedIsStillTrashed() async throws {
+    func testProfileWhoseLockFailsIsRefused() async throws {
         try write("{}", "state.json")
         let catalog = catalog()
+        let main = try await catalog.load().profiles[0]
         let work = try await catalog.createProfile(name: "Work", color: "#336699")
-        // A planted link makes the lock unavailable, as on a volume without flock.
-        try FileManager.default.createSymbolicLink(
-            at: work.folder.appendingPathComponent(StateLock.filename),
-            withDestinationURL: root.appendingPathComponent("missing"))
-        try await catalog.trash(work.id)
-        XCTAssertEqual(try trashed(), [work.id.uuidString])
+        for entry in [work, main] {
+            // A folder at the lock path makes locking fail.
+            let lockPath = entry.folder.appendingPathComponent(StateLock.filename)
+            try FileManager.default.createDirectory(at: lockPath, withIntermediateDirectories: false)
+            let before = try tree(root)
+            await assertThrows(.unwritable) { try await catalog.trash(entry.id) }
+            XCTAssertEqual(try tree(root), before)
+            try FileManager.default.removeItem(at: lockPath)
+        }
+        XCTAssertEqual(try trashed(), [])
     }
 
     func testFailedMovePutsEveryFileBack() async throws {
@@ -972,6 +977,24 @@ final class ProfileCatalogTests: XCTestCase {
         XCTAssertFalse(exists(".moving.json"))
         XCTAssertEqual(try names(in: destination), (items + [StateLock.filename]).sorted())
         XCTAssertEqual(try trashed(), [])
+    }
+
+    func testInterruptedMoveWaitsWhileEitherLockFails() async throws {
+        let (id, items) = try seedInterruptedMove()
+        let destination = root.appendingPathComponent("profiles/\(id.uuidString)")
+        let catalog = catalog()
+        for folder in [root!, destination] {
+            let lockPath = folder.appendingPathComponent(StateLock.filename)
+            try FileManager.default.createDirectory(at: lockPath, withIntermediateDirectories: false)
+            let before = try tree(root)
+            _ = try await catalog.load()
+            XCTAssertEqual(try tree(root), before)
+            try FileManager.default.removeItem(at: lockPath)
+            XCTAssertTrue(FileManager.default.createFile(atPath: lockPath.path, contents: nil))
+        }
+        _ = try await catalog.load()
+        XCTAssertFalse(exists(".moving.json"))
+        XCTAssertEqual(try names(in: destination), (items + [StateLock.filename]).sorted())
     }
 
     func testJournalForAFolderAlreadyTrashedIsDropped() async throws {

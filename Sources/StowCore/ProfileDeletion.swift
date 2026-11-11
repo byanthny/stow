@@ -53,7 +53,8 @@ extension ProfileCatalog {
     var journalURL: URL { dataFolder.appendingPathComponent(ProfileMoveJournal.filename) }
 
     /// Moves a profile's folder to the Trash, where it stays recoverable, then drops the profile from the index.
-    /// Holds the profile's lock throughout, and refuses while another holder has it and for the last profile.
+    /// Holds the profile's lock throughout, and refuses while another holder has it, when it can't be taken, and
+    /// for the last profile.
     /// If a step of the data folder profile's move fails, its files go back before the error is thrown; any that
     /// cannot go back stay recorded, and the next load finishes the move. Profile data is never deleted.
     public func trash(_ id: UUID) throws {
@@ -146,10 +147,10 @@ extension ProfileCatalog {
     }
 
     /// Finishes a move of the data folder profile that a crash interrupted, so its files are never left split
-    /// between two folders. While another holder has the data folder's lock or the destination's, the journal
-    /// waits for a later launch; on a volume that cannot lock, it proceeds unguarded, as writes there do. It
-    /// moves only the journal's profile files, never replaces anything, and leaves an unreadable or newer journal
-    /// untouched.
+    /// between two folders. While another holder has the data folder's lock or the destination's, or either can't
+    /// be taken, the journal waits for a later launch; on a volume that cannot lock, it proceeds unguarded, as
+    /// writes there do. It moves only the journal's profile files, never replaces anything, and leaves an
+    /// unreadable or newer journal untouched.
     func finishInterruptedMove() {
         guard (try? LiveNoteIO.exists(journalURL)) == true else { return }
         let dataLock: StateLock?
@@ -182,12 +183,13 @@ extension ProfileCatalog {
     // MARK: helpers
 
     /// The folder's lock, or nil on a volume that cannot lock, where writing proceeds as elsewhere in Stow.
-    /// Throws `.inUse` while another holder, in this process or another, has it.
+    /// Throws `.inUse` while another holder, in this process or another, has it, and `.unwritable` when it fails.
     private static func holdLock(of folder: URL) throws -> StateLock? {
         switch StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json")) {
         case .acquired(let lock): return lock
         case .heldByAnotherProcess: throw ProfileError.inUse
-        case .unavailable, .failed: return nil
+        case .unavailable: return nil
+        case .failed: throw ProfileError.unwritable
         }
     }
 
