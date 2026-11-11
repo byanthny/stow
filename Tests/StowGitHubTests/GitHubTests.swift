@@ -562,6 +562,16 @@ struct GHProcessTests {
         await #expect(throws: GitHubError.requestFailed) { try await request(gh, timeout: 10, query: query) }
     }
 
+    @Test(.timeLimit(.minutes(1))) func theCheckedFileIsLaunchedRatherThanTheLink() async throws {
+        let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n%s' "$0""#)
+        defer { cleanUp(gh) }
+        let link = gh.deletingLastPathComponent().appendingPathComponent("bin/gh")
+        try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: gh)
+        let response = try await request(link, timeout: 10)
+        #expect(String(decoding: response.body, as: UTF8.self) == gh.resolvingSymlinksInPath().path)
+    }
+
     @Test(.timeLimit(.minutes(1))) func timedOutRequestLeavesNoChildAlive() async throws {
         // The child ignores SIGTERM.
         let gh = try fakeGH(#"(trap '' TERM; exec sleep 30) & echo $! > "$0.children"; sleep 30"#)

@@ -152,11 +152,11 @@ private final class ProcessControl: @unchecked Sendable {
         -> GraphQLResponse
     {
         // Checks the path again, since it can change after the client was made.
-        guard GHClient.isUsableExecutable(atPath: executable.path, excluding: folder) else {
+        guard let checked = GHClient.checkedExecutable(atPath: executable.path, excluding: folder) else {
             throw GitHubError.executableNotFound
         }
         return try await withCheckedThrowingContinuation { continuation in
-            queue.async { self.start(continuation, executable: executable, input: input, timeout: timeout) }
+            queue.async { self.start(continuation, executable: checked, input: input, timeout: timeout) }
         }
     }
 

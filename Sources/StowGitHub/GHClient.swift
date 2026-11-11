@@ -289,7 +289,12 @@ public actor GHClient: GitHubClient {
     /// not writable by its group or other users, outside `folder` both where it is and where it leads.
     /// Anything else is ignored, whatever saved state or a restore says.
     public nonisolated static func isUsableExecutable(atPath path: String, excluding folder: URL? = nil) -> Bool {
-        guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return false }
+        checkedExecutable(atPath: path, excluding: folder) != nil
+    }
+
+    /// The file `path` resolves to, when `isUsableExecutable` accepts it.
+    nonisolated static func checkedExecutable(atPath path: String, excluding folder: URL?) -> URL? {
+        guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return nil }
         // A link named gh must also lead to a program named gh, as Homebrew and installer links do.
         let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         var info = stat()
@@ -297,11 +302,11 @@ public actor GHClient: GitHubClient {
             resolved.withCString({ Darwin.lstat($0, &info) }) == 0,
             (info.st_mode & S_IFMT) == S_IFREG,
             info.st_mode & (S_IWGRP | S_IWOTH) == 0
-        else { return false }
+        else { return nil }
         if let folder, [path, resolved].contains(where: { URL(fileURLWithPath: $0).isInside(folder) }) {
-            return false
+            return nil
         }
-        return FileManager.default.isExecutableFile(atPath: resolved)
+        return FileManager.default.isExecutableFile(atPath: resolved) ? URL(fileURLWithPath: resolved) : nil
     }
 
     private struct Envelope {
