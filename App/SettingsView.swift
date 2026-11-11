@@ -211,7 +211,6 @@ private struct BoardSettingsView: View {
 private struct UpdateSettingsView: View {
     let profile: ProfileHandle
     @Environment(\.stowTheme) private var theme
-    @State private var problem: String?
 
     var body: some View {
         let explanation = "Asks GitHub once a day whether a newer Stow is out. Nothing is downloaded."
@@ -224,7 +223,7 @@ private struct UpdateSettingsView: View {
                     set: { checks in setChecksForUpdates(checks) }))
             Text((profile.manager?.profiles.count ?? 1) > 1 ? explanation + " Applies to every profile." : explanation)
                 .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let problem {
+            if let problem = profile.manager?.updates.problem {
                 Text(problem).font(theme.font(size: 11)).foregroundStyle(.stowRed)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -233,14 +232,7 @@ private struct UpdateSettingsView: View {
 
     private func setChecksForUpdates(_ checks: Bool) {
         guard let updates = profile.manager?.updates else { return }
-        problem = nil
-        Task {
-            do {
-                try await updates.setChecksForUpdates(checks)
-            } catch {
-                problem = profileProblem(error, name: "Stow")
-            }
-        }
+        Task { try? await updates.setChecksForUpdates(checks) }
     }
 }
 

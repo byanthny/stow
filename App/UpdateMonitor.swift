@@ -12,6 +12,8 @@ final class UpdateMonitor {
     static let github: Fetch = { try await ReleaseFeed.fetchReleases() }
 
     private(set) var settings = UpdateSettings()
+    /// Why the settings couldn't be saved; nil once a save works.
+    private(set) var problem: String?
     /// This copy's version.
     let running: ReleaseVersion?
     /// Says what Check for updates… found. Tests replace it.
@@ -62,7 +64,7 @@ final class UpdateMonitor {
         Task { try? await save() }
     }
 
-    /// While on, checks hourly whether a day has passed since the last check.
+    /// While on, checks hourly whether a day has passed since the last check that worked.
     private func reschedule() {
         schedule?.cancel()
         schedule = nil
@@ -110,7 +112,13 @@ final class UpdateMonitor {
         let previous = saving
         let task = Task {
             _ = await previous?.result
-            try await catalog.setUpdateSettings(settings)
+            do {
+                try await catalog.setUpdateSettings(settings)
+                problem = nil
+            } catch {
+                problem = profileProblem(error, name: "Stow")
+                throw error
+            }
         }
         saving = task
         try await task.value

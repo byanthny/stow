@@ -2644,6 +2644,72 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(feed.count, 2)
     }
 
+    func testAFailedSaveOfTheUpdateSettingsShowsUntilOneWorks() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let feed = ReleaseFeed()
+        feed.answer(["v1.1.0"])
+        let index = folder.appendingPathComponent(ProfileIndex.filename)
+        func saved() throws -> UpdateSettings { try ProfileIndex.decode(Data(contentsOf: index)).updates }
+        func writable(_ yes: Bool) throws {
+            try FileManager.default.setAttributes([.posixPermissions: yes ? 0o700 : 0o500], ofItemAtPath: folder.path)
+        }
+        defer { try? writable(true) }
+        let manager = makeManager(folder, updateFetch: feed.fetch)
+        defer { stop(manager) }
+        let opened = await manager.start()
+        XCTAssertTrue(opened)
+        let reports = OutcomeLog()
+        manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
+        XCTAssertNil(manager.updates.problem)
+        let unwritable = profileProblem(ProfileError.unwritable, name: "Stow")
+
+        // Turning checks on can't be saved: Settings says why, the setting stays off, and nothing is asked.
+        try writable(false)
+        do {
+            try await manager.updates.setChecksForUpdates(true)
+            XCTFail("The data folder can't be written")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        XCTAssertEqual(manager.updates.problem, unwritable)
+        XCTAssertFalse(manager.updates.settings.checksForUpdates)
+        XCTAssertEqual(feed.count, 0)
+
+        // A save that works clears it.
+        try writable(true)
+        try await manager.updates.setChecksForUpdates(true)
+        XCTAssertNil(manager.updates.problem)
+        let stored = await waitUntil { (try? saved())?.available != nil }
+        XCTAssertTrue(stored)
+        let checkedAt = try XCTUnwrap(saved().lastCheckAt)
+
+        // A failed check is reported where it was asked for, and leaves Settings and the last check's time alone.
+        feed.fail(.unreachable)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes, [.failed(.unreachable)])
+        XCTAssertNil(manager.updates.problem)
+        XCTAssertEqual(manager.updates.settings.lastCheckAt, checkedAt)
+
+        // A check whose result can't be saved says so.
+        feed.answer(["v1.2.0", "v1.1.0"])
+        try writable(false)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.count, 2)
+        XCTAssertEqual(manager.updates.problem, unwritable)
+        XCTAssertEqual(try saved().available?.version.description, "1.1.0")
+
+        // The next save that works, here a dismissal's, clears it and catches up.
+        try writable(true)
+        manager.updates.dismissNotice()
+        let cleared = await waitUntil { manager.updates.problem == nil }
+        XCTAssertTrue(cleared)
+        XCTAssertEqual(try saved().available?.version.description, "1.2.0")
+        XCTAssertEqual(try saved().dismissedVersion, ReleaseVersion("1.2.0"))
+        XCTAssertEqual(feed.count, 3)
+    }
+
     func testCheckForUpdatesAnswersWithTheSettingOffAndSavesNothing() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
