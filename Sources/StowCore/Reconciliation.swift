@@ -37,8 +37,9 @@ public func reconcileSnapshots(
         } else {
             return nil
         }
-        let isTerminal = result.state == "CLOSED" || result.state == "MERGED"
-        if isTerminal {
+        if result.state == "CLOSED" || result.state == "MERGED" {
+            // An unpinned card that an earlier refresh already showed merged or closed leaves now.
+            if old?.terminalObservedAt != nil, !pinnedIDs.contains(id) { return nil }
             // A provider timestamp cannot establish when this app first observed a terminal state.
             result.terminalObservedAt = old?.terminalObservedAt ?? now
         } else {
@@ -49,11 +50,6 @@ public func reconcileSnapshots(
             result.observedStateSince = old.observedStateSince
         } else {
             result.observedStateSince = now
-        }
-        if isTerminal, !pinnedIDs.contains(id), let firstObserved = result.terminalObservedAt,
-            now.timeIntervalSince(firstObserved) >= 24 * 60 * 60
-        {
-            return nil
         }
         return result
     }
