@@ -134,7 +134,7 @@ private final class ProcessControl: @unchecked Sendable {
     private var continuation: CheckedContinuation<GraphQLResponse, any Error>?
     private var process: Process?
     private var channels: [DispatchIO] = []
-    private var pendingIO = 0
+    private var openReads = 0
     private var hasExited = false
     private var cancelled = false
     private var wroteInput = false
@@ -191,10 +191,13 @@ private final class ProcessControl: @unchecked Sendable {
         process = p
         for (handle, buffer) in [(stdout.fileHandleForReading, out), (stderr.fileHandleForReading, err)] {
             let channel = open(handle, done: done)
+            openReads += 1
             channel.setLimit(lowWater: 1)
             channel.read(offset: 0, length: Int.max, queue: queue) { finished, data, _ in
                 if let data { buffer.append(data) }
-                if finished { self.ended(channel, done: done) }
+                guard finished else { return }
+                self.openReads -= 1
+                self.ended(channel, done: done)
             }
         }
         let writer = open(stdin.fileHandleForWriting, done: done)
@@ -211,7 +214,6 @@ private final class ProcessControl: @unchecked Sendable {
     /// A channel that closes `handle` once it's closed itself.
     private func open(_ handle: FileHandle, done: DispatchGroup) -> DispatchIO {
         done.enter()
-        pendingIO += 1
         let channel = DispatchIO(type: .stream, fileDescriptor: handle.fileDescriptor, queue: queue) { _ in
             try? handle.close()
         }
@@ -220,16 +222,22 @@ private final class ProcessControl: @unchecked Sendable {
     }
 
     private func ended(_ channel: DispatchIO, done: DispatchGroup) {
-        pendingIO -= 1
         channel.close()
         done.leave()
     }
 
-    /// Ends what gh left holding its pipes once it exits.
+    /// Looks again shortly after gh exits, once its output has had time to reach the end.
     private func exited() {
         hasExited = true
-        if pendingIO > 0, let process { Self.end(process) }
-        process = nil
+        guard let process else { return }
+        self.process = nil
+        queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.lingered(process) }
+    }
+
+    /// Ends what gh left holding its output open.
+    private func lingered(_ process: Process) {
+        guard openReads > 0, continuation != nil else { return }
+        Self.end(process)
     }
 
     /// Ends gh and its process group, closes every pipe, and fails the request.

@@ -609,6 +609,18 @@ struct GHProcessTests {
         #expect(await allGone(pids))
     }
 
+    @Test(.timeLimit(.minutes(1))) func ordinaryRequestsLeaveGHsOtherChildrenAlone() async throws {
+        // Each child holds none of gh's pipes.
+        let gh = try fakeGH(
+            #"sleep 20 </dev/null >/dev/null 2>&1 & echo $! >> "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{}'"#)
+        defer { cleanUp(gh) }
+        for _ in 0..<20 { _ = try await request(gh, timeout: 10) }
+        try await Task.sleep(for: .milliseconds(300))
+        let pids = children(of: gh)
+        #expect(pids.count == 20)
+        #expect(pids.allSatisfy { kill($0, 0) == 0 }, "A request whose pipes closed never signals gh's group")
+    }
+
     @Test(.timeLimit(.minutes(1))) func cancelReturnsBeforeTheDeadline() async throws {
         // gh exits once its child has left the process group, still holding the output open.
         let gh = try fakeGH(
