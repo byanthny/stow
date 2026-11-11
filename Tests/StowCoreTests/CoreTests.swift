@@ -29,6 +29,29 @@ final class AttentionTests: XCTestCase {
         XCTAssertEqual(classify(snapshot).reason, "Closed")
     }
 
+    func testApprovedNeedsAnOpenFreshApproval() {
+        XCTAssertTrue(ready().isApproved)
+        var failing = ready()
+        failing.checksState = "FAILURE"
+        XCTAssertTrue(failing.isApproved, "Approval doesn't depend on checks")
+        var stale = ready()
+        stale.isStale = true
+        XCTAssertFalse(stale.isApproved)
+        var unavailable = ready()
+        unavailable.isUnavailable = true
+        XCTAssertFalse(unavailable.isApproved)
+        for decision in [nil, "REVIEW_REQUIRED", "CHANGES_REQUESTED", "SYNTHETIC_FUTURE_VALUE"] {
+            var unapproved = ready()
+            unapproved.reviewDecision = decision
+            XCTAssertFalse(unapproved.isApproved, decision ?? "none")
+        }
+        for state in ["MERGED", "CLOSED", "UNKNOWN"] {
+            var terminal = ready()
+            terminal.state = state
+            XCTAssertFalse(terminal.isApproved, state)
+        }
+    }
+
     func testStaleSuccessWaitsButKnownFailuresAndConflictsRemainActionable() {
         var snapshot = ready()
         snapshot.isStale = true

@@ -46,6 +46,9 @@ extension PullRequestSnapshot {
         default: ChecksStatus(label: checksKnown && checksState == nil ? "No checks" : "Checks unknown", tone: nil)
         }
     }
+
+    /// Open and approved on fresh data. A stale or unavailable approval doesn't count.
+    public var isApproved: Bool { state == "OPEN" && reviewDecision == "APPROVED" && !isStale && !isUnavailable }
 }
 
 /// What a card says about a pull request: its state on one line, and its checks, always, on the line below.

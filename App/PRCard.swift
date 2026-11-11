@@ -71,7 +71,13 @@ struct PRCard: View {
             }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1)
             if expanded { details }
         }.padding(12).background(.stowSurface, in: RoundedRectangle(cornerRadius: 9))
-            .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035)) }
+            .overlay {
+                if pr.isApproved {
+                    RoundedRectangle(cornerRadius: 9).strokeBorder(.stowGreen)
+                } else {
+                    RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035))
+                }
+            }
             .contextMenu {
                 Button(pinned ? "Unpin" : "Pin") { store.togglePin(pr.reference) }
                 Button("Add personal note") { store.addNote(reference: pr.reference) }
