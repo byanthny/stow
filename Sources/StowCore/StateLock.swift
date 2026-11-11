@@ -33,6 +33,11 @@ public final class StateLock: @unchecked Sendable {
 
     /// Takes the lock file `filename` inside `directory`, creating the private folder if needed.
     public static func acquire(named filename: String, in directory: URL) -> Outcome {
+        acquire(named: filename, in: directory) { Darwin.fchmod($0, mode_t(0o600)) }
+    }
+
+    /// `makePrivate` sets the lock file's mode and returns 0 or -1 with `errno`; tests replace it.
+    static func acquire(named filename: String, in directory: URL, makePrivate: (Int32) -> Int32) -> Outcome {
         do { try LiveNoteIO.ensureDirectory(directory) } catch { return .failed }
         let path = directory.appendingPathComponent(filename).path
         // Never follow a planted link, and never let a launched child inherit the lock.
@@ -50,10 +55,9 @@ public final class StateLock: @unchecked Sendable {
             Darwin.close(descriptor)
             return .failed
         }
-        guard Darwin.fchmod(descriptor, mode_t(0o600)) == 0 else {
-            let code = errno
+        guard makePrivate(descriptor) == 0 else {
             Darwin.close(descriptor)
-            return outcome(ofError: code)
+            return .failed
         }
         return .acquired(StateLock(descriptor: descriptor))
     }

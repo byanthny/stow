@@ -96,6 +96,20 @@ final class StateLockTests: XCTestCase {
         XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "acquired")
     }
 
+    func testLockFileWhoseModeCannotBeSetFails() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for code in [ENOTSUP, EOPNOTSUPP, EPERM] {
+            let outcome = StateLock.acquire(named: "a.lock", in: directory) { _ in
+                errno = code
+                return -1
+            }
+            XCTAssertEqual(kind(outcome), "failed", "errno \(code)")
+        }
+        // The failed attempts dropped the lock they took.
+        XCTAssertEqual(kind(StateLock.acquire(named: "a.lock", in: directory)), "acquired")
+    }
+
     func testOnlyMissingLockSupportIsUnavailable() {
         XCTAssertEqual(kind(StateLock.outcome(ofError: EWOULDBLOCK)), "held")
         XCTAssertEqual(kind(StateLock.outcome(ofError: ENOTSUP)), "unavailable")
