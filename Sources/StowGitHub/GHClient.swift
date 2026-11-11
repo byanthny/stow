@@ -301,7 +301,7 @@ public actor GHClient: GitHubClient {
         guard (resolved as NSString).lastPathComponent == "gh",
             resolved.withCString({ Darwin.lstat($0, &info) }) == 0,
             (info.st_mode & S_IFMT) == S_IFREG,
-            info.st_mode & (S_IWGRP | S_IWOTH) == 0
+            info.st_mode & (S_IWGRP | S_IWOTH | S_ISUID | S_ISGID) == 0
         else { return nil }
         if let folder, [path, resolved].contains(where: { URL(fileURLWithPath: $0).isInside(folder) }) {
             return nil

@@ -370,10 +370,17 @@ struct GitHubTests {
         let groupWritable = try file("group/gh", mode: 0o775)
         let worldWritable = try file("world/gh", mode: 0o757)
         let notExecutable = try file("plain/gh", mode: 0o644)
+        let setuid = try file("setuid/gh", mode: 0o4755)
+        let setgid = try file("setgid/gh", mode: 0o2755)
+        for (path, bit) in [(setuid, S_ISUID), (setgid, S_ISGID)] {
+            let mode = try #require(manager.attributesOfItem(atPath: path)[.posixPermissions] as? Int)
+            try #require(mode & Int(bit) != 0, "The file system kept the mode bit")
+        }
         let disguisedShell = try link("disguised/gh", to: otherName)
         let directory = root.appendingPathComponent("folder/gh").path
         try manager.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        for rejected in [otherName, groupWritable, worldWritable, notExecutable, disguisedShell, directory, "gh"] {
+        let modes = [groupWritable, worldWritable, notExecutable, setuid, setgid]
+        for rejected in [otherName, disguisedShell, directory, "gh"] + modes {
             #expect(!GHClient.isUsableExecutable(atPath: rejected), "\(rejected) must not be launched")
             #expect(GHClient.discoverExecutable(preferredPath: rejected)?.path != rejected)
         }
