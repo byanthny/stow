@@ -234,10 +234,14 @@ private final class ProcessControl: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.lingered(process) }
     }
 
-    /// Ends what gh left holding its output open.
+    /// Ends what gh left holding its output open, then stops reading and keeps the output gh wrote.
     private func lingered(_ process: Process) {
         guard openReads > 0, continuation != nil else { return }
         Self.end(process)
+        queue.asyncAfter(deadline: .now() + 1) { [weak self] in
+            guard let self, openReads > 0 else { return }
+            for channel in channels { channel.close(flags: .stop) }
+        }
     }
 
     /// Ends gh and its process group, closes every pipe, and fails the request.

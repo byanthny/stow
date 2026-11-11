@@ -609,6 +609,23 @@ struct GHProcessTests {
         #expect(await allGone(pids))
     }
 
+    @Test(.timeLimit(.minutes(1))) func outputHeldOutsideTheGroupStillReturnsTheResponse() async throws {
+        // gh answers and exits once its child has left the process group, still holding the output open.
+        let gh = try fakeGH(
+            #"""
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 20' \
+              "$0.children" &
+            while [ ! -s "$0.children" ]; do sleep 0.01; done
+            printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'
+            """#)
+        defer { cleanUp(gh) }
+        let started = ContinuousClock.now
+        let response = try await request(gh, timeout: 10)
+        #expect(ContinuousClock.now - started < .seconds(5))
+        #expect(response.body == Data(#"{"data":{}}"#.utf8))
+        #expect(response.exitCode == 0)
+    }
+
     @Test(.timeLimit(.minutes(1))) func ordinaryRequestsLeaveGHsOtherChildrenAlone() async throws {
         // Each child holds none of gh's pipes.
         let gh = try fakeGH(

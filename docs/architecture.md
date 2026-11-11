@@ -41,7 +41,7 @@ Owners are the repository owners in pull request references, compared ignoring c
 
 ## GitHub reads
 
-`GHProcessTransport` starts `gh api` directly for `github.com`, supplies JSON over standard input, and reads process output without blocking into bounded buffers. At the deadline, on cancellation, or when `gh` exits leaving its output open, it ends `gh`'s process group and closes the pipes. It reuses the CLI’s existing authentication and sanitizes user-facing errors. Stow does not have a token store.
+`GHProcessTransport` starts `gh api` directly for `github.com`, supplies JSON over standard input, and reads process output without blocking into bounded buffers. At the deadline or on cancellation, it ends `gh`'s process group and closes the pipes. When `gh` exits and its output stays open, it ends `gh`'s process group, and a second later stops reading and uses the output `gh` wrote. It reuses the CLI’s existing authentication and sanitizes user-facing errors. Stow does not have a token store.
 
 `GHClient` discovers the authenticated viewer, fetches authored and directly requested pull requests, resolves pins, paginates connections, and loads details on demand. Details fetch at most three pages per connection and keep at most 100 checks and 100 reviews, preferring checks that need attention, so a very large pull request cannot bloat the saved index. The last three commits come with the first page of reviews. A new installation leaves GitHub off until the user opts in. `RefreshCoordinator` coalesces overlapping refreshes. The app refreshes on activation and periodically while GitHub is enabled.
 
