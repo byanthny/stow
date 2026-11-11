@@ -46,7 +46,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         switch StateLock.acquire(forStateAt: stateURL) {
         case .acquired(let held): lock = held
         // A folder that cannot be locked, such as one on a volume without flock, is written unguarded.
-        case .unavailable: break
+        case .unavailable, .failed: break
         case .heldByAnotherProcess: return nil
         }
         self.entry = entry

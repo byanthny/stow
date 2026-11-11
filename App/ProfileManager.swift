@@ -483,7 +483,7 @@ final class ProfileManager {
         }
         switch StateLock.acquire(forStateAt: entry.folder.appendingPathComponent("state.json")) {
         case .acquired(let lock): return lock
-        case .unavailable: return nil
+        case .unavailable, .failed: return nil
         case .heldByAnotherProcess: throw ProfileError.inUse
         }
     }

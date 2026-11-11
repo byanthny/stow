@@ -64,10 +64,45 @@ final class StateLockTests: XCTestCase {
         let target = directory.appendingPathComponent("elsewhere")
         try FileManager.default.createSymbolicLink(
             at: directory.appendingPathComponent(StateLock.filename), withDestinationURL: target)
-        guard case .unavailable = StateLock.acquire(forStateAt: directory.appendingPathComponent("state.json")) else {
-            return XCTFail("A symlinked lock path must not be used")
-        }
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: directory.appendingPathComponent("state.json"))), "failed")
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testFolderOrFifoAtTheLockPathFails() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("folder.lock"), withIntermediateDirectories: false)
+        XCTAssertEqual(kind(StateLock.acquire(named: "folder.lock", in: directory)), "failed")
+        // A FIFO answers that it cannot lock, like a volume without flock.
+        XCTAssertEqual(mkfifo(directory.appendingPathComponent("fifo.lock").path, 0o600), 0)
+        XCTAssertEqual(kind(StateLock.acquire(named: "fifo.lock", in: directory)), "failed")
+    }
+
+    func testFolderThatCannotBeWrittenFailsUntilItHasALockFile() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = directory.appendingPathComponent("state.json")
+        func setMode(_ mode: Int) throws {
+            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
+        }
+        defer { try? setMode(0o700) }
+        try setMode(0o500)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "failed")
+        // A lock file made while the folder could be written still locks.
+        try setMode(0o700)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "acquired")
+        try setMode(0o500)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "acquired")
+    }
+
+    func testOnlyMissingLockSupportIsUnavailable() {
+        XCTAssertEqual(kind(StateLock.outcome(ofError: EWOULDBLOCK)), "held")
+        XCTAssertEqual(kind(StateLock.outcome(ofError: ENOTSUP)), "unavailable")
+        XCTAssertEqual(kind(StateLock.outcome(ofError: EOPNOTSUPP)), "unavailable")
+        for code in [ELOOP, EISDIR, EACCES, EPERM, EROFS, EIO, ENOSPC, ENOENT] {
+            XCTAssertEqual(kind(StateLock.outcome(ofError: code)), "failed", "errno \(code)")
+        }
     }
 
     func testNamedLocksAreIndependent() throws {
@@ -95,5 +130,16 @@ final class StateLockTests: XCTestCase {
             return XCTFail("The lock must be available again after release")
         }
         again.release()
+    }
+
+    private func kind(_ outcome: StateLock.Outcome) -> String {
+        switch outcome {
+        case .acquired(let lock):
+            lock.release()
+            return "acquired"
+        case .heldByAnotherProcess: return "held"
+        case .unavailable: return "unavailable"
+        case .failed: return "failed"
+        }
     }
 }

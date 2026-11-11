@@ -187,7 +187,7 @@ extension ProfileCatalog {
         switch StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json")) {
         case .acquired(let lock): return lock
         case .heldByAnotherProcess: throw ProfileError.inUse
-        case .unavailable: return nil
+        case .unavailable, .failed: return nil
         }
     }
 

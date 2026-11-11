@@ -139,7 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         #endif
         switch StateLock.acquire(named: StateLock.instanceFilename, in: stateURL.deletingLastPathComponent()) {
         case .acquired(let lock): instanceLock = lock
-        case .unavailable: break
+        case .unavailable, .failed: break
         case .heldByAnotherProcess:
             // Another Stow already runs on this data folder. Hand over to it instead of competing.
             Self.activateRunningCopy()

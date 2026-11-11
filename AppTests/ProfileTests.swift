@@ -2774,7 +2774,7 @@ final class ProfileTests: XCTestCase {
         case .acquired(let lock):
             lock.release()
             return false
-        case .unavailable: return false
+        case .unavailable, .failed: return false
         }
     }
 
