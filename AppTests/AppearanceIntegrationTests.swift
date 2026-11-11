@@ -162,33 +162,67 @@ final class AppearanceIntegrationTests: XCTestCase {
     }
 
     func testWebLinksOpenFromTheirContextMenu() throws {
+        let (window, editor) = linkEditor("Read https://example.com/guide today. Not [this](javascript:alert).")
+        defer { window.close() }
+        let link = center(of: "example.com", in: editor)
+        let guide = URL(string: "https://example.com/guide")
+
+        XCTAssertEqual(editor.link(at: link), guide)
+        XCTAssertNil(editor.link(at: center(of: "Read", in: editor)))
+        XCTAssertNil(editor.link(at: center(of: "this", in: editor)))
+
+        let menu = try XCTUnwrap(editor.menu(for: try rightClick(at: link, in: editor)))
+        XCTAssertEqual(menu.items.first?.title, "Open Link")
+        XCTAssertEqual(menu.items.first?.representedObject as? URL, guide)
+    }
+
+    func testOnlyALinksOwnTextOpensIt() throws {
+        let (window, editor) = linkEditor("See https://example.com/guide\nSynthetic next line")
+        defer { window.close() }
+        let link = frame(of: "https://example.com/guide", in: editor)
+        let beside = NSPoint(x: link.maxX + 60, y: link.midY)
+        let guide = URL(string: "https://example.com/guide")
+
+        // The insertion point nearest the click ends the link, but the click is past its text.
+        XCTAssertNil(editor.link(at: beside))
+        let menu = try XCTUnwrap(editor.menu(for: try rightClick(at: beside, in: editor)))
+        XCTAssertFalse(menu.items.contains { $0.title == "Open Link" })
+        XCTAssertEqual(editor.link(at: NSPoint(x: link.maxX - 2, y: link.midY)), guide)
+        XCTAssertNotNil(editor.textLayoutManager, "Hit testing keeps the note on TextKit 2")
+    }
+
+    /// A window showing `source` in a styled note text view.
+    private func linkEditor(_ source: String) -> (NSWindow, NoteTextView) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 200), styleMask: [.titled], backing: .buffered,
             defer: false)
         window.isReleasedWhenClosed = false
-        defer { window.close() }
         let editor = NoteTextView(frame: window.contentView?.bounds ?? .zero)
         editor.isRichText = false
         window.contentView = editor
-        editor.string = "Read https://example.com/guide today. Not [this](javascript:alert)."
+        editor.string = source
         NativeEditor.applyAppearance(.paper, to: editor)
         NativeEditor.styleMarkdown(in: editor, appearance: .paper)
-        let text = editor.string as NSString
-        let link = text.range(of: "example.com")
-        let guide = URL(string: "https://example.com/guide")
+        return (window, editor)
+    }
 
-        XCTAssertEqual(editor.link(atInsertionPoint: link.location), guide)
-        XCTAssertNil(editor.link(atInsertionPoint: text.range(of: "Read").location))
-        XCTAssertNil(editor.link(atInsertionPoint: text.range(of: "this").location))
+    /// Where `word` is drawn, in `editor`'s coordinates.
+    private func frame(of word: String, in editor: NSTextView) -> NSRect {
+        let screen = editor.firstRect(forCharacterRange: (editor.string as NSString).range(of: word), actualRange: nil)
+        return editor.convert(editor.window?.convertFromScreen(screen) ?? .zero, from: nil)
+    }
 
-        let rect = window.convertFromScreen(editor.firstRect(forCharacterRange: link, actualRange: nil))
-        let click = try XCTUnwrap(
+    private func center(of word: String, in editor: NSTextView) -> NSPoint {
+        let rect = frame(of: word, in: editor)
+        return NSPoint(x: rect.midX, y: rect.midY)
+    }
+
+    /// A right-click at `point`, in `view`'s coordinates.
+    private func rightClick(at point: NSPoint, in view: NSView) throws -> NSEvent {
+        try XCTUnwrap(
             NSEvent.mouseEvent(
-                with: .rightMouseDown, location: NSPoint(x: rect.midX, y: rect.midY), modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-        let menu = try XCTUnwrap(editor.menu(for: click))
-        XCTAssertEqual(menu.items.first?.title, "Open Link")
-        XCTAssertEqual(menu.items.first?.representedObject as? URL, guide)
+                with: .rightMouseDown, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     }
 
     func testBoardNotesGrowWithTheirTextUpToTheLimit() async throws {
