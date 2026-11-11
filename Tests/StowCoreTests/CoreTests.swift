@@ -452,6 +452,19 @@ final class ReconciliationTests: XCTestCase {
         }
     }
 
+    func testOneRefreshResultAppliedTwiceKeepsANewlyMergedCard() {
+        let open = reconcileSnapshots(previous: [], incoming: [snapshot()], pins: [], now: now)
+        let shownAt = now.addingTimeInterval(120)
+        let first = reconcileSnapshots(previous: open, incoming: [snapshot("MERGED")], pins: [], now: shownAt)
+        let again = reconcileSnapshots(previous: first, incoming: [snapshot("MERGED")], pins: [], now: shownAt)
+        XCTAssertEqual(again.map(\.state), ["MERGED"])
+        XCTAssertEqual(again.first?.terminalObservedAt, shownAt)
+        XCTAssertTrue(
+            reconcileSnapshots(
+                previous: again, incoming: [snapshot("MERGED")], pins: [], now: now.addingTimeInterval(240)
+            ).isEmpty)
+    }
+
     func testPinnedTerminalCardStaysUntilUnpinned() {
         let pins = [snapshot().reference]
         var cards = reconcileSnapshots(previous: [], incoming: [snapshot("MERGED")], pins: pins, now: now)

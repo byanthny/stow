@@ -39,7 +39,7 @@ public func reconcileSnapshots(
         }
         if result.state == "CLOSED" || result.state == "MERGED" {
             // An unpinned card that an earlier refresh already showed merged or closed leaves now.
-            if old?.terminalObservedAt != nil, !pinnedIDs.contains(id) { return nil }
+            if let first = old?.terminalObservedAt, first != now, !pinnedIDs.contains(id) { return nil }
             // A provider timestamp cannot establish when this app first observed a terminal state.
             result.terminalObservedAt = old?.terminalObservedAt ?? now
         } else {
