@@ -50,15 +50,6 @@ struct GitHubTests {
     private var emptySearch: GraphQLResponse {
         json(#"{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"#)
     }
-    /// A synthetic `gh` shell script in a new temporary folder.
-    private func fakeGH(_ body: String) throws -> URL {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("StowFakeGH-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let url = folder.appendingPathComponent("gh")
-        try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
-        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        return url
-    }
     private func updatingNode(_ root: GraphQLValue, _ changes: [String: GraphQLValue]) -> GraphQLValue {
         var object = root.object
         var data = root["data"].object
@@ -353,25 +344,6 @@ struct GitHubTests {
         #expect(details.checks.dropFirst().allSatisfy { $0.url?.absoluteString == "https://example.com/check" })
     }
 
-    @Test(.timeLimit(.minutes(1))) func ghExitingWithoutReadingFailsTheRequest() async throws {
-        let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
-        defer { try? FileManager.default.removeItem(at: gh.deletingLastPathComponent()) }
-        // More input than a pipe holds, so the write meets the closed pipe.
-        let query = String(repeating: "#", count: 1 << 20)
-        await #expect(throws: GitHubError.requestFailed) {
-            try await GHProcessTransport(executableURL: gh, timeout: 10).execute(query: query, variables: [:])
-        }
-    }
-
-    @Test(.timeLimit(.minutes(1))) func childHoldingOutputOpenTimesOut() async throws {
-        // A background loop holds the output open until the test removes this script, for at most five seconds.
-        let gh = try fakeGH(#"i=0; while [ -e "$0" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done &"#)
-        defer { try? FileManager.default.removeItem(at: gh.deletingLastPathComponent()) }
-        await #expect(throws: GitHubError.timedOut) {
-            try await GHProcessTransport(executableURL: gh, timeout: 0.5).execute(query: "{}", variables: [:])
-        }
-    }
-
     @Test func onlyPrivateRegularExecutablesNamedGHAreLaunched() throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("StowGHPathTests-\(UUID().uuidString)")
@@ -532,6 +504,123 @@ struct GitHubTests {
         // A refresh that cancel() missed would wait on the gate forever; opening it makes that fail instead of hang.
         await client.open()
         await #expect(throws: CancellationError.self) { try await task.value }
+    }
+}
+
+/// A synthetic `gh` shell script in a new temporary folder.
+private func fakeGH(_ body: String) throws -> URL {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("StowFakeGH-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let url = folder.appendingPathComponent("gh")
+    try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    return url
+}
+
+/// The process IDs a fake `gh` wrote to `gh.children`, one per line.
+private func children(of gh: URL) -> [pid_t] {
+    let text = (try? String(contentsOf: gh.appendingPathExtension("children"), encoding: .utf8)) ?? ""
+    return text.split(whereSeparator: \.isNewline).compactMap { pid_t($0) }
+}
+
+/// Kills the children a fake `gh` recorded that are still alive and removes its folder.
+private func cleanUp(_ gh: URL) {
+    for pid in children(of: gh) where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+    try? FileManager.default.removeItem(at: gh.deletingLastPathComponent())
+}
+
+/// Whether every process has exited within three seconds.
+private func allGone(_ pids: [pid_t]) async -> Bool {
+    for _ in 0..<300 {
+        if pids.allSatisfy({ kill($0, 0) == -1 }) { return true }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return false
+}
+
+/// The number of pipes this process has open.
+private func openPipes() -> Int {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd")) ?? []
+    return names.compactMap { Int32($0) }.filter { fd in
+        var info = stat()
+        return fstat(fd, &info) == 0 && info.st_mode & S_IFMT == S_IFIFO
+    }.count
+}
+
+/// Launches synthetic `gh` scripts. Serialized, since one test counts this process's pipes.
+@Suite("StowGitHub process tests", .serialized)
+struct GHProcessTests {
+    private func request(_ gh: URL, timeout: TimeInterval, query: String = "{}") async throws -> GraphQLResponse {
+        try await GHProcessTransport(executableURL: gh, timeout: timeout).execute(query: query, variables: [:])
+    }
+
+    @Test(.timeLimit(.minutes(1))) func ghExitingWithoutReadingFailsTheRequest() async throws {
+        let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
+        defer { cleanUp(gh) }
+        // More input than a pipe holds, so the write meets the closed pipe.
+        let query = String(repeating: "#", count: 1 << 20)
+        await #expect(throws: GitHubError.requestFailed) { try await request(gh, timeout: 10, query: query) }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func timedOutRequestLeavesNoChildAlive() async throws {
+        // The child ignores SIGTERM.
+        let gh = try fakeGH(#"(trap '' TERM; exec sleep 30) & echo $! > "$0.children"; sleep 30"#)
+        defer { cleanUp(gh) }
+        await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 0.5) }
+        let pids = children(of: gh)
+        #expect(!pids.isEmpty)
+        #expect(await allGone(pids))
+    }
+
+    @Test(.timeLimit(.minutes(1))) func childLeftBehindIsEndedWhenGHExits() async throws {
+        let gh = try fakeGH(#"sleep 30 & echo $! > "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
+        defer { cleanUp(gh) }
+        let started = ContinuousClock.now
+        let response = try await request(gh, timeout: 5)
+        #expect(ContinuousClock.now - started < .seconds(3))
+        #expect(response.body == Data(#"{"data":{}}"#.utf8))
+        let pids = children(of: gh)
+        #expect(!pids.isEmpty)
+        #expect(await allGone(pids))
+    }
+
+    @Test(.timeLimit(.minutes(1))) func cancelReturnsBeforeTheDeadline() async throws {
+        // gh exits once its child has left the process group, still holding the output open.
+        let gh = try fakeGH(
+            #"""
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 20' \
+              "$0.children" &
+            while [ ! -s "$0.children" ]; do sleep 0.01; done
+            """#)
+        defer { cleanUp(gh) }
+        let pending = Task { try await request(gh, timeout: 10) }
+        while children(of: gh).isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        let cancelled = ContinuousClock.now
+        pending.cancel()
+        await #expect(throws: CancellationError.self) { try await pending.value }
+        #expect(ContinuousClock.now - cancelled < .seconds(2))
+    }
+
+    @Test(.timeLimit(.minutes(1))) func childrenInTheirOwnSessionPinNothing() async throws {
+        // Each launch leaves a child that has left gh's process group holding the output open.
+        let gh = try fakeGH(#"perl -MPOSIX -e 'POSIX::setsid(); sleep 20' & echo $! >> "$0.children"; sleep 30"#)
+        defer { cleanUp(gh) }
+        let pipes = openPipes()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<40 {
+                group.addTask { await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 0.5) } }
+            }
+        }
+        #expect(children(of: gh).count == 40)
+        for _ in 0..<200 where openPipes() > pipes { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(openPipes() <= pipes, "Every pipe is closed once its request ends")
+        let big = try fakeGH(
+            #"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":"'; head -c 200000 /dev/zero | tr '\0' a; printf '"}'"#)
+        defer { cleanUp(big) }
+        let started = ContinuousClock.now
+        let response = try await request(big, timeout: 3)
+        #expect(ContinuousClock.now - started < .seconds(2))
+        #expect(response.body.count == 200_000 + #"{"data":""}"#.utf8.count)
     }
 }
 
