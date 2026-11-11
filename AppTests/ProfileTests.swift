@@ -316,6 +316,35 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(made.count, 2)
     }
 
+    func testSavedGHInsideTheDataFolderIsNeverUsed() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let planted = folder.appendingPathComponent("tools/gh")
+        try FileManager.default.createDirectory(
+            at: planted.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("#!/bin/sh\nexit 1\n".utf8).write(to: planted)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: planted.path)
+        XCTAssertTrue(GHClient.isUsableExecutable(atPath: planted.path), "Usable anywhere else")
+        try await seed(folder) { state in
+            state.githubEnabled = true
+            state.ghExecutablePath = planted.path
+        }
+        // Clients are made but never launch anything, whichever gh the store settles on.
+        var made: [URL] = []
+        let manager = makeManager(
+            folder,
+            githubClientMaker: { url in
+                made.append(url)
+                return CountingClient()
+            })
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertEqual(session.store.state.ghExecutablePath, planted.path)
+        XCTAssertFalse(made.contains { $0.resolvingSymlinksInPath() == planted.resolvingSymlinksInPath() })
+    }
+
     func testRateLimitPausesEveryProfileOnTheClient() async throws {
         let reference = PullRequestReference(owner: "example", repository: "fixture", number: 1)
         let transport = RateLimitedTransport()
@@ -2592,11 +2621,13 @@ final class ProfileTests: XCTestCase {
         _ folder: URL, catalog: ProfileCatalog? = nil,
         githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()],
+        githubClientMaker: (@MainActor (URL) -> any GitHubClient)? = nil,
         updateFetch: @escaping UpdateMonitor.Fetch = unexpectedUpdateCheck
     ) -> ProfileManager {
         let manager = ProfileManager(
             dataFolder: folder, isDemo: false, catalog: catalog, githubOverride: githubOverride,
-            accessoryProviders: accessoryProviders, updateFetch: updateFetch, runningVersion: ReleaseVersion("1.0.0"))
+            accessoryProviders: accessoryProviders, githubClientMaker: githubClientMaker, updateFetch: updateFetch,
+            runningVersion: ReleaseVersion("1.0.0"))
         manager.confirmClosingWithoutSaving = { entry in
             XCTFail("Unexpected question about closing \(entry.name) without saving")
             return false
