@@ -274,7 +274,7 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
         return available
     }
 
-    /// Records a check that started at `time`. A failed check changes nothing, so the next one stays due.
+    /// Records a check that started at `time`. A failed check changes nothing.
     public mutating func record(
         _ result: Result<[StowRelease], UpdateCheckError>, running: ReleaseVersion, at time: Date,
         policy: UpdatePolicy = .standard
