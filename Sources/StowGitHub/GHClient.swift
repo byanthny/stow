@@ -286,7 +286,7 @@ public actor GHClient: GitHubClient {
     }
 
     /// Stow launches only an absolute path named `gh` that resolves to a regular executable file
-    /// other users cannot modify, outside `folder` both where it is and where it leads.
+    /// not writable by its group or other users, outside `folder` both where it is and where it leads.
     /// Anything else is ignored, whatever saved state or a restore says.
     public nonisolated static func isUsableExecutable(atPath path: String, excluding folder: URL? = nil) -> Bool {
         guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return false }
