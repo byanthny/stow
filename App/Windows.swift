@@ -137,12 +137,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
         #endif
-        switch StateLock.acquire(named: StateLock.instanceFilename, in: stateURL.deletingLastPathComponent()) {
+        let dataFolder = stateURL.deletingLastPathComponent()
+        switch StateLock.acquire(named: StateLock.instanceFilename, in: dataFolder) {
         case .acquired(let lock): instanceLock = lock
-        case .unavailable, .failed: break
+        // A volume without flock runs unguarded.
+        case .unavailable: break
         case .heldByAnotherProcess:
             // Another Stow already runs on this data folder. Hand over to it instead of competing.
             Self.activateRunningCopy()
+            NSApp.terminate(nil)
+            return
+        case .failed:
+            Self.reportLockFailure(dataFolder)
             NSApp.terminate(nil)
             return
         }
@@ -296,6 +302,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+    }
+
+    /// Says that the data folder can't be locked, before Stow quits.
+    private static func reportLockFailure(_ dataFolder: URL) {
+        let alert = NSAlert()
+        alert.messageText = "Stow can’t lock its data folder"
+        alert.informativeText =
+            "Stow will quit. Check the permissions of \((dataFolder.path as NSString).abbreviatingWithTildeInPath), then open Stow again."
+        alert.addButton(withTitle: "Quit")
+        alert.runModal()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
