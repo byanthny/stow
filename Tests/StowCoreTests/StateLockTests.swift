@@ -79,6 +79,47 @@ final class StateLockTests: XCTestCase {
         XCTAssertEqual(kind(StateLock.acquire(named: "fifo.lock", in: directory)), "failed")
     }
 
+    func testHardLinkAtTheLockPathFailsAndLeavesItsFileAlone() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let elsewhere = directory.appendingPathComponent("elsewhere")
+        XCTAssertTrue(
+            FileManager.default.createFile(
+                atPath: elsewhere.path, contents: Data("kept".utf8), attributes: [.posixPermissions: 0o644]))
+        XCTAssertEqual(link(elsewhere.path, directory.appendingPathComponent(StateLock.filename).path), 0)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: directory.appendingPathComponent("state.json"))), "failed")
+        let mode = try FileManager.default.attributesOfItem(atPath: elsewhere.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o644)
+        let other = open(elsewhere.path, O_RDWR | O_CLOEXEC | O_EXLOCK | O_NONBLOCK)
+        XCTAssertGreaterThanOrEqual(other, 0, "The linked file must not stay locked")
+        close(other)
+    }
+
+    func testLockExcludesBuildsThatLockWhileOpening() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent(StateLock.filename).path
+        // Earlier builds take the lock with open(O_EXLOCK).
+        func openLocked() -> (descriptor: Int32, error: Int32) {
+            let descriptor = open(path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_EXLOCK | O_NONBLOCK, 0o600)
+            return (descriptor, errno)
+        }
+        let earlier = openLocked()
+        XCTAssertGreaterThanOrEqual(earlier.descriptor, 0)
+        XCTAssertEqual(kind(StateLock.acquire(named: StateLock.filename, in: directory)), "held")
+        close(earlier.descriptor)
+        guard case .acquired(let lock) = StateLock.acquire(named: StateLock.filename, in: directory) else {
+            return XCTFail("The lock must be free once the earlier build closes it")
+        }
+        let refused = openLocked()
+        XCTAssertEqual(refused.descriptor, -1)
+        XCTAssertEqual(refused.error, EWOULDBLOCK)
+        lock.release()
+        let after = openLocked()
+        XCTAssertGreaterThanOrEqual(after.descriptor, 0)
+        close(after.descriptor)
+    }
+
     func testFolderThatCannotBeWrittenFailsUntilItHasALockFile() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -111,11 +152,11 @@ final class StateLockTests: XCTestCase {
     }
 
     func testOnlyMissingLockSupportIsUnavailable() {
-        XCTAssertEqual(kind(StateLock.outcome(ofError: EWOULDBLOCK)), "held")
-        XCTAssertEqual(kind(StateLock.outcome(ofError: ENOTSUP)), "unavailable")
-        XCTAssertEqual(kind(StateLock.outcome(ofError: EOPNOTSUPP)), "unavailable")
+        XCTAssertEqual(kind(StateLock.outcome(ofLockError: EWOULDBLOCK)), "held")
+        XCTAssertEqual(kind(StateLock.outcome(ofLockError: ENOTSUP)), "unavailable")
+        XCTAssertEqual(kind(StateLock.outcome(ofLockError: EOPNOTSUPP)), "unavailable")
         for code in [ELOOP, EISDIR, EACCES, EPERM, EROFS, EIO, ENOSPC, ENOENT] {
-            XCTAssertEqual(kind(StateLock.outcome(ofError: code)), "failed", "errno \(code)")
+            XCTAssertEqual(kind(StateLock.outcome(ofLockError: code)), "failed", "errno \(code)")
         }
     }
 

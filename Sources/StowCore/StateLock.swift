@@ -4,9 +4,9 @@ import Foundation
 /// Keeps one writable session per state folder.
 ///
 /// Two processes writing the same index would silently revert each other's metadata, because the index is
-/// replaced as a whole. The lock is an advisory BSD `flock` lock on a private file beside the index, taken
-/// atomically by `open(O_EXLOCK)`. The kernel drops it when the holder exits or crashes, so there is never a
-/// stale lock to clean up.
+/// replaced as a whole. The lock is an advisory BSD `flock` lock on a private file beside the index, taken once
+/// the open file is checked; `open(O_EXLOCK)` in earlier builds takes the same lock. The kernel drops it when the
+/// holder exits or crashes, so there is never a stale lock to clean up.
 public final class StateLock: @unchecked Sendable {
     public enum Outcome: Sendable {
         case acquired(StateLock)
@@ -40,20 +40,23 @@ public final class StateLock: @unchecked Sendable {
     static func acquire(named filename: String, in directory: URL, makePrivate: (Int32) -> Int32) -> Outcome {
         do { try LiveNoteIO.ensureDirectory(directory) } catch { return .failed }
         let path = directory.appendingPathComponent(filename).path
-        // Never follow a planted link, and never let a launched child inherit the lock.
+        // Never follow a planted link, never wait on a FIFO, and never let a launched child inherit the lock.
         let descriptor = path.withCString {
-            Darwin.open($0, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_EXLOCK | O_NONBLOCK, mode_t(0o600))
+            Darwin.open($0, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK, mode_t(0o600))
         }
-        guard descriptor >= 0 else {
-            let result = outcome(ofError: errno)
-            // A FIFO or socket at the path also reports that it cannot lock.
-            if case .unavailable = result, holdsOtherThanFile(path) { return .failed }
-            return result
-        }
+        guard descriptor >= 0 else { return .failed }
         var info = stat()
-        guard Darwin.fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
+        // Only this user's own regular file, with no other name, is locked and made private.
+        guard Darwin.fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_nlink == 1,
+            info.st_uid == geteuid()
+        else {
             Darwin.close(descriptor)
             return .failed
+        }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else {
+            let code = errno
+            Darwin.close(descriptor)
+            return outcome(ofLockError: code)
         }
         guard makePrivate(descriptor) == 0 else {
             Darwin.close(descriptor)
@@ -62,19 +65,13 @@ public final class StateLock: @unchecked Sendable {
         return .acquired(StateLock(descriptor: descriptor))
     }
 
-    /// What an error from taking the lock means. Only a volume without locks is unavailable.
-    static func outcome(ofError code: Int32) -> Outcome {
+    /// What a `flock` error means. Only a volume without locks is unavailable.
+    static func outcome(ofLockError code: Int32) -> Outcome {
         switch code {
         case EWOULDBLOCK: .heldByAnotherProcess
         case ENOTSUP, EOPNOTSUPP: .unavailable
         default: .failed
         }
-    }
-
-    /// Whether something other than a regular file is at `path`, without following a link.
-    private static func holdsOtherThanFile(_ path: String) -> Bool {
-        var info = stat()
-        return path.withCString { Darwin.lstat($0, &info) } == 0 && (info.st_mode & S_IFMT) != S_IFREG
     }
 
     /// Releases the lock early. Normally the lock lives until the process exits.
