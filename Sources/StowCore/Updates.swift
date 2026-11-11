@@ -242,6 +242,7 @@ public enum UpdateOutcome: Equatable, Sendable {
 public struct UpdateSettings: Codable, Equatable, Sendable {
     /// Off until the person turns it on.
     public var checksForUpdates = false
+    /// When the last successful check started.
     public var lastCheckAt: Date?
     /// The newest release the last check found above the version that ran it.
     public var available: StowRelease?
@@ -273,14 +274,14 @@ public struct UpdateSettings: Codable, Equatable, Sendable {
         return available
     }
 
-    /// Records a check that started at `time`. A failed check keeps offering the release found before.
+    /// Records a check that started at `time`. A failed check changes nothing, so the next one stays due.
     public mutating func record(
         _ result: Result<[StowRelease], UpdateCheckError>, running: ReleaseVersion, at time: Date,
         policy: UpdatePolicy = .standard
     ) -> UpdateOutcome {
-        lastCheckAt = time
         switch result {
         case .success(let releases):
+            lastCheckAt = time
             sawStableRelease = sawStableRelease || releases.contains { !$0.isPrerelease }
             available = policy.newest(releases, above: running, stableIsOut: sawStableRelease)
             return available.map(UpdateOutcome.available) ?? .upToDate
