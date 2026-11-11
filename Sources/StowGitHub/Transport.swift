@@ -151,7 +151,7 @@ private final class ProcessControl: @unchecked Sendable {
     func run(executable: URL, excluding folder: URL?, input: Data, timeout: TimeInterval) async throws
         -> GraphQLResponse
     {
-        // Checks the path again, since it can change after the client was made.
+        // Checks the path again before launch.
         guard let checked = GHClient.checkedExecutable(atPath: executable.path, excluding: folder) else {
             throw GitHubError.executableNotFound
         }
