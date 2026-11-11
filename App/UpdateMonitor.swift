@@ -116,7 +116,10 @@ final class UpdateMonitor {
                 try await catalog.setUpdateSettings(settings)
                 problem = nil
             } catch {
-                problem = profileProblem(error, name: "Stow")
+                problem =
+                    error as? ProfileError == .unwritable
+                    ? "Stow couldn’t save its update settings. Check that the data folder can be written to and has space."
+                    : profileProblem(error, name: "Stow")
                 throw error
             }
         }

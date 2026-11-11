@@ -2663,7 +2663,8 @@ final class ProfileTests: XCTestCase {
         let reports = OutcomeLog()
         manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
         XCTAssertNil(manager.updates.problem)
-        let unwritable = profileProblem(ProfileError.unwritable, name: "Stow")
+        let unwritable =
+            "Stow couldn’t save its update settings. Check that the data folder can be written to and has space."
 
         // Turning checks on can't be saved: Settings says why, the setting stays off, and nothing is asked.
         try writable(false)
