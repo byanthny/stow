@@ -149,8 +149,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Task {
             guard await prepare(stateURL: stateURL, isDemo: demo), let manager else {
                 // Another process, such as an older build, has the profiles open: hand over to it. With no profile
-                // to list, the manager has already said so.
-                if self.manager?.profiles.isEmpty == false { Self.activateRunningCopy() }
+                // to list, or one whose folder can't be locked, the manager has already said so.
+                if let manager = self.manager, !manager.profiles.isEmpty, !manager.startReportedLockFailure {
+                    Self.activateRunningCopy()
+                }
                 NSApp.terminate(nil)
                 return
             }

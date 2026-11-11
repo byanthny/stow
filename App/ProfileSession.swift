@@ -35,19 +35,21 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     /// The windows `hide()` ordered out, ordered back in by `show()`.
     private var hiddenWindows: [NSWindow] = []
 
-    /// Takes the profile's `.stow.lock`, or returns nil when another holder has it. Callers check their own open
-    /// sessions first, because a second lock on the same file fails even within one process.
-    init?(
+    /// Takes the profile's `.stow.lock`. Throws `.inUse` when another holder has it and `.unwritable` when it can't
+    /// be taken. Callers check their own open sessions first, because a second lock on the same file fails even
+    /// within one process.
+    init(
         entry: ProfileEntry, profile: ProfileHandle, dataFolder: URL, isDemo: Bool, githubClient: (any GitHubClient)?,
         githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
         accessoryProviders: [any AccessoryProvider]
-    ) {
+    ) throws {
         let stateURL = entry.folder.appendingPathComponent("state.json")
         switch StateLock.acquire(forStateAt: stateURL) {
         case .acquired(let held): lock = held
-        // A folder that cannot be locked, such as one on a volume without flock, is written unguarded.
-        case .unavailable, .failed: break
-        case .heldByAnotherProcess: return nil
+        // A volume without flock is written unguarded.
+        case .unavailable: break
+        case .heldByAnotherProcess: throw ProfileError.inUse
+        case .failed: throw ProfileError.unwritable
         }
         self.entry = entry
         self.profile = profile

@@ -32,6 +32,9 @@ final class ProfileManager {
     let updates: UpdateMonitor
     /// Set once `start()` has shown a profile. From then on a quit records which profiles are open, even none.
     @ObservationIgnored private(set) var hasStarted = false
+    /// Set when `start()` opened nothing and said that a profile's folder can't be locked; the launch then quits
+    /// without handing over.
+    @ObservationIgnored private(set) var startReportedLockFailure = false
     /// Asks whether to close a profile whose changes could not be saved. True closes it without saving.
     @ObservationIgnored var confirmClosingWithoutSaving: @MainActor (ProfileEntry) -> Bool = { entry in
         let alert = NSAlert()
@@ -47,6 +50,15 @@ final class ProfileManager {
         let alert = NSAlert()
         alert.messageText = "\(entry.name) is open in another copy of Stow"
         alert.informativeText = "Quit the other copy, then open the profile here."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    /// Says that a profile stays closed because its folder can't be locked, as with a folder that can't be written.
+    @ObservationIgnored var reportLockFailed: @MainActor (ProfileEntry) -> Void = { entry in
+        let alert = NSAlert()
+        alert.messageText = "Stow can’t open \(entry.name)"
+        alert.informativeText =
+            "Its folder can’t be locked, so \(entry.name) stays closed. Check the folder’s permissions, then open the profile again."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -166,7 +178,8 @@ final class ProfileManager {
     /// Only a new installation, with no index and no profile data anywhere, gets a first profile, which the data
     /// folder becomes when it first saves. When profile data exists but no profile can be listed, nothing opens
     /// and Stow says so, rather than start a new, empty profile beside the others. A profile another process
-    /// holds stays closed, and Stow says so once another profile is open. Returns false when no profile opened.
+    /// holds stays closed, and Stow says so once another profile is open. One whose folder can't be locked stays
+    /// closed, and Stow says so either way. Returns false when no profile opened.
     func start() async -> Bool {
         // When the catalog cannot read the data folder at all, the data folder opens and its store reports the
         // problem without writing.
@@ -185,10 +198,12 @@ final class ProfileManager {
         // An absent index, or one that needs a reset, records no open profiles.
         let recorded = snapshot?.index ?? ProfileIndex()
         var openElsewhere: [ProfileEntry] = []
+        var lockFailed: [ProfileEntry] = []
         for entry in profiles {
             guard let item = recorded.open.first(where: { $0.id == entry.id }) else { continue }
             let opened = await serialized(entry.id) { await self.openSession(entry, hidden: item.isHidden) }
             if opened == .heldElsewhere { openElsewhere.append(entry) }
+            if opened == .lockFailed { lockFailed.append(entry) }
         }
         if !sessions.values.contains(where: { !$0.isHidden }) {
             let candidates = [
@@ -196,7 +211,8 @@ final class ProfileManager {
                 profiles.first { sessions[$0.id] != nil },
                 profiles.first(where: \.isDataFolder) ?? profiles.first,
             ]
-            for entry in candidates.compactMap({ $0 }) where !openElsewhere.contains(where: { $0.id == entry.id }) {
+            for entry in candidates.compactMap({ $0 })
+            where !(openElsewhere + lockFailed).contains(where: { $0.id == entry.id }) {
                 if let session = sessions[entry.id] {
                     session.show()
                     break
@@ -205,10 +221,13 @@ final class ProfileManager {
                 // hands over to the process holding them.
                 let opened = await serialized(entry.id) { await self.openSession(entry) }
                 if opened == .opened { break }
+                if opened == .lockFailed { lockFailed.append(entry) }
             }
         }
         let shown = profiles.compactMap { sessions[$0.id] }.filter { !$0.isHidden }
         guard let front = shown.first(where: { $0.entry.id == recorded.lastActiveID }) ?? shown.first else {
+            for entry in lockFailed { reportLockFailed(entry) }
+            startReportedLockFailure = !lockFailed.isEmpty
             return false
         }
         lastActiveID = front.entry.id
@@ -218,12 +237,13 @@ final class ProfileManager {
         // The most recently active profile on screen comes forward, as it was at quit.
         if shown.count > 1 { front.show() }
         for entry in openElsewhere { reportOpenElsewhere(entry) }
+        for entry in lockFailed { reportLockFailed(entry) }
         return true
     }
 
     /// Opens a profile, or brings its windows forward when it is already open. Returns false, after saying so,
-    /// when another copy of Stow has the profile open, or when its folder is gone, such as one moved to the Trash
-    /// after the menus listed it; the list then drops it.
+    /// when another copy of Stow has the profile open, when its folder can't be locked, or when its folder is gone,
+    /// such as one moved to the Trash after the menus listed it; the list then drops it.
     @discardableResult
     func open(_ id: UUID) async -> Bool {
         await serialized(id) {
@@ -236,6 +256,7 @@ final class ProfileManager {
             switch await self.openSession(entry) {
             case .opened: return true
             case .heldElsewhere: self.reportOpenElsewhere(entry)
+            case .lockFailed: self.reportLockFailed(entry)
             case .notFound: self.reportNotFound(entry)
             case .unreadable: self.reportUnreadable(entry)
             }
@@ -473,9 +494,10 @@ final class ProfileManager {
     }
 
     /// The profile's lock for a write to its folder, or nil when an open session here holds it already or the
-    /// folder cannot be locked. Throws `.inUse` while another process holds it, and `.notFound` when the profile is
-    /// gone. The catalog confirms the profile first, because taking a lock creates a missing folder, and an empty
-    /// folder where a deleted profile was would make Finder's Put Back ask to replace it.
+    /// volume cannot lock. Throws `.inUse` while another process holds it, `.unwritable` when it can't be taken,
+    /// and `.notFound` when the profile is gone. The catalog confirms the profile first, because taking a lock
+    /// creates a missing folder, and an empty folder where a deleted profile was would make Finder's Put Back ask
+    /// to replace it.
     private func lockUnlessOpen(_ id: UUID) async throws -> StateLock? {
         if let session = sessions[id], !session.isStopped { return nil }
         guard let entry = try await catalog.load().profiles.first(where: { $0.id == id }) else {
@@ -483,8 +505,9 @@ final class ProfileManager {
         }
         switch StateLock.acquire(forStateAt: entry.folder.appendingPathComponent("state.json")) {
         case .acquired(let lock): return lock
-        case .unavailable, .failed: return nil
+        case .unavailable: return nil
         case .heldByAnotherProcess: throw ProfileError.inUse
+        case .failed: throw ProfileError.unwritable
         }
     }
 
@@ -563,7 +586,7 @@ final class ProfileManager {
         }
     }
 
-    private enum OpenOutcome { case opened, heldElsewhere, notFound, unreadable }
+    private enum OpenOutcome { case opened, heldElsewhere, lockFailed, notFound, unreadable }
 
     /// Takes the profile's lock and opens its windows, out of sight when it reopens hidden. The profile is first
     /// confirmed with a fresh read of the folders, because the list may be older than a folder moved away or a
@@ -576,15 +599,20 @@ final class ProfileManager {
         do { confirmation = try await confirmed(listed) } catch { return .unreadable }
         guard let entry = confirmation else { return .notFound }
         let dataFolder = dataFolder
-        guard
-            let session = ProfileSession(
+        let session: ProfileSession
+        do {
+            session = try ProfileSession(
                 entry: entry, profile: ProfileHandle(id: entry.id, manager: self), dataFolder: dataFolder,
                 isDemo: isDemo, githubClient: githubOverride(entry),
                 githubClientFactory: { [weak self] in
                     self?.githubClient(for: $0) ?? GHClient(executableURL: $0, excluding: dataFolder)
                 },
                 accessoryProviders: accessoryProviders)
-        else { return .heldElsewhere }
+        } catch ProfileError.inUse {
+            return .heldElsewhere
+        } catch {
+            return .lockFailed
+        }
         session.showsName = showsProfileNames
         session.onActivate = { [weak self] in self?.lastActiveID = entry.id }
         sessions[entry.id] = session

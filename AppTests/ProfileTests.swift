@@ -1002,6 +1002,11 @@ final class ProfileTests: XCTestCase {
         let profile = folder.appendingPathComponent("profiles/\(arrivalID.uuidString)")
         let stateURL = profile.appendingPathComponent("state.json")
         let before = try Data(contentsOf: stateURL)
+        // Its lock file came with it, so it can still be locked.
+        guard case .acquired(let lock) = StateLock.acquire(forStateAt: stateURL) else {
+            return XCTFail("The test could not take the profile lock")
+        }
+        lock.release()
         // The copied folder cannot be written, so GitHub stays off in memory but on in the saved state.
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: profile.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: profile.path) }
@@ -1049,6 +1054,78 @@ final class ProfileTests: XCTestCase {
         // A switch that cannot open its target leaves the profile it started from as it was.
         XCTAssertFalse(main.isHidden)
         XCTAssertTrue(main.board.isVisible)
+    }
+
+    func testProfileWhoseLockFailsStaysClosedAndSaysSo() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        // A folder at the lock path makes locking fail.
+        try FileManager.default.createDirectory(
+            at: workEntry.folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
+        let before = try tree(workEntry.folder)
+
+        let opened = await manager.open(workEntry.id)
+        XCTAssertFalse(opened)
+        XCTAssertNil(manager.sessions[workEntry.id])
+        XCTAssertEqual(reports.names, ["Work"])
+        do {
+            try await manager.rename(workEntry.id, to: "Renamed")
+            XCTFail("A profile whose lock fails must not be written")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        XCTAssertEqual(try tree(workEntry.folder), before)
+        XCTAssertEqual(manager.profiles.first { $0.id == workEntry.id }?.name, "Work")
+    }
+
+    func testLaunchSaysWhichProfilesCantBeLocked() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let catalog = ProfileCatalog(dataFolder: folder)
+        let listed = try await catalog.load().profiles
+        let stowID = try XCTUnwrap(listed.first(where: \.isDataFolder)).id
+        try await catalog.recordSession(
+            open: [.init(id: stowID, isHidden: false), .init(id: workEntry.id, isHidden: false)],
+            lastActiveID: stowID)
+        // Folders at the lock paths make locking fail.
+        let workLock = workEntry.folder.appendingPathComponent(StateLock.filename)
+        for lock in [folder.appendingPathComponent(StateLock.filename), workLock] {
+            try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        }
+        let before = try tree(folder)
+        let reports = Recorder()
+        let blocked = makeManager(folder)
+        blocked.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(blocked) }
+
+        let blockedStart = await blocked.start()
+        XCTAssertFalse(blockedStart)
+        XCTAssertTrue(blocked.sessions.isEmpty)
+        XCTAssertEqual(reports.names.sorted(), ["Stow", "Work"])
+        XCTAssertTrue(blocked.startReportedLockFailure, "A launch that opened nothing quits without handing over")
+        XCTAssertEqual(try tree(folder), before)
+
+        // Once another profile opens, the launch still says which one stayed closed.
+        try FileManager.default.removeItem(at: workLock)
+        reports.names = []
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        XCTAssertEqual(Set(manager.sessions.keys), [workEntry.id])
+        XCTAssertEqual(reports.names, ["Stow"])
+        XCTAssertFalse(manager.startReportedLockFailure)
     }
 
     func testSwitchShowsTargetAndHidesSourceByDefault() async throws {
@@ -2578,6 +2655,7 @@ final class ProfileTests: XCTestCase {
     /// Fails the test on any report the test does not expect, instead of opening a modal alert.
     private func failOnReports(from manager: ProfileManager) {
         manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
+        manager.reportLockFailed = { entry in XCTFail("Unexpected report that \(entry.name) can't be locked") }
         manager.reportNotFound = { entry in XCTFail("Unexpected report that \(entry.name) cannot be found") }
         manager.reportUnreadable = { entry in XCTFail("Unexpected report that \(entry.name)'s folder can't be read") }
         manager.reportNoProfiles = { XCTFail("Unexpected report that no profile can be found") }
