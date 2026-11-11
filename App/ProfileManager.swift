@@ -58,7 +58,7 @@ final class ProfileManager {
         let alert = NSAlert()
         alert.messageText = "Stow can’t open \(entry.name)"
         alert.informativeText =
-            "Its folder can’t be locked, so \(entry.name) stays closed. Check the folder’s permissions, then open the profile again."
+            "Its folder can’t be locked, so \(entry.name) stays closed. Check the permissions of \((entry.folder.path as NSString).abbreviatingWithTildeInPath), then open the profile again."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
