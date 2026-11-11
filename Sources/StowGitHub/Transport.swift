@@ -88,9 +88,12 @@ public enum GitHubError: Error, LocalizedError, Sendable, Equatable {
 public struct GHProcessTransport: GraphQLTransport {
     public var executableURL: URL
     public var timeout: TimeInterval
-    public init(executableURL: URL, timeout: TimeInterval = 45) {
+    /// A folder whose `gh` is never launched.
+    public var excludedFolder: URL?
+    public init(executableURL: URL, timeout: TimeInterval = 45, excluding folder: URL? = nil) {
         self.executableURL = executableURL
         self.timeout = timeout
+        excludedFolder = folder
     }
     static func decodeCLIOutput(_ output: Data, exitCode: Int32) -> GraphQLResponse {
         ProcessControl.parse(output, exitCode: exitCode)
@@ -102,7 +105,8 @@ public struct GHProcessTransport: GraphQLTransport {
         return try await withTaskCancellationHandler {
             try await Task.detached {
                 try Task.checkCancellation()
-                return try control.run(executable: executableURL, input: input, timeout: timeout)
+                return try control.run(
+                    executable: executableURL, excluding: excludedFolder, input: input, timeout: timeout)
             }.value
         } onCancel: {
             control.cancel()
@@ -158,7 +162,11 @@ private final class ProcessControl: @unchecked Sendable {
             if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
         }
     }
-    func run(executable: URL, input: Data, timeout: TimeInterval) throws -> GraphQLResponse {
+    func run(executable: URL, excluding folder: URL?, input: Data, timeout: TimeInterval) throws -> GraphQLResponse {
+        // Checks the path again, since it can change after the client was made.
+        guard GHClient.isUsableExecutable(atPath: executable.path, excluding: folder) else {
+            throw GitHubError.executableNotFound
+        }
         let p = Process()
         let stdout = Pipe()
         let stderr = Pipe()

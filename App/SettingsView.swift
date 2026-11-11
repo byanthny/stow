@@ -99,11 +99,11 @@ struct SettingsView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard GHClient.isUsableExecutable(atPath: url.path) else {
+        guard GHClient.isUsableExecutable(atPath: url.path, excluding: store.dataFolder) else {
             let alert = NSAlert()
             alert.messageText = "Stow can't use that file"
             alert.informativeText =
-                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh and must not be writable by other users."
+                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh, must not be writable by other users, and must be outside Stow's data folder."
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return

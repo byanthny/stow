@@ -91,6 +91,8 @@ final class ProfileManager {
         alert.runModal()
     }
     private let catalog: ProfileCatalog
+    /// The folder holding every profile. A `gh` inside it is never launched.
+    private let dataFolder: URL
     private let isDemo: Bool
     /// A GitHub client for a profile's store in place of the one it finds itself. Tests use it.
     private let githubOverride: @MainActor (ProfileEntry) -> (any GitHubClient)?
@@ -114,13 +116,14 @@ final class ProfileManager {
         dataFolder: URL, isDemo: Bool, catalog: ProfileCatalog? = nil,
         githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()],
-        githubClientMaker: @escaping @MainActor (URL) -> any GitHubClient = { GHClient(executableURL: $0) },
+        githubClientMaker: (@MainActor (URL) -> any GitHubClient)? = nil,
         updateFetch: @escaping UpdateMonitor.Fetch = UpdateMonitor.github,
         runningVersion: ReleaseVersion? = .running
     ) {
         let catalog = catalog ?? ProfileCatalog(dataFolder: dataFolder)
-        self.githubClientMaker = githubClientMaker
+        self.githubClientMaker = githubClientMaker ?? { GHClient(executableURL: $0, excluding: dataFolder) }
         self.catalog = catalog
+        self.dataFolder = dataFolder
         self.isDemo = isDemo
         self.githubOverride = githubOverride
         self.accessoryProviders = accessoryProviders
@@ -572,11 +575,14 @@ final class ProfileManager {
         let confirmation: ProfileEntry?
         do { confirmation = try await confirmed(listed) } catch { return .unreadable }
         guard let entry = confirmation else { return .notFound }
+        let dataFolder = dataFolder
         guard
             let session = ProfileSession(
-                entry: entry, profile: ProfileHandle(id: entry.id, manager: self), isDemo: isDemo,
-                githubClient: githubOverride(entry),
-                githubClientFactory: { [weak self] in self?.githubClient(for: $0) ?? GHClient(executableURL: $0) },
+                entry: entry, profile: ProfileHandle(id: entry.id, manager: self), dataFolder: dataFolder,
+                isDemo: isDemo, githubClient: githubOverride(entry),
+                githubClientFactory: { [weak self] in
+                    self?.githubClient(for: $0) ?? GHClient(executableURL: $0, excluding: dataFolder)
+                },
                 accessoryProviders: accessoryProviders)
         else { return .heldElsewhere }
         session.showsName = showsProfileNames

@@ -382,6 +382,63 @@ struct GitHubTests {
         }
     }
 
+    @Test func ghInsideTheDataFolderIsRefused() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("StowGHFolderTests-\(UUID().uuidString)")
+        defer { try? manager.removeItem(at: root) }
+        let data = root.appendingPathComponent("data")
+        func gh(_ relative: String) throws -> String {
+            let url = root.appendingPathComponent(relative)
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/sh\n".utf8).write(to: url)
+            try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            return url.path
+        }
+        func link(_ relative: String, to target: String) throws -> String {
+            let url = root.appendingPathComponent(relative)
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.createSymbolicLink(atPath: url.path, withDestinationPath: target)
+            return url.path
+        }
+        let inside = try gh("data/profiles/bin/gh")
+        let outside = try gh("tools/bin/gh")
+        let dataLink = try link("data-link", to: data.path)
+        #expect(GHClient.isUsableExecutable(atPath: inside))
+        #expect(GHClient.isUsableExecutable(atPath: outside, excluding: data))
+        #expect(GHClient.discoverExecutable(preferredPath: outside, excluding: data)?.path == outside)
+        let real = try #require(realpath(inside, nil))
+        defer { free(real) }
+        // Other spellings of the same file: a different case, where the volume ignores it, and the firmlinked path.
+        let upper = root.appendingPathComponent("DATA/profiles/bin/gh").path
+        let firmlinked = "/System/Volumes/Data" + String(cString: real)
+        let spellings = (manager.fileExists(atPath: upper) ? [upper] : []) + [firmlinked]
+        let links = [try link("data/gh", to: outside), try link("elsewhere/gh", to: inside)]
+        let refused = [inside, dataLink + "/profiles/bin/gh"] + links + spellings
+        for path in refused {
+            #expect(GHClient.isUsableExecutable(atPath: path))
+            #expect(!GHClient.isUsableExecutable(atPath: path, excluding: data), "\(path) is in the data folder")
+            #expect(!GHClient.isUsableExecutable(atPath: path, excluding: URL(fileURLWithPath: dataLink)))
+            #expect(GHClient.discoverExecutable(preferredPath: path, excluding: data)?.path != path)
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func unusableGHIsNeverLaunched() async throws {
+        let gh = try fakeGH(#"touch "$0.ran""#)
+        let folder = gh.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let client = GHClient(executableURL: gh)
+        try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: gh.path)
+        await #expect(throws: GitHubError.executableNotFound) { try await client.refresh(pins: [], previous: []) }
+        await #expect(throws: GitHubError.executableNotFound) {
+            try await GHClient(executableURL: gh).refresh(pins: [], previous: [])
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
+        await #expect(throws: GitHubError.executableNotFound) {
+            try await GHClient(executableURL: gh, excluding: folder).refresh(pins: [], previous: [])
+        }
+        #expect(!FileManager.default.fileExists(atPath: gh.appendingPathExtension("ran").path))
+    }
+
     @Test func inaccessibleDetailsAndUnsupportedHostsAreSafeErrors() async throws {
         let transport = ScriptedTransport([.init("StowDetails", json(#"{"data":{"repository":null}}"#))])
         let client = GHClient(transport: transport)

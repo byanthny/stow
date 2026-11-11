@@ -263,22 +263,30 @@ public actor GHClient: GitHubClient {
     private let transport: (any GraphQLTransport)?
     private var retryAt: Date?
     private let maxPages = 200
-    public init(executableURL: URL? = nil) {
-        transport = (executableURL ?? Self.discoverExecutable()).map { GHProcessTransport(executableURL: $0) }
+    /// Without a usable `gh` outside `folder`, every request fails with `executableNotFound`.
+    public init(executableURL: URL? = nil, excluding folder: URL? = nil) {
+        let executable = executableURL ?? Self.discoverExecutable(excluding: folder)
+        transport = executable.flatMap {
+            Self.isUsableExecutable(atPath: $0.path, excluding: folder)
+                ? GHProcessTransport(executableURL: $0, excluding: folder) : nil
+        }
     }
     public init(transport: any GraphQLTransport) { self.transport = transport }
 
-    public nonisolated static func discoverExecutable(preferredPath: String? = nil) -> URL? {
+    public nonisolated static func discoverExecutable(preferredPath: String? = nil, excluding folder: URL? = nil)
+        -> URL?
+    {
         let explicit = preferredPath.map { [$0] } ?? []
         let paths =
             explicit + ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/gh" }
-        return paths.first(where: isUsableExecutable(atPath:)).map { URL(fileURLWithPath: $0) }
+        return paths.first { isUsableExecutable(atPath: $0, excluding: folder) }.map { URL(fileURLWithPath: $0) }
     }
 
     /// Stow launches only an absolute path named `gh` that resolves to a regular executable file
-    /// other users cannot modify. Anything else is ignored, whatever saved state or a restore says.
-    public nonisolated static func isUsableExecutable(atPath path: String) -> Bool {
+    /// other users cannot modify, outside `folder` both where it is and where it leads.
+    /// Anything else is ignored, whatever saved state or a restore says.
+    public nonisolated static func isUsableExecutable(atPath path: String, excluding folder: URL? = nil) -> Bool {
         guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return false }
         // A link named gh must also lead to a program named gh, as Homebrew and installer links do.
         let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
@@ -288,6 +296,9 @@ public actor GHClient: GitHubClient {
             (info.st_mode & S_IFMT) == S_IFREG,
             info.st_mode & (S_IWGRP | S_IWOTH) == 0
         else { return false }
+        if let folder, [path, resolved].contains(where: { URL(fileURLWithPath: $0).isInside(folder) }) {
+            return false
+        }
         return FileManager.default.isExecutableFile(atPath: resolved)
     }
 

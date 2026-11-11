@@ -56,6 +56,8 @@ final class AppStore {
     var isRestoringBackup = false
     var conflictNoteIDs: Set<UUID> = []
     let stateURL: URL
+    /// The folder holding every profile. A `gh` inside it is never launched.
+    let dataFolder: URL
     let isDemo: Bool
     /// A profile this Mac has not seen before, which opens with GitHub and accessories off.
     let isArrival: Bool
@@ -88,12 +90,14 @@ final class AppStore {
     @ObservationIgnored private var accessoryTask: Task<Void, Never>?
     @ObservationIgnored private var sessionGeneration = 0
 
+    /// Without a data folder, the profile's own folder stands in for it.
     init(
-        stateURL: URL, isDemo: Bool = false, githubClient: (any GitHubClient)? = nil,
+        stateURL: URL, dataFolder: URL? = nil, isDemo: Bool = false, githubClient: (any GitHubClient)? = nil,
         githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()], arrival: Bool = false
     ) {
         self.stateURL = stateURL
+        self.dataFolder = dataFolder ?? stateURL.deletingLastPathComponent()
         self.notesDirectory = stateURL.deletingLastPathComponent().appendingPathComponent("notes", isDirectory: true)
         self.isDemo = isDemo
         self.isArrival = arrival
@@ -220,11 +224,13 @@ final class AppStore {
             coordinator = RefreshCoordinator(client: githubOverride)
             return
         }
-        guard let executable = GHClient.discoverExecutable(preferredPath: state.ghExecutablePath) else {
+        guard
+            let executable = GHClient.discoverExecutable(preferredPath: state.ghExecutablePath, excluding: dataFolder)
+        else {
             githubMessage = "GitHub is unavailable. Install gh or choose its executable in Settings."
             return
         }
-        let client = githubClientFactory?(executable) ?? GHClient(executableURL: executable)
+        let client = githubClientFactory?(executable) ?? GHClient(executableURL: executable, excluding: dataFolder)
         githubClient = client
         coordinator = RefreshCoordinator(client: client)
     }
