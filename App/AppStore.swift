@@ -121,12 +121,13 @@ final class AppStore {
         }
         // Whatever its saved state says, a profile not seen before must not turn GitHub or accessories on here.
         if isArrival { state = state.preparedForArrival() }
-        if isDemo && state.notes.isEmpty && !storageNeedsRecovery {
-            state = DemoContent.state()
-        }
         for index in state.pullRequests.indices {
             state.pullRequests[index].isStale = true
             state.pullRequests[index].readinessIsComplete = false
+        }
+        // Demo content sets which of its cards are fresh.
+        if isDemo && state.notes.isEmpty && !storageNeedsRecovery {
+            state = DemoContent.state()
         }
         theme.apply(state.appearance)
         if !state.boardLayout.notesStartCollapsed {

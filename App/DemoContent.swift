@@ -82,6 +82,11 @@ enum DemoContent {
                 checksState: "SUCCESS", checksKnown: true, readinessIsComplete: true,
                 updatedAt: .now.addingTimeInterval(-14400)),
         ]
+        // Cards show as cached until a refresh, except one fresh approved card that shows the green outline.
+        for index in state.pullRequests.indices where state.pullRequests[index].reference != second {
+            state.pullRequests[index].isStale = true
+            state.pullRequests[index].readinessIsComplete = false
+        }
         state.notes = [
             Note(
                 markdown:
