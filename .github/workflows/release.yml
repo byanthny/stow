@@ -91,7 +91,10 @@ jobs:
         with:
           name: stow-dmg
       - name: check the SHA-256
-        run: sha256sum --check --strict "$STOW_DMG.sha256"
+        run: |
+          set -euo pipefail
+          [ "$STOW_DMG" = "Stow-${STOW_TAG#v}.dmg" ]
+          sha256sum --check --strict "$STOW_DMG.sha256"
       - name: attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
