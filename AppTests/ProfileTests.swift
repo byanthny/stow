@@ -1128,6 +1128,27 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(manager.startReportedLockFailure)
     }
 
+    func testLaunchWithoutAnIndexSaysItsProfileCantBeLocked() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        // The usual single profile with no index; a folder at its lock path makes locking fail.
+        try FileManager.default.createDirectory(
+            at: folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
+        let before = try tree(folder)
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertFalse(started)
+        XCTAssertTrue(manager.sessions.isEmpty)
+        XCTAssertEqual(reports.names, ["Stow"])
+        XCTAssertTrue(manager.startReportedLockFailure, "Nothing is open elsewhere, so the launch doesn't hand over")
+        XCTAssertEqual(try tree(folder), before)
+    }
+
     func testLaunchHandsOverWhenAnotherProfileIsOpenElsewhere() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
