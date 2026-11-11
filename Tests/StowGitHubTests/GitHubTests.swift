@@ -424,6 +424,14 @@ struct GitHubTests {
             #expect(!GHClient.isUsableExecutable(atPath: path, excluding: URL(fileURLWithPath: dataLink)))
             #expect(GHClient.discoverExecutable(preferredPath: path, excluding: data)?.path != path)
         }
+        // A data folder that can't be checked refuses every gh.
+        let locked = root.appendingPathComponent("locked")
+        try manager.createDirectory(at: locked.appendingPathComponent("data"), withIntermediateDirectories: true)
+        try manager.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path) }
+        for folder in [root.appendingPathComponent("missing"), locked.appendingPathComponent("data")] {
+            #expect(!GHClient.isUsableExecutable(atPath: outside, excluding: folder), "\(folder.path) can't be checked")
+        }
     }
 
     @Test(.timeLimit(.minutes(1))) func unusableGHIsNeverLaunched() async throws {

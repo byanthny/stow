@@ -2,10 +2,10 @@ import Darwin
 import Foundation
 
 extension URL {
-    /// Whether this path passes through `folder`, comparing the files each part leads to rather than their spelling.
+    /// Whether this path passes through `folder`, comparing files rather than spellings, or `folder` can't be checked.
     func isInside(_ folder: URL) -> Bool {
         var target = stat()
-        guard fstatat(AT_FDCWD, folder.path, &target, 0) == 0 else { return false }
+        guard fstatat(AT_FDCWD, folder.path, &target, 0) == 0 else { return true }
         let parts = (path as NSString).pathComponents
         return parts.indices.contains { end in
             var info = stat()
