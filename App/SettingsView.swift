@@ -213,7 +213,8 @@ private struct UpdateSettingsView: View {
     @Environment(\.stowTheme) private var theme
 
     var body: some View {
-        let explanation = "Asks GitHub once a day whether a newer Stow is out. Nothing is downloaded."
+        let explanation =
+            "Asks GitHub once a day whether a newer Stow is out, and again within the hour after a check fails. Nothing is downloaded."
         VStack(alignment: .leading, spacing: 10) {
             Text("Updates").font(theme.font(size: 14, weight: .semibold))
             SettingsToggle(
