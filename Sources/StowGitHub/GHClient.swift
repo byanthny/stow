@@ -22,9 +22,8 @@ extension GHClient {
         let selectors: [String: String] = [
             "contexts":
                 "statusCheckRollup { contexts(first:100, after:$cursor) { nodes { __typename ... on CheckRun { name conclusion status detailsUrl } ... on StatusContext { context state targetUrl } } \(Self.pageInfo) } }",
-            // Also carries the last three commits.
             "latestReviews":
-                "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) } \(Self.recentCommits)",
+                "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) }",
             "reviewThreads":
                 "reviewThreads(first:100, after:$cursor) { nodes { isResolved comments(last:1) { nodes { body createdAt author { login } } } } \(Self.pageInfo) }",
         ]
@@ -46,10 +45,13 @@ extension GHClient {
             var connectionComplete = true
             do {
                 repeat {
+                    // The first reviews page also carries the last three commits.
+                    let fields =
+                        name == "latestReviews" && pages == 0 ? "\(selection) \(Self.recentCommits)" : selection
                     let page = try await request(
                         """
                         query StowDetails($owner:String!,$repository:String!,$number:Int!,$cursor:String) {
-                          repository(owner:$owner,name:$repository) { pullRequest(number:$number) { \(selection) } }
+                          repository(owner:$owner,name:$repository) { pullRequest(number:$number) { \(fields) } }
                         }
                         """,
                         [

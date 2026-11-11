@@ -18,11 +18,13 @@ private actor ScriptedTransport: GraphQLTransport {
     }
     var steps: [Step]
     private(set) var count = 0
+    private(set) var queries: [String] = []
     init(_ steps: [Step]) { self.steps = steps }
     func execute(query: String, variables: [String: GraphQLValue]) async throws -> GraphQLResponse {
         guard !steps.isEmpty else { throw UnexpectedRequest() }
         let step = steps.removeFirst()
         count += 1
+        queries.append(query)
         #expect(query.contains(step.contains))
         if let cursor = step.cursor { #expect(variables["cursor"] == .string(cursor)) }
         return step.response
@@ -281,6 +283,29 @@ struct GitHubTests {
         // Commits come with the first reviews page, newest first, and need no request of their own.
         #expect(details.commits?.map(\.headline) == ["Newest synthetic commit", "Older synthetic commit"])
         #expect(await transport.count == 6)
+    }
+
+    @Test func onlyTheFirstReviewsPageAsksForCommits() async throws {
+        let reviews1 = json(
+            #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"reviews-2"}},"commits":{"nodes":[]}}}}}"#
+        )
+        let reviews2 = json(
+            #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}"#
+        )
+        let threads = json(
+            #"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}"#
+        )
+        let transport = ScriptedTransport([
+            .init("contexts", json(#"{"data":{"repository":{"pullRequest":{"statusCheckRollup":null}}}}"#)),
+            .init("latestReviews", reviews1), .init("latestReviews", reviews2, cursor: "reviews-2"),
+            .init("reviewThreads", threads),
+        ])
+        _ = try await GHClient(transport: transport).details(
+            for: .init(owner: "example", repository: "fixture", number: 1))
+        let reviewPages = await transport.queries.filter { $0.contains("latestReviews") }
+        #expect(reviewPages.count == 2)
+        #expect(reviewPages.first?.contains("commits(last:3)") == true)
+        #expect(reviewPages.last?.contains("commits") == false)
     }
 
     @Test func lazyDetailsBoundPagesItemsNamesAndLinks() async throws {
