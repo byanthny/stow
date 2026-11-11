@@ -2,12 +2,17 @@
 
 Work through this queue in order. These are future tasks, not authorization to publish, purchase a domain, enroll in paid services, or distribute a release.
 
-## Next: 0.3.1
+## Path to v1
 
-- [ ] Smooth expanding and collapsing that respects Reduce Motion.
-- [ ] Offer to move Stow to Applications, then eject the DMG and move the downloaded DMG to the Trash.
-- [ ] Use as little CPU, memory, and energy as possible. Measure idle wakeups and typing cost first. Then fix the largest costs from the 0.3.0 performance review: the board redrawing on every keystroke, note heights measured from scratch, saves that rescan every note, refreshes that fetch known pull requests again, and a timer for every row.
-- [ ] Show review comments on cards: unresolved conversations and new comments, fetched with the refresh Stow already makes.
+The [plan to v1](v1-plan.md) splits these into work packages, and the [module design](modules.md) covers the module interface. There are no dates: a release ships when its checks pass and the owner has tried it.
+
+- [ ] **0.3.1, fixes:** faster typing in long notes, a green outline on approved cards, merged cards that leave after one refresh, and the security and correctness fixes from the 0.3.0 audits.
+- [ ] **0.4.0, lean:** lower CPU, memory, and idle wakeups, measured before and after.
+- [ ] **0.5.0, modules:** GitHub runs as a module on the interface any module uses, and the `gh` location is kept per Mac.
+- [ ] **0.6.0, cards and notes:** notes under their card, notes that link to any web page, Copy with link, a Watching section, pull requests you reviewed, review comments on cards, and sample module cards.
+- [ ] **0.7.0, sticky notes:** a quick-note shortcut, note colors, a menu bar item, launch at login, and secure notes.
+- [ ] **0.8.0, install and polish:** Move to Applications, smooth animations that respect Reduce Motion, and a keyboard and VoiceOver pass.
+- [ ] **1.0.0, stable:** a new saved-data format with a backup, a release candidate, about two weeks with no data loss, then the first stable release. It ships unsigned; Developer ID signing follows.
 
 ## 1. Finish native acceptance
 
@@ -44,7 +49,7 @@ Work through this queue in order. These are future tasks, not authorization to p
 ## 5. Make installation deliberate
 
 - [x] Ship an unsigned alpha DMG with a drag-to-Applications layout, built by GitHub Actions from each release tag with its SHA-256 and a build provenance attestation (owner's call, 2026-11-04). Keep the ZIP for local packages. Use a PKG installer only if a concrete requirement needs installer behavior or privileged setup.
-- [ ] Replace the unsigned DMG with Developer ID signed and notarized builds. Confirm enrollment requirements and actual cost first.
+- [ ] Replace the unsigned DMG with Developer ID signed and notarized builds, after v1. Confirm enrollment requirements and actual cost first.
 - [ ] Protect signing credentials and notarization access in a maintainer-approved release environment. Import them only in trusted release jobs, remove temporary keychains, verify signatures, submit for notarization, and staple and validate the resulting distributable.
 - [ ] Exercise download, installation, launch, upgrade, and rollback on a separate Mac or clean test account. Describe the observed Gatekeeper behavior accurately.
 
@@ -65,10 +70,9 @@ Work through this queue in order. These are future tasks, not authorization to p
 
 ## After profiles, in order
 
-Ideas taken from Zed, Ghostty, and Zen, queued until profiles land because they touch the theme, menus, and board code that profiles restructure. Each is opt-in or a setting with a default.
+Ideas taken from Zed, Ghostty, and Zen, queued until after v1. Each is opt-in or a setting with a default. The quick-note shortcut from this list is planned for 0.7.0.
 
 - [ ] Light and dark themes that follow macOS, with a live theme preview. For example, `preset = dark:graphite,light:paper` in the config, as Ghostty does. Arrowing through themes previews them, and Escape restores the previous one, as in Zed.
-- [ ] A quick-note shortcut that works from any app, like Ghostty's quick terminal. Off by default. Use the standard global hot-key API, which needs no Accessibility permission, never a monitor of every key press.
 - [ ] Compact mode that hides the board header until the pointer reaches it, as in Zen.
 - [ ] A command palette listing every action, as in Zed.
 - [ ] One text config for all settings with the defaults shown, as in Ghostty and Zed. It never contains notes, pull requests, account data, or machine paths, so it stays safe to share.
@@ -78,5 +82,7 @@ Ideas taken from Zed, Ghostty, and Zen, queued until profiles land because they 
 - [ ] Improve the bundled optional-module experience and document source-based provider reuse before designing installable plugins.
 - [ ] Define installable-module packaging, discovery, API compatibility, signing, updates, permissions, and failure isolation before accepting third-party binaries. Keep trusted in-process code clearly identified. Prefer a sandbox that grants each extension only declared capabilities, like Zed's WebAssembly extensions, over loading outside code into the app.
 - [ ] Consider a weather accessory or other small providers only after the host contract and installation story are settled. Keep each optional, quiet when disabled, and independent of notes and GitHub.
-- [ ] Revisit menu bar UI, widgets, notifications, and GitHub write actions after the core workflow is stable and a concrete need justifies them.
+- [ ] Revisit widgets, notifications, and GitHub write actions after the core workflow is stable and a concrete need justifies them. The menu bar item is planned for 0.7.0.
+- [ ] A status module: uptime for your own sites and status pages such as GitHub's, with notifications. Opt-in, like every module.
+- [ ] An iPhone and iPad app with widgets, to read notes and watch modules away from the Mac. It needs sync across devices designed first.
 - [ ] Evaluate automatic updates separately from release packaging, including trust, rollback, and ongoing hosting cost. 0.3.0 adds an opt-in update check that only links to the release page.
