@@ -1128,6 +1128,34 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(manager.startReportedLockFailure)
     }
 
+    func testLaunchHandsOverWhenAnotherProfileIsOpenElsewhere() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        // An older build has the first profile open, and Work was the only profile open at quit.
+        try await ProfileCatalog(dataFolder: folder).recordSession(
+            open: [.init(id: workEntry.id, isHidden: false)], lastActiveID: workEntry.id)
+        guard case .acquired(let held) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
+        else { return XCTFail("The test could not take the profile lock") }
+        defer { held.release() }
+        // Work's folder can't be written and has no lock file.
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: workEntry.folder.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workEntry.folder.path)
+        }
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertFalse(started)
+        XCTAssertTrue(manager.sessions.isEmpty)
+        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertFalse(manager.startReportedLockFailure, "The launch hands over to the copy holding Stow")
+    }
+
     func testSwitchShowsTargetAndHidesSourceByDefault() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }

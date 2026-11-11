@@ -32,8 +32,8 @@ final class ProfileManager {
     let updates: UpdateMonitor
     /// Set once `start()` has shown a profile. From then on a quit records which profiles are open, even none.
     @ObservationIgnored private(set) var hasStarted = false
-    /// Set when `start()` opened nothing and said that a profile's folder can't be locked; the launch then quits
-    /// without handing over.
+    /// Set when `start()` opened nothing and said that a profile's folder can't be locked, and no profile is open
+    /// in another process; the launch then quits without handing over.
     @ObservationIgnored private(set) var startReportedLockFailure = false
     /// Asks whether to close a profile whose changes could not be saved. True closes it without saving.
     @ObservationIgnored var confirmClosingWithoutSaving: @MainActor (ProfileEntry) -> Bool = { entry in
@@ -205,6 +205,8 @@ final class ProfileManager {
             if opened == .heldElsewhere { openElsewhere.append(entry) }
             if opened == .lockFailed { lockFailed.append(entry) }
         }
+        // A launch that opens nothing hands over to a process holding a profile.
+        var handsOver = !openElsewhere.isEmpty
         if !sessions.values.contains(where: { !$0.isHidden }) {
             let candidates = [
                 profiles.first { $0.id == recorded.lastActiveID },
@@ -221,13 +223,14 @@ final class ProfileManager {
                 // hands over to the process holding them.
                 let opened = await serialized(entry.id) { await self.openSession(entry) }
                 if opened == .opened { break }
+                if opened == .heldElsewhere { handsOver = true }
                 if opened == .lockFailed { lockFailed.append(entry) }
             }
         }
         let shown = profiles.compactMap { sessions[$0.id] }.filter { !$0.isHidden }
         guard let front = shown.first(where: { $0.entry.id == recorded.lastActiveID }) ?? shown.first else {
             for entry in lockFailed { reportLockFailed(entry) }
-            startReportedLockFailure = !lockFailed.isEmpty
+            startReportedLockFailure = !lockFailed.isEmpty && !handsOver
             return false
         }
         lastActiveID = front.entry.id
