@@ -334,9 +334,10 @@ struct NativeEditor: NSViewRepresentable {
                     self, selector: #selector(windowKeyChanged(_:)), name: name, object: editor.window)
             }
             clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak editor] event in
+                // Ends editing unless the window would send the click to the note's own views.
                 if let editor, let window = editor.window, event.window === window, window.firstResponder === editor,
                     let scroll = editor.enclosingScrollView,
-                    !scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil))
+                    window.contentView?.hitTest(event.locationInWindow)?.isDescendant(of: scroll) != true
                 {
                     window.makeFirstResponder(nil)
                 }

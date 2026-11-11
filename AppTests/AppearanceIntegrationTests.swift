@@ -309,6 +309,57 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertLessThanOrEqual(scroll.frame.height, 176.5)
     }
 
+    func testAClickOnAPinnedSectionHeaderOverATallNoteEndsEditing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 400), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let board = ScrollView {
+            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Section {
+                    NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                    Color.clear.frame(height: 600)
+                } header: {
+                    Text(verbatim: "Synthetic section").frame(maxWidth: .infinity, minHeight: 32).background(.gray)
+                }
+            }
+        }.themed(by: store.theme)
+        let host = NSHostingView(rootView: board)
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        let scroll = try XCTUnwrap(noteScrollViews(in: host).first)
+        let editor = try XCTUnwrap(scroll.documentView as? NSTextView)
+        let boardScroll = try XCTUnwrap(scroll.enclosingScrollView)
+        window.makeFirstResponder(editor)
+        await settle(host)
+
+        // Scrolls the board until the pinned header covers the note's text.
+        let note = boardScroll.contentView.convert(scroll.bounds, from: scroll)
+        boardScroll.contentView.scroll(to: NSPoint(x: 0, y: note.minY + 60))
+        boardScroll.reflectScrolledClipView(boardScroll.contentView)
+        await settle(host)
+        let visible = boardScroll.convert(boardScroll.bounds, to: nil)
+        let header = NSPoint(x: visible.midX, y: visible.maxY - 12)
+        XCTAssertTrue(scroll.bounds.contains(scroll.convert(header, from: nil)), "The header is drawn over the note")
+        XCTAssertTrue(window.firstResponder === editor)
+
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let click = try XCTUnwrap(
+                NSEvent.mouseEvent(
+                    with: type, location: header, modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            NSApp.postEvent(click, atStart: false)
+        }
+        await settle(host)
+        XCTAssertFalse(window.firstResponder === editor, "A click on the header ends the editing")
+    }
+
     func testBoardNotesShrinkWhileAnotherAppIsInFrontAndGrowOnReturn() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
