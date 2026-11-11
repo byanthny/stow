@@ -103,7 +103,7 @@ struct SettingsView: View {
             let alert = NSAlert()
             alert.messageText = "Stow can't use that file"
             alert.informativeText =
-                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh, must not be writable by its group or other users, and must be outside Stow's data folder."
+                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh, not setuid or setgid, not writable by its group or other users, and outside Stow's data folder."
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return
