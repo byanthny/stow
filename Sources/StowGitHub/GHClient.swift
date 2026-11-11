@@ -285,9 +285,9 @@ public actor GHClient: GitHubClient {
         return paths.first { isUsableExecutable(atPath: $0, excluding: folder) }.map { URL(fileURLWithPath: $0) }
     }
 
-    /// Stow launches only an absolute path named `gh` that resolves to a regular executable file
-    /// not writable by its group or other users, outside `folder` both where it is and where it leads.
-    /// Anything else is ignored, whatever saved state or a restore says.
+    /// Stow launches only an absolute path named `gh` that resolves to a regular executable file whose permission
+    /// bits allow no writes by its group or other users and no setuid or setgid, outside `folder` both where it is
+    /// and where it leads. Anything else is ignored, whatever saved state or a restore says.
     public nonisolated static func isUsableExecutable(atPath path: String, excluding folder: URL? = nil) -> Bool {
         checkedExecutable(atPath: path, excluding: folder) != nil
     }
