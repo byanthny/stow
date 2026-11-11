@@ -2678,18 +2678,20 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(manager.updates.settings.checksForUpdates)
         XCTAssertEqual(feed.count, 0)
 
-        // A save that works clears it.
+        // A save that works clears it. Asking at once shares the check that turning it on starts.
         try writable(true)
         try await manager.updates.setChecksForUpdates(true)
         XCTAssertNil(manager.updates.problem)
-        let stored = await waitUntil { (try? saved())?.available != nil }
-        XCTAssertTrue(stored)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.count, 1)
+        XCTAssertEqual(feed.count, 1)
+        XCTAssertEqual(try saved().available?.version.description, "1.1.0")
         let checkedAt = try XCTUnwrap(saved().lastCheckAt)
 
         // A failed check is reported where it was asked for, and leaves Settings and the last check's time alone.
         feed.fail(.unreachable)
         await manager.updates.checkAndReport()
-        XCTAssertEqual(reports.outcomes, [.failed(.unreachable)])
+        XCTAssertEqual(reports.outcomes.last, .failed(.unreachable))
         XCTAssertNil(manager.updates.problem)
         XCTAssertEqual(manager.updates.settings.lastCheckAt, checkedAt)
 
@@ -2697,7 +2699,7 @@ final class ProfileTests: XCTestCase {
         feed.answer(["v1.2.0", "v1.1.0"])
         try writable(false)
         await manager.updates.checkAndReport()
-        XCTAssertEqual(reports.outcomes.count, 2)
+        XCTAssertEqual(reports.outcomes.count, 3)
         XCTAssertEqual(manager.updates.problem, unwritable)
         XCTAssertEqual(try saved().available?.version.description, "1.1.0")
 
