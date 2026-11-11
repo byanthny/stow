@@ -196,8 +196,9 @@ private final class ProcessControl: @unchecked Sendable {
             err.drain(stderr.fileHandleForReading)
             group.leave()
         }
+        let end = DispatchTime.now() + timeout
         let deadline = DispatchWorkItem { self.expire() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
+        DispatchQueue.global().asyncAfter(deadline: end, execute: deadline)
         let wroteInput: Bool
         do {
             try stdin.fileHandleForWriting.write(contentsOf: input)
@@ -208,15 +209,16 @@ private final class ProcessControl: @unchecked Sendable {
             wroteInput = false
         }
         p.waitUntilExit()
+        // Waits for both output pipes to drain, but not past the deadline.
+        let drained = group.wait(timeout: end) == .success
         deadline.cancel()
-        group.wait()
         lock.lock()
         let wasCancelled = cancelled
         let wasExpired = expired
         process = nil
         lock.unlock()
         if wasCancelled { throw CancellationError() }
-        if wasExpired { throw GitHubError.timedOut }
+        if wasExpired || !drained { throw GitHubError.timedOut }
         let raw = try out.result()
         // Inspect only known authentication markers; never return stderr or private API text.
         if raw.isEmpty || !wroteInput {

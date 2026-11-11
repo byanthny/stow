@@ -338,6 +338,15 @@ struct GitHubTests {
         }
     }
 
+    @Test(.timeLimit(.minutes(1))) func childHoldingOutputOpenTimesOut() async throws {
+        // A background loop holds the output open until the test removes this script, for at most five seconds.
+        let gh = try fakeGH(#"i=0; while [ -e "$0" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done &"#)
+        defer { try? FileManager.default.removeItem(at: gh.deletingLastPathComponent()) }
+        await #expect(throws: GitHubError.timedOut) {
+            try await GHProcessTransport(executableURL: gh, timeout: 0.5).execute(query: "{}", variables: [:])
+        }
+    }
+
     @Test func onlyPrivateRegularExecutablesNamedGHAreLaunched() throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("StowGHPathTests-\(UUID().uuidString)")
