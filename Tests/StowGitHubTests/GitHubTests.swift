@@ -48,6 +48,15 @@ struct GitHubTests {
     private var emptySearch: GraphQLResponse {
         json(#"{"data":{"search":{"issueCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}"#)
     }
+    /// A synthetic `gh` shell script in a new temporary folder.
+    private func fakeGH(_ body: String) throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("StowFakeGH-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("gh")
+        try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+        return url
+    }
     private func updatingNode(_ root: GraphQLValue, _ changes: [String: GraphQLValue]) -> GraphQLValue {
         var object = root.object
         var data = root["data"].object
@@ -317,6 +326,16 @@ struct GitHubTests {
         #expect(first.name.count == 200)
         #expect(first.url == nil, "Oversized links are dropped")
         #expect(details.checks.dropFirst().allSatisfy { $0.url?.absoluteString == "https://example.com/check" })
+    }
+
+    @Test(.timeLimit(.minutes(1))) func ghExitingWithoutReadingFailsTheRequest() async throws {
+        let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
+        defer { try? FileManager.default.removeItem(at: gh.deletingLastPathComponent()) }
+        // More input than a pipe holds, so the write meets the closed pipe.
+        let query = String(repeating: "#", count: 1 << 20)
+        await #expect(throws: GitHubError.requestFailed) {
+            try await GHProcessTransport(executableURL: gh, timeout: 10).execute(query: query, variables: [:])
+        }
     }
 
     @Test func onlyPrivateRegularExecutablesNamedGHAreLaunched() throws {

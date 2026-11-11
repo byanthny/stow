@@ -163,6 +163,10 @@ private final class ProcessControl: @unchecked Sendable {
         let stdout = Pipe()
         let stderr = Pipe()
         let stdin = Pipe()
+        // A write to a closed pipe fails with EPIPE instead of raising SIGPIPE.
+        guard fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+            throw GitHubError.requestFailed
+        }
         p.executableURL = executable
         p.arguments = ["api", "--hostname", "github.com", "graphql", "--input", "-", "--include"]
         p.standardOutput = stdout
@@ -194,10 +198,15 @@ private final class ProcessControl: @unchecked Sendable {
         }
         let deadline = DispatchWorkItem { self.expire() }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
+        let wroteInput: Bool
         do {
             try stdin.fileHandleForWriting.write(contentsOf: input)
             try stdin.fileHandleForWriting.close()
-        } catch { try? stdin.fileHandleForWriting.close() }
+            wroteInput = true
+        } catch {
+            try? stdin.fileHandleForWriting.close()
+            wroteInput = false
+        }
         p.waitUntilExit()
         deadline.cancel()
         group.wait()
@@ -210,7 +219,7 @@ private final class ProcessControl: @unchecked Sendable {
         if wasExpired { throw GitHubError.timedOut }
         let raw = try out.result()
         // Inspect only known authentication markers; never return stderr or private API text.
-        if raw.isEmpty {
+        if raw.isEmpty || !wroteInput {
             let marker = (try? err.result()).flatMap { String(data: $0, encoding: .utf8) }?.lowercased() ?? ""
             if marker.contains("gh auth login") || marker.contains("requires authentication")
                 || marker.contains("http 401")
