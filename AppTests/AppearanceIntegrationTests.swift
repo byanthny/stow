@@ -191,7 +191,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertNotNil(editor.textLayoutManager, "Hit testing keeps the note on TextKit 2")
     }
 
-    /// A window showing `source` in a styled note text view.
+    /// A window showing `source` in a styled note text view, inset as the note editor is.
     private func linkEditor(_ source: String) -> (NSWindow, NoteTextView) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 200), styleMask: [.titled], backing: .buffered,
@@ -199,6 +199,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         window.isReleasedWhenClosed = false
         let editor = NoteTextView(frame: window.contentView?.bounds ?? .zero)
         editor.isRichText = false
+        editor.textContainerInset = NSSize(width: 4, height: 8)
         window.contentView = editor
         editor.string = source
         NativeEditor.applyAppearance(.paper, to: editor)
@@ -347,17 +348,28 @@ final class AppearanceIntegrationTests: XCTestCase {
         let visible = boardScroll.convert(boardScroll.bounds, to: nil)
         let header = NSPoint(x: visible.midX, y: visible.maxY - 12)
         XCTAssertTrue(scroll.bounds.contains(scroll.convert(header, from: nil)), "The header is drawn over the note")
-        XCTAssertTrue(window.firstResponder === editor)
 
+        // A click on the note's own text below the header keeps editing.
+        let onText = NSPoint(x: editor.convert(editor.bounds, to: nil).minX + 30, y: visible.maxY - 100)
+        XCTAssertTrue(scroll.bounds.contains(scroll.convert(onText, from: nil)))
+        try postClick(at: onText, in: window)
+        await settle(host)
+        XCTAssertTrue(window.firstResponder === editor, "A click on the note's text keeps editing")
+
+        try postClick(at: header, in: window)
+        await settle(host)
+        XCTAssertFalse(window.firstResponder === editor, "A click on the header ends the editing")
+    }
+
+    /// Posts a left click at `location`, in `window`'s coordinates, for the app to handle as a real one.
+    private func postClick(at location: NSPoint, in window: NSWindow) throws {
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let click = try XCTUnwrap(
                 NSEvent.mouseEvent(
-                    with: type, location: header, modifierFlags: [], timestamp: 0,
+                    with: type, location: location, modifierFlags: [], timestamp: 0,
                     windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
             NSApp.postEvent(click, atStart: false)
         }
-        await settle(host)
-        XCTAssertFalse(window.firstResponder === editor, "A click on the header ends the editing")
     }
 
     func testBoardNotesShrinkWhileAnotherAppIsInFrontAndGrowOnReturn() async throws {
