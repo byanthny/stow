@@ -187,7 +187,10 @@ private final class ProcessControl: @unchecked Sendable {
                 done.leave()
             }
         }
-        do { try p.run() } catch { return finish(throwing: GitHubError.requestFailed) }
+        do { try p.run() } catch {
+            p.terminationHandler = nil
+            return finish(throwing: GitHubError.requestFailed)
+        }
         process = p
         for (handle, buffer) in [(stdout.fileHandleForReading, out), (stderr.fileHandleForReading, err)] {
             let channel = open(handle, done: done)
