@@ -275,6 +275,42 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertLessThanOrEqual(scroll.frame.height, 176.5)
     }
 
+    func testBoardNotesShrinkWhileAnotherAppIsInFrontAndGrowOnReturn() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let board = ScrollView {
+            VStack(spacing: 0) {
+                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                Color.clear.frame(height: 200)
+            }
+        }.themed(by: store.theme)
+        let host = NSHostingView(rootView: board)
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        let scroll = try XCTUnwrap(noteScrollViews(in: host).first)
+        let editor = try XCTUnwrap(scroll.documentView as? NSTextView)
+        window.makeFirstResponder(editor)
+        await settle(host)
+        XCTAssertEqual(scroll.frame.height, 300, accuracy: 0.5, "While edited, it grows to the limit")
+
+        NotificationCenter.default.post(name: NSWindow.didResignKeyNotification, object: window)
+        await settle(host)
+        XCTAssertLessThanOrEqual(scroll.frame.height, 176.5, "Another app in front shrinks the note")
+        XCTAssertTrue(window.firstResponder === editor, "The note keeps its cursor")
+
+        NotificationCenter.default.post(name: NSWindow.didBecomeKeyNotification, object: window)
+        await settle(host)
+        XCTAssertEqual(scroll.frame.height, 300, accuracy: 0.5, "Coming back opens it again")
+    }
+
     func testANewNoteTakesFocusOnlyOnce() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

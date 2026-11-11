@@ -73,9 +73,10 @@ a:hover {
   color: var(--accent-hover);
 }
 
+/* In-text links keep an underline at 3:1 or better against the cards. */
 p a {
   text-decoration: underline;
-  text-decoration-color: var(--outline-hover);
+  text-decoration-color: var(--muted);
   text-underline-offset: 0.2em;
 }
 
@@ -422,6 +423,11 @@ pre {
   text-indent: -2ch;
 }
 
+/* A flag never breaks between its dashes. */
+.flag {
+  white-space: nowrap;
+}
+
 /* A shell line continuation, shown only where the command can't fit on one line. */
 .cont {
   display: none;
@@ -507,8 +513,16 @@ p kbd {
   gap: 16px;
 }
 
-.install-grid .card {
+.install-grid .card,
+.card-part {
   gap: 14px;
+}
+
+/* The wide card's two halves. */
+.card-part {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .install-grid .btn {
@@ -516,7 +530,7 @@ p kbd {
 }
 
 /* Two columns start where the GitHub command still fits on one line. */
-@media (min-width: 800px) {
+@media (min-width: 960px) {
   .install-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -526,18 +540,20 @@ p kbd {
   }
 }
 
-@media (min-width: 960px) {
+/* Until the page is near its widest, the clone command needs two lines in its half. */
+@media (min-width: 960px) and (max-width: 1119px) {
+  .cont {
+    display: inline;
+  }
+}
+
+/* From here, the verify command fits on one line beside the download. */
+@media (min-width: 1080px) {
   .install-grid .card-wide {
     display: grid;
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-    grid-template-rows: auto 1fr;
     align-items: start;
     column-gap: 32px;
-  }
-
-  .card-wide > pre {
-    grid-column: 2;
-    grid-row: 1 / span 2;
   }
 }
 
@@ -584,6 +600,16 @@ p kbd {
     justify-content: flex-end;
     margin-right: -4px;
   }
+}
+
+/* 404 page */
+
+.not-found {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  padding-block: 96px 120px;
 }
 
 /* Board demo, a small copy of the app's board window */
@@ -671,31 +697,23 @@ p kbd {
   scrollbar-width: thin;
 }
 
-.section-toggle,
-.section-label {
+.section-toggle {
   position: sticky;
   top: 0;
   z-index: 1;
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 44px;
-  background: var(--bg);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.section-toggle {
   width: 100%;
+  min-height: 44px;
   padding: 0 2px;
   border: 0;
+  background: var(--bg);
   color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
-}
-
-.section-label {
-  padding: 0 2px 0 17px;
 }
 
 [aria-expanded="true"] > .chev {
@@ -747,9 +765,10 @@ p kbd {
 }
 
 .pr-repo {
-  display: flex;
-  gap: 4px;
+  overflow: hidden;
   font-size: 10px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .pr-name {
@@ -757,8 +776,27 @@ p kbd {
   font-weight: 600;
 }
 
+/* Repository colors from RepositoryColor.hex(for:onSurface:) on --surface. */
+.repo-desktop {
+  color: #747BDC;
+}
+
+.repo-website {
+  color: #5C95D6;
+}
+
+.repo-api {
+  color: #9A74DC;
+}
+
+.repo-toolkit {
+  color: #C25CD6;
+}
+
 .pr-num,
-.pr-meta {
+.pr-note,
+.pr-active,
+.pr-checks {
   color: var(--muted);
 }
 
@@ -767,23 +805,41 @@ p kbd {
   font-weight: 500;
 }
 
-.pr-reason {
+/* The state in its tone, then muted notes, then the last activity on the right. */
+.pr-state {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 2px;
   font-size: 11px;
+  white-space: nowrap;
 }
 
-.pr-meta {
+.pr-note,
+.pr-active,
+.pr-checks {
   font-size: 10px;
 }
 
-.dot {
-  flex: none;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
+.pr-note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pr-active {
+  margin-left: auto;
+}
+
+.pr-checks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.checks-mark {
+  stroke: var(--surface);
 }
 
 .tone-red {
@@ -796,10 +852,6 @@ p kbd {
 
 .tone-green {
   color: var(--green);
-}
-
-.tone-muted {
-  color: var(--muted);
 }
 
 .more {
@@ -1007,6 +1059,12 @@ p kbd {
   .hero {
     gap: 40px;
     padding-block: 24px 56px;
+  }
+
+  .not-found {
+    align-items: center;
+    padding-block: 48px 72px;
+    text-align: center;
   }
 
   .actions {

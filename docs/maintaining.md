@@ -79,6 +79,7 @@ gh repo edit "$repo" --homepage "$site"
 2. Commit the change as `chore(release): X.Y.Z`, then open its pull request and merge it.
 3. Push a signed `vX.Y.Z` tag on the merge commit, then publish its release, marked as a pre-release while Stow is in alpha.
 4. Publishing starts the `release` workflow. It builds the unsigned DMG from the tag and attaches it with its SHA-256 and a build provenance attestation. To build an existing release again, run the workflow by hand with its tag.
+5. Once the release is published, update the version on the site, the hero's "Alpha · X.Y.Z" line in `site/index.html`, in its own pull request.
 
 Builds stay unsigned until Developer ID signing and notarization are in place; see the [roadmap](roadmap.md). Attestations need the repository to be public.
 

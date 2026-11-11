@@ -13,10 +13,10 @@
   <meta property="og:site_name" content="Stow">
   <meta property="og:title" content="Stow, a quiet board for notes and pull requests">
   <meta property="og:description" content="Markdown notes and the GitHub pull requests that need you, in one small native Mac window. Free and open source.">
-  <meta property="og:image" content="https://stow.byanthny.com/assets/og.png">
+  <meta property="og:image" content="https://stow.byanthny.com/assets/og-0.3.0.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="The Stow board with pull requests that need you and Markdown notes, beside the headline.">
+  <meta property="og:image:alt" content="The Stow board with pull requests that need you, each repository in its own color, and Markdown notes, beside the headline.">
   <meta name="twitter:card" content="summary_large_image">
   <link rel="icon" href="favicon.ico" sizes="32x32">
   <link rel="icon" href="assets/icon-128.png" type="image/png" sizes="128x128">
@@ -57,7 +57,7 @@
             View on GitHub
           </a>
         </div>
-        <p class="fine">Alpha · 0.2.0 · Free under GPL-3.0 · No account needed</p>
+        <p class="fine">Alpha · 0.3.0 · Free under GPL-3.0-or-later · No account needed</p>
       </div>
 
       <figure class="demo">
@@ -86,36 +86,40 @@
             <div class="section-body" id="needs-body">
               <ul class="cards" role="list">
                 <li class="pr">
-                  <p class="pr-repo"><span class="pr-name">example/desktop</span> <span class="pr-num">#27</span></p>
+                  <p class="pr-repo"><span class="pr-name">example<span class="repo-desktop">/desktop</span></span> <span class="pr-num">#27</span></p>
                   <p class="pr-title">Handle refresh retries</p>
-                  <p class="pr-reason tone-red"><span class="dot" aria-hidden="true"></span>Checks failing</p>
-                  <p class="pr-meta">Checks failing · Approved</p>
+                  <p class="pr-state"><span class="tone-green">Approved</span> <span class="pr-active">Active 2h ago</span></p>
+                  <p class="pr-checks"><svg class="checks-icon tone-red" aria-hidden="true" width="10" height="10" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="currentColor"/><path class="checks-mark" d="M5.5 5.5l5 5m0-5l-5 5" fill="none" stroke-width="1.75" stroke-linecap="round"/></svg>Checks failing</p>
                 </li>
                 <li class="pr">
-                  <p class="pr-repo"><span class="pr-name">example/desktop</span> <span class="pr-num">#24</span></p>
+                  <p class="pr-repo"><span class="pr-name">example<span class="repo-desktop">/desktop</span></span> <span class="pr-num">#24</span></p>
                   <p class="pr-title">Preserve window placement</p>
-                  <p class="pr-reason tone-amber"><span class="dot" aria-hidden="true"></span>Changes requested</p>
-                  <p class="pr-meta">Checks passed · Changes requested</p>
+                  <p class="pr-state"><span class="tone-red">Changes requested</span> <span class="pr-active">Active 5h ago</span></p>
+                  <p class="pr-checks"><svg class="checks-icon tone-amber" aria-hidden="true" width="10" height="10" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg>Checks running</p>
                 </li>
                 <li class="pr">
-                  <p class="pr-repo"><span class="pr-name">example/website</span> <span class="pr-num">#12</span></p>
+                  <p class="pr-repo"><span class="pr-name">example<span class="repo-website">/website</span></span> <span class="pr-num">#12</span></p>
                   <p class="pr-title">Fix flaky upload test</p>
-                  <p class="pr-reason tone-red"><span class="dot" aria-hidden="true"></span>Checks failing</p>
-                  <p class="pr-meta">Checks failing</p>
+                  <p class="pr-state"><span class="tone-red">Resolve conflicts</span> <span class="pr-note">Approved</span> <span class="pr-active">Active 1d ago</span></p>
+                  <p class="pr-checks"><svg class="checks-icon tone-green" aria-hidden="true" width="10" height="10" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="currentColor"/><path class="checks-mark" d="M4.75 8.25l2.25 2.25 4.25-4.5" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>Checks passed</p>
                 </li>
                 <li class="pr" data-extra hidden>
-                  <p class="pr-repo"><span class="pr-name">sample-org/api</span> <span class="pr-num">#58</span></p>
+                  <p class="pr-repo"><span class="pr-name">sample-org<span class="repo-api">/api</span></span> <span class="pr-num">#58</span></p>
                   <p class="pr-title">Drop legacy flags</p>
-                  <p class="pr-reason tone-green"><span class="dot" aria-hidden="true"></span>Ready to merge</p>
-                  <p class="pr-meta">Checks passed · Approved</p>
+                  <p class="pr-state"><span class="tone-green">Ready to merge</span> <span class="pr-note">Approved</span> <span class="pr-active">Active 2d ago</span></p>
+                  <p class="pr-checks"><svg class="checks-icon tone-green" aria-hidden="true" width="10" height="10" viewBox="0 0 16 16"><circle cx="8" cy="8" r="8" fill="currentColor"/><path class="checks-mark" d="M4.75 8.25l2.25 2.25 4.25-4.5" fill="none" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>Checks passed</p>
                 </li>
               </ul>
               <button type="button" class="more" data-action="more" data-showing="false">Show 1 more</button>
             </div>
             <p class="summary" id="needs-summary" hidden>desktop: Handle refresh retries · desktop: Preserve window placement</p>
 
-            <div class="section-label">Notes <span class="count" data-notes-count>2</span></div>
-            <div class="notes-wrap">
+            <button type="button" class="section-toggle" data-action="section" aria-expanded="true" aria-controls="notes-body" data-summary="notes-summary">
+              <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+              Notes
+              <span class="count"><span data-notes-count>2</span><span class="sr-only"> notes</span></span>
+            </button>
+            <div class="notes-wrap" id="notes-body">
               <ul class="notes" role="list" data-notes>
                 <li class="note">
                   <div class="note-row">
@@ -131,7 +135,7 @@
                     </button>
                   </div>
                   <div class="note-body" id="note-1-body" hidden>
-                    <textarea class="note-input" aria-label="Note text" rows="5"># A little room to think
+                    <textarea class="note-input" aria-labelledby="note-1-title" rows="5"># A little room to think
 
 - keep the board quiet
 - bring the next action into view</textarea>
@@ -155,7 +159,7 @@
                       <svg aria-hidden="true" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
                       example/desktop #24
                     </p>
-                    <textarea class="note-input" aria-label="Note text" rows="5">Check the window on the external display.</textarea>
+                    <textarea class="note-input" aria-labelledby="note-2-title" rows="5">Check the window on the external display.</textarea>
                   </div>
                 </li>
               </ul>
@@ -175,11 +179,12 @@
                     </button>
                   </div>
                   <div class="note-body" hidden>
-                    <textarea class="note-input" aria-label="Note text" rows="5"></textarea>
+                    <textarea class="note-input" rows="5"></textarea>
                   </div>
                 </li>
               </template>
             </div>
+            <p class="summary" id="notes-summary" hidden>A little room to think</p>
 
             <button type="button" class="section-toggle" data-action="section" aria-expanded="false" aria-controls="waiting-body" data-summary="waiting-summary">
               <svg class="chev" aria-hidden="true" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
@@ -189,9 +194,10 @@
             <div class="section-body" id="waiting-body" hidden>
               <ul class="cards" role="list">
                 <li class="pr">
-                  <p class="pr-repo"><span class="pr-name">example/toolkit</span> <span class="pr-num">#8</span></p>
+                  <p class="pr-repo"><span class="pr-name">example<span class="repo-toolkit">/toolkit</span></span> <span class="pr-num">#8</span></p>
                   <p class="pr-title">Add keyboard shortcuts</p>
-                  <p class="pr-reason tone-muted"><span class="dot" aria-hidden="true"></span>Waiting for review</p>
+                  <p class="pr-state"><span class="tone-amber">Review pending</span> <span class="pr-active">Active 3h ago</span></p>
+                  <p class="pr-checks"><svg class="checks-icon tone-amber" aria-hidden="true" width="10" height="10" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="currentColor"/></svg>Checks running</p>
                 </li>
               </ul>
             </div>
@@ -211,7 +217,7 @@
         <li class="card">
           <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h9l4 4v14H6z"/><path d="M15 3v4h4"/><path d="M9 12h7"/><path d="M9 16h5"/></svg>
           <h3>Notes are plain Markdown</h3>
-          <p>Every note is a <code>.md</code> file you can open in any editor. Stow reloads outside changes and keeps both versions if they ever clash.</p>
+          <p>Every note is a <code>.md</code> file you can open in any editor. Markdown shows as you type, and the marks stay visible. Stow reloads outside changes and keeps both versions if they ever clash.</p>
           <pre class="code code-note" translate="no"><code><span class="tok-mark">#</span> <span class="tok-heading">Flaky upload test</span>
 Repro on a slow network:
 
@@ -242,7 +248,7 @@ npm test -- --grep upload
         <li class="card">
           <svg class="card-icon" aria-hidden="true" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
           <h3>Private by design</h3>
-          <p>No account, analytics, or server. Your notes stay on your Mac, and Stow never reads your GitHub token.</p>
+          <p>No account, analytics, or server. Your notes stay on your Mac, and Stow never reads your GitHub token. The update check, also off until you turn it on, is the only request Stow makes without <code>gh</code>.</p>
         </li>
       </ul>
     </section>
@@ -261,7 +267,18 @@ npm test -- --grep upload
     <section class="band" id="install" aria-labelledby="install-title">
       <h2 class="install-title" id="install-title">Get Stow</h2>
       <div class="install-grid">
-        <article class="card card-wide" aria-labelledby="build-title">
+        <article class="card card-wide" id="download" aria-labelledby="download-title">
+          <div class="card-part">
+            <h3 id="download-title">Download</h3>
+            <p>An alpha DMG for Apple silicon and Intel. Open it and drag Stow to Applications. It's unsigned for now, so macOS asks you to allow Stow the first time it opens.</p>
+            <a class="btn btn-primary btn-small" href="https://github.com/byanthny/stow/releases">Download from Releases</a>
+          </div>
+          <div class="card-part">
+            <p>GitHub Actions builds each DMG from its release tag. To check yours, run this command, or compare it with its <code>.sha256</code> file. The <a href="https://github.com/byanthny/stow/blob/main/docs/install.md">installation guide</a> has the details.</p>
+            <pre class="code" translate="no" data-copy="Copy verify command"><code><span class="line">gh attestation verify Stow-0.3.0.dmg <span class="flag">--repo</span> byanthny/stow</span></code></pre>
+          </div>
+        </article>
+        <article class="card" aria-labelledby="build-title">
           <h3 id="build-title">Build from source</h3>
           <p>Needs Xcode 16.4 or later, which runs on macOS 15.3 or later. Unzip <code>build/Stow.zip</code> and move Stow.app to Applications. The package is for your own Mac.</p>
           <pre class="code" translate="no" data-copy="Copy commands"><code><span class="line">git clone <span class="cont" aria-hidden="true">\
@@ -271,11 +288,6 @@ npm test -- --grep upload
           <h3 id="github-title">Connect GitHub, if you want</h3>
           <p>Install the <a href="https://cli.github.com/">GitHub CLI</a> and sign in once. Stow asks before using it, and notes work without it.</p>
           <pre class="code" translate="no" data-copy="Copy command"><code><span class="line">gh auth login --hostname github.com</span></code></pre>
-        </article>
-        <article class="card" id="download" aria-labelledby="download-title">
-          <h3 id="download-title">Download</h3>
-          <p>An unsigned alpha DMG for Apple silicon and Intel. Signed builds come later.</p>
-          <a class="btn btn-primary btn-small" href="https://github.com/byanthny/stow/releases">Download from Releases</a>
         </article>
       </div>
     </section>
