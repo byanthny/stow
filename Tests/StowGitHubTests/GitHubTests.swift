@@ -660,7 +660,7 @@ struct GHProcessTests {
         // Each launch waits with a child that has left gh's process group, holding the output open.
         let gh = try fakeGH(
             #"""
-            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 20' \
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 40' \
               "$0.$$" &
             while [ ! -s "$0.$$" ]; do sleep 0.01; done
             cat "$0.$$" >> "$0.children"
@@ -669,11 +669,13 @@ struct GHProcessTests {
         defer { cleanUp(gh) }
         let requests = 10
         let pipes = openPipes()
+        let started = ContinuousClock.now
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<requests {
                 group.addTask { await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 2) } }
             }
         }
+        #expect(ContinuousClock.now - started < .seconds(15), "Each request ends at its deadline")
         #expect(children(of: gh).count == requests)
         for _ in 0..<200 where openPipes() > pipes { try await Task.sleep(for: .milliseconds(10)) }
         // Each request read two pipes; fewer than one per request may belong to other tests.
