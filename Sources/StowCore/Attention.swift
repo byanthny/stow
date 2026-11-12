@@ -50,6 +50,9 @@ extension PullRequestSnapshot {
     /// Merged or closed, as last observed.
     public var isTerminal: Bool { state == "MERGED" || state == "CLOSED" }
 
+    /// Merged, as last observed. A merge can't be undone, so a stale card that was seen merged still is.
+    public var isMerged: Bool { state == "MERGED" }
+
     /// Open and approved on fresh data. A stale or unavailable approval doesn't count.
     public var isApproved: Bool { state == "OPEN" && reviewDecision == "APPROVED" && !isStale && !isUnavailable }
 }

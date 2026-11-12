@@ -79,6 +79,7 @@ extension AppearanceSettings {
             case "amber": result.colors.amber = entry.value
             case "red": result.colors.red = entry.value
             case "green": result.colors.green = entry.value
+            case "purple": result.colors.purple = entry.value
             default: preconditionFailure("Config keys are checked before applying overrides")
             }
             do { try result.validated() } catch {
@@ -129,6 +130,7 @@ extension AppearanceSettings {
             ("amber", colors.amber, base.colors.amber),
             ("red", colors.red, base.colors.red),
             ("green", colors.green, base.colors.green),
+            ("purple", colors.purple, base.colors.purple),
         ] where value != original {
             lines.append("\(key) = \(value)")
         }
@@ -145,6 +147,7 @@ private struct ConfigEntry {
     static let keys: Set<String> = [
         "preset", "name", "color-scheme", "font-family", "font-size", "ui-font-family", "ui-font-size",
         "line-height", "background-opacity", "background", "surface", "note", "text", "muted", "amber", "red", "green",
+        "purple",
     ]
     static let presets: [(key: String, settings: AppearanceSettings)] = [
         ("stow", .default), ("graphite", .graphite), ("paper", .paper),

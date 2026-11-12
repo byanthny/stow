@@ -76,6 +76,7 @@ struct AppearanceView: View {
                     colorPicker("Attention", \.amber)
                     colorPicker("Failure", \.red)
                     colorPicker("Ready", \.green)
+                    colorPicker("Merged", \.purple)
                 }.padding(.top, 8)
             }.font(theme.font(size: 12))
             VStack(alignment: .leading, spacing: 8) {

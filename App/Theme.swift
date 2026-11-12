@@ -38,6 +38,7 @@ struct StowTheme: Equatable, Sendable {
         case .amber: return Color(stowHex: colors.amber)
         case .red: return Color(stowHex: colors.red)
         case .green: return Color(stowHex: colors.green)
+        case .purple: return Color(stowHex: colors.purple)
         }
     }
 
@@ -51,7 +52,7 @@ extension EnvironmentValues {
 
 /// A theme color resolved from the environment of the view that uses it.
 struct StowColor: ShapeStyle {
-    enum Role: Sendable { case background, surface, note, text, muted, amber, red, green }
+    enum Role: Sendable { case background, surface, note, text, muted, amber, red, green, purple }
     let role: Role
 
     func resolve(in environment: EnvironmentValues) -> Color { environment.stowTheme.color(role) }
@@ -66,6 +67,7 @@ extension ShapeStyle where Self == StowColor {
     static var stowAmber: StowColor { StowColor(role: .amber) }
     static var stowRed: StowColor { StowColor(role: .red) }
     static var stowGreen: StowColor { StowColor(role: .green) }
+    static var stowPurple: StowColor { StowColor(role: .purple) }
 }
 
 /// One per store: windows of different stores never share a theme.

@@ -52,6 +52,26 @@ final class AttentionTests: XCTestCase {
         }
     }
 
+    func testMergedOutlineFollowsTheLastObservedMerge() {
+        var merged = ready()
+        merged.state = "MERGED"
+        XCTAssertTrue(merged.isMerged)
+        XCTAssertTrue(merged.isTerminal)
+        merged.isStale = true
+        merged.isUnavailable = true
+        XCTAssertTrue(merged.isMerged, "A merge can't be undone")
+        var closed = ready()
+        closed.state = "CLOSED"
+        XCTAssertFalse(closed.isMerged)
+        XCTAssertTrue(closed.isTerminal)
+        for state in ["OPEN", "UNKNOWN", "merged"] {
+            var other = ready()
+            other.state = state
+            XCTAssertFalse(other.isMerged, state)
+            XCTAssertFalse(other.isTerminal, state)
+        }
+    }
+
     func testStaleSuccessWaitsButKnownFailuresAndConflictsRemainActionable() {
         var snapshot = ready()
         snapshot.isStale = true

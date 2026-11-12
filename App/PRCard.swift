@@ -74,6 +74,8 @@ struct PRCard: View {
             .overlay {
                 if pr.isApproved {
                     RoundedRectangle(cornerRadius: 9).strokeBorder(.stowGreen)
+                } else if pr.isMerged {
+                    RoundedRectangle(cornerRadius: 9).strokeBorder(.stowPurple)
                 } else {
                     RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.035))
                 }
