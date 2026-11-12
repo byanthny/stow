@@ -38,7 +38,7 @@ struct StowTheme: Equatable, Sendable {
         case .amber: return Color(stowHex: colors.amber)
         case .red: return Color(stowHex: colors.red)
         case .green: return Color(stowHex: colors.green)
-        case .purple: return Color(stowHex: colors.purple)
+        case .purple: return Color(stowHex: settings.purple)
         }
     }
 

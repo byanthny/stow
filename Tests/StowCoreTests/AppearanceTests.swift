@@ -22,8 +22,7 @@ struct AppearanceTests {
 
     @Test func purpleOutlinesReadInEveryBuiltInTheme() throws {
         for theme in [AppearanceSettings.default, .graphite, .paper] {
-            let purple = try #require(RGBColor(hex: theme.colors.purple))
-            #expect(theme.colors.purple == AppearanceColors.purple(for: theme.colorScheme), "\(theme.name)")
+            let purple = try #require(RGBColor(hex: theme.purple))
             for (name, hex) in [("background", theme.colors.background), ("surface", theme.colors.surface)] {
                 let contrast = purple.contrast(with: try #require(RGBColor(hex: hex)))
                 #expect(contrast >= 4.5, "\(theme.name) purple on \(name): \(contrast)")
@@ -31,25 +30,17 @@ struct AppearanceTests {
         }
     }
 
-    @Test func themesWithoutAValidPurpleTakeTheirColorSchemes() throws {
-        for theme in [AppearanceSettings.default, .graphite, .paper] {
+    @Test func purpleFollowsTheColorSchemeAndIsNeverSaved() throws {
+        var lightStow = AppearanceSettings.default
+        lightStow.colorScheme = .light
+        #expect(lightStow.purple == AppearanceSettings.paper.purple)
+        #expect(AppearanceSettings.graphite.purple == AppearanceSettings.default.purple)
+        for theme in [AppearanceSettings.default, .graphite, .paper, lightStow] {
             let saved = try #require(JSONSerialization.jsonObject(with: theme.encodedTheme()) as? [String: Any])
-            var colors = try #require(saved["colors"] as? [String: Any])
-            #expect(colors["purple"] as? String == theme.colors.purple)
-            let damaged: [Any?] = [nil, "violet", "#12", 5, NSNull(), ["#A98BD9"]]
-            for value in damaged {
-                colors["purple"] = value
-                var older = saved
-                older["colors"] = colors
-                let decoded = try AppearanceSettings.decodeTheme(JSONSerialization.data(withJSONObject: older))
-                #expect(decoded == theme, "\(theme.name) with purple \(String(describing: value))")
-            }
+            let colors = try #require(saved["colors"] as? [String: Any])
+            #expect(Set(colors.keys) == ["background", "surface", "note", "text", "muted", "amber", "red", "green"])
+            #expect(saved["purple"] == nil)
         }
-        var custom = AppearanceSettings.paper
-        custom.colors.purple = "#5A3E8C"
-        #expect(try AppearanceSettings.decodeTheme(custom.encodedTheme()) == custom)
-        custom.colors.purple = "violet"
-        #expect(throws: AppearanceError.self) { try custom.validated() }
     }
 
     @Test func allPresetsValidate() throws {

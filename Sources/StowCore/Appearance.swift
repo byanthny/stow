@@ -14,37 +14,8 @@ public struct AppearanceColors: Codable, Equatable, Sendable {
     public var amber = "#D9A659"
     public var red = "#E0736E"
     public var green = "#7DB38F"
-    /// Outlines merged pull requests. Themes saved before it existed get their color scheme's purple.
-    public var purple = AppearanceColors.purple(for: .dark)
 
     public init() {}
-
-    /// The purple a theme without one gets.
-    public static func purple(for scheme: AppearanceColorScheme) -> String {
-        scheme == .dark ? "#A98BD9" : "#6E4FA3"
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case background, surface, note, text, muted, amber, red, green, purple
-    }
-
-    public init(from decoder: any Decoder) throws {
-        try self.init(from: decoder.container(keyedBy: CodingKeys.self), colorScheme: .dark)
-    }
-
-    /// A missing or invalid purple takes the color scheme's, rather than rejecting the theme.
-    init(from container: KeyedDecodingContainer<CodingKeys>, colorScheme: AppearanceColorScheme) throws {
-        background = try container.decode(String.self, forKey: .background)
-        surface = try container.decode(String.self, forKey: .surface)
-        note = try container.decode(String.self, forKey: .note)
-        text = try container.decode(String.self, forKey: .text)
-        muted = try container.decode(String.self, forKey: .muted)
-        amber = try container.decode(String.self, forKey: .amber)
-        red = try container.decode(String.self, forKey: .red)
-        green = try container.decode(String.self, forKey: .green)
-        let saved = try? container.decodeIfPresent(String.self, forKey: .purple)
-        purple = saved.flatMap { Self.isValidHex($0) ? $0 : nil } ?? Self.purple(for: colorScheme)
-    }
 
     public static func isValidHex(_ value: String) -> Bool {
         value.count == 7 && value.first == "#"
@@ -53,7 +24,7 @@ public struct AppearanceColors: Codable, Equatable, Sendable {
             }
     }
 
-    var values: [String] { [background, surface, note, text, muted, amber, red, green, purple] }
+    var values: [String] { [background, surface, note, text, muted, amber, red, green] }
 }
 
 public enum AppearanceError: LocalizedError, Equatable {
@@ -93,9 +64,7 @@ public struct AppearanceSettings: Codable, Equatable, Sendable {
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         name = try container.decode(String.self, forKey: .name)
         colorScheme = try container.decode(AppearanceColorScheme.self, forKey: .colorScheme)
-        colors = try AppearanceColors(
-            from: container.nestedContainer(keyedBy: AppearanceColors.CodingKeys.self, forKey: .colors),
-            colorScheme: colorScheme)
+        colors = try container.decode(AppearanceColors.self, forKey: .colors)
         interfaceFontName = try container.decodeIfPresent(String.self, forKey: .interfaceFontName)
         editorFontName = try container.decodeIfPresent(String.self, forKey: .editorFontName)
         interfaceFontSize = try container.decode(Double.self, forKey: .interfaceFontSize)
@@ -106,6 +75,9 @@ public struct AppearanceSettings: Codable, Equatable, Sendable {
     }
 
     public static let `default` = AppearanceSettings()
+
+    /// The purple that outlines merged pull requests, from the color scheme. It is never saved or shared.
+    public var purple: String { colorScheme == .dark ? "#A98BD9" : "#6E4FA3" }
 
     public static var graphite: AppearanceSettings {
         var theme = AppearanceSettings()
@@ -133,7 +105,6 @@ public struct AppearanceSettings: Codable, Equatable, Sendable {
         theme.colors.amber = "#8C611C"
         theme.colors.red = "#AD3E39"
         theme.colors.green = "#356C47"
-        theme.colors.purple = AppearanceColors.purple(for: .light)
         return theme
     }
 

@@ -16,12 +16,15 @@ struct AppearanceConfigTests {
         #expect(try AppearanceSettings.decodeConfig(text) == expected)
     }
 
-    @Test func purpleIsAColorSettingLikeTheOthers() throws {
-        let custom = try AppearanceSettings.decodeConfig("preset = paper\npurple = #5A3E8C")
-        #expect(custom.colors.purple == "#5A3E8C")
-        #expect(try custom.encodedConfig() == "preset = paper\npurple = #5A3E8C\n")
-        #expect(try AppearanceSettings.paper.encodedConfig() == "preset = paper\n")
-        #expect(throws: AppearanceConfigError.self) { try AppearanceSettings.decodeConfig("purple = violet") }
+    @Test func writtenConfigsHaveNoPurpleSoOlderVersionsReadThem() throws {
+        var lightStow = AppearanceSettings.default
+        lightStow.colorScheme = .light
+        for theme in [AppearanceSettings.default, .graphite, .paper, lightStow] {
+            let config = try theme.encodedConfig()
+            #expect(!config.contains("purple"), "\(config)")
+            #expect(try AppearanceSettings.decodeConfig(config) == theme)
+        }
+        #expect(throws: AppearanceConfigError.self) { try AppearanceSettings.decodeConfig("purple = #6E4FA3") }
     }
 
     @Test func presetOrderDoesNotChangeTheResult() throws {
@@ -95,7 +98,6 @@ struct AppearanceConfigTests {
             settings.colors.amber = "#B0B1B2"
             settings.colors.red = "#C0C1C2"
             settings.colors.green = "#D0D1D2"
-            settings.colors.purple = "#E0E1E2"
             let exported = try settings.encodedConfig()
             #expect(try AppearanceSettings.decodeConfig(exported) == settings)
             #expect(try settings.encodedConfig() == exported)
