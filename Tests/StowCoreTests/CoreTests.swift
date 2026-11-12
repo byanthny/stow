@@ -611,9 +611,39 @@ final class ReconciliationTests: XCTestCase {
     func testProviderTerminalTimestampCannotInventObservationAndDuplicateIDsAreSafe() {
         var incoming = snapshot("CLOSED")
         incoming.terminalObservedAt = now.addingTimeInterval(-500_000)
-        let result = reconcileSnapshots(previous: [], incoming: [incoming, incoming], pins: [], now: now)
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.terminalObservedAt, now)
+        for (previous, pins) in [([snapshot()], []), ([], [incoming.reference])] {
+            let result = reconcileSnapshots(previous: previous, incoming: [incoming, incoming], pins: pins, now: now)
+            XCTAssertEqual(result.count, 1)
+            XCTAssertEqual(result.first?.terminalObservedAt, now)
+        }
+    }
+
+    func testAnExpiredCardNeverComesBackFromTheSameResult() {
+        let open = reconcileSnapshots(previous: [], incoming: [snapshot()], pins: [], now: now)
+        let seen = reconcileSnapshots(previous: open, incoming: [snapshot("MERGED")], pins: [], now: now)
+        XCTAssertEqual(seen.first?.terminalObservedAt, now)
+        // A result that lands as the day ends, applied twice by two callers that joined one refresh.
+        let dayEnds = now.addingTimeInterval(TerminalCardKeepTime.day.interval)
+        let first = reconcileSnapshots(previous: seen, incoming: [snapshot("MERGED")], pins: [], now: dayEnds)
+        XCTAssertTrue(first.isEmpty)
+        let again = reconcileSnapshots(previous: first, incoming: [snapshot("MERGED")], pins: [], now: dayEnds)
+        XCTAssertTrue(again.isEmpty)
+        // A merged card no list holds, and nothing on the board knew, never shows.
+        XCTAssertTrue(reconcileSnapshots(previous: [], incoming: [snapshot("CLOSED")], pins: [], now: now).isEmpty)
+    }
+
+    func testAShorterKeepTimeChosenDuringARefreshHolds() {
+        let open = reconcileSnapshots(previous: [], incoming: [snapshot()], pins: [], now: now)
+        let seen = reconcileSnapshots(previous: open, incoming: [snapshot("MERGED")], pins: [], now: now)
+        // A refresh starts with the card on the board; while it runs, the keep time drops to an hour.
+        let inFlight = [snapshot("MERGED")]
+        let later = now.addingTimeInterval(2 * 3_600)
+        let pruned = droppingExpiredTerminalCards(seen, pins: [], keepTime: .hour, now: later)
+        XCTAssertTrue(pruned.isEmpty)
+        let landed = reconcileSnapshots(previous: pruned, incoming: inFlight, pins: [], now: later, keepTime: .hour)
+        XCTAssertTrue(landed.isEmpty, "Choosing a longer time again brings nothing back")
+        XCTAssertTrue(
+            reconcileSnapshots(previous: pruned, incoming: inFlight, pins: [], now: later, keepTime: .week).isEmpty)
     }
 }
 

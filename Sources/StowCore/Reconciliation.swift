@@ -48,6 +48,8 @@ public func reconcileSnapshots(
         let old = previousByID[id]
         var result: PullRequestSnapshot
         if let fresh = incomingByID[id] {
+            // Lists hold only open pull requests, so an unpinned terminal one with no card here is a stale result.
+            if old == nil, fresh.isTerminal, !pinnedIDs.contains(id) { return nil }
             if fresh.isUnavailable, var preserved = old {
                 preserved.isUnavailable = true
                 preserved.isStale = true

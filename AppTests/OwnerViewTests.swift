@@ -78,7 +78,10 @@ final class OwnerViewTests: XCTestCase {
             pinned,
             authored("acme", 8) { $0.state = "MERGED" },
         ]
-        let (store, _) = try await startStore(cards: cards) { $0.pins = [pinned.reference] }
+        let (store, _) = try await startStore(cards: cards) {
+            $0.pins = [pinned.reference]
+            $0.pullRequests = [whileOpen(cards[7])]
+        }
         await store.refresh()
         let sections: [AttentionSection] = [.needsYou, .waiting]
         var everything: [AttentionSection: [PullRequestSnapshot]] = [:]
@@ -264,6 +267,7 @@ final class OwnerViewTests: XCTestCase {
         let pinnedMerged = terminal("beta", 4, "MERGED")
         let (store, _) = try await startStore(cards: [open, merged, closed, pinnedMerged]) {
             $0.pins = [pinnedMerged.reference]
+            $0.pullRequests = [whileOpen(merged), whileOpen(closed)]
         }
         await store.refresh()
         XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinnedMerged.id, open.id], "Pinned cards stay in Waiting")
@@ -295,7 +299,10 @@ final class OwnerViewTests: XCTestCase {
         var pinned = card("acme", "app", 2, "Synthetic pinned merged card")
         pinned.state = "MERGED"
         let open = card("acme", "app", 3, "Synthetic open card")
-        let (store, _) = try await startStore(cards: [merged, pinned, open]) { $0.pins = [pinned.reference] }
+        let (store, _) = try await startStore(cards: [merged, pinned, open]) {
+            $0.pins = [pinned.reference]
+            $0.pullRequests = [whileOpen(merged)]
+        }
         XCTAssertEqual(store.state.terminalCardKeepTime, .day)
         await store.refresh()
         XCTAssertEqual(store.mergedCards.map(\.id), [merged.id])
@@ -306,10 +313,14 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertTrue(store.mergedCards.isEmpty)
         XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [pinned.id, open.id])
 
-        // Refreshes now drop merged cards before they show; a pinned one stays in Waiting.
+        // Refreshes now drop merged cards, and a longer time chosen again brings none back; pins stay in Waiting.
         await store.refresh()
         XCTAssertTrue(store.mergedCards.isEmpty)
         XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinned.id, open.id])
+        store.setTerminalCardKeepTime(.week)
+        await store.refresh()
+        XCTAssertTrue(store.mergedCards.isEmpty)
+        store.setTerminalCardKeepTime(.dontKeep)
         let saved = await store.flush()
         XCTAssertTrue(saved)
         let persisted = try await StateRepository(url: store.stateURL).load()
@@ -469,6 +480,13 @@ final class OwnerViewTests: XCTestCase {
             reference: PullRequestReference(owner: owner, repository: repository, number: number), title: title,
             isViewerAuthor: false, state: "OPEN", hasDirectReviewRequest: reviewRequested,
             updatedAt: Date(timeIntervalSinceReferenceDate: 800_000_000 - Double(number) * 60))
+    }
+
+    /// The card as it was while still open, before a refresh saw it merged or closed.
+    private func whileOpen(_ card: PullRequestSnapshot) -> PullRequestSnapshot {
+        var open = card
+        open.state = "OPEN"
+        return open
     }
 
     /// A started store with GitHub on, in a new folder, answered by a client that holds `cards`.
