@@ -35,14 +35,14 @@ note = #FFF9E8
 | `preset` | `stow`, `graphite`, or `paper`; default `stow` |
 | `name` | 1–80 characters, no control characters |
 | `color-scheme` | `dark` or `light` |
-| `background`, `surface`, `note`, `text`, `muted`, `amber`, `red`, `green` | `#RRGGBB` |
+| `background`, `surface`, `note`, `text`, `muted`, `amber`, `red`, `green`, `purple` | `#RRGGBB` |
 | `font-family`, `ui-font-family` | installed note or interface font name, or `system`; maximum 200 characters |
 | `font-size` | note size, 10–32 points |
 | `ui-font-size` | interface size, 10–22 points |
 | `line-height` | 1–2 times the note font's line height |
 | `background-opacity` | 0.2–1, where 1 is solid |
 
-All numbers must be finite. Files are limited to 1 MB. A font missing on the current Mac falls back to the system font while retaining its saved name. Themes do not install fonts or load code, plugins, or remote resources. Exported configs contain appearance settings only, with no notes, pull requests, account information, or app paths.
+`purple` outlines merged pull requests; a theme without one, such as a Stow 0.3.0 export, uses its color scheme's purple. All numbers must be finite. Files are limited to 1 MB. A font missing on the current Mac falls back to the system font while retaining its saved name. Themes do not install fonts or load code, plugins, or remote resources. Exported configs contain appearance settings only, with no notes, pull requests, account information, or app paths.
 
 Invalid or unsupported input keeps the current appearance unchanged. **Reset** restores all defaults. Existing JSON themes remain importable; [graphite.json](themes/graphite.json) is retained as a legacy example. New sharing and exports use plaintext configs.
 
