@@ -289,6 +289,8 @@ public struct AppState: Codable, Equatable, Sendable {
     public var boardLayout = BoardLayout()
     public var ownerSelection = OwnerSelection()
     public var keepsOnlySelectedOwners = false
+    /// How long unpinned merged and closed cards stay. Older versions don't know it and drop it when they save.
+    public var terminalCardKeepTime = TerminalCardKeepTime.default
     public var hideKeepsAlwaysOnTopNotes = false
     /// Switching to another profile hides this one. Read from the profile being left.
     public var hidesWhenSwitchingAway = true
@@ -298,6 +300,7 @@ public struct AppState: Codable, Equatable, Sendable {
         case schemaVersion, notes, pins, dismissedIDs, pullRequests, boardFrame, boardAlwaysOnTop, githubEnabled
         case ghExecutablePath, viewerLogin, lastRefreshAt, extensionInstances, appearance, collapsedSections
         case boardLayout, ownerSelection, keepsOnlySelectedOwners, hideKeepsAlwaysOnTopNotes, hidesWhenSwitchingAway
+        case terminalCardKeepTime
     }
 
     public init(from decoder: any Decoder) throws {
@@ -320,6 +323,9 @@ public struct AppState: Codable, Equatable, Sendable {
         boardLayout = try container.decodeIfPresent(BoardLayout.self, forKey: .boardLayout) ?? BoardLayout()
         ownerSelection = try container.decodeIfPresent(OwnerSelection.self, forKey: .ownerSelection) ?? OwnerSelection()
         keepsOnlySelectedOwners = try container.decodeIfPresent(Bool.self, forKey: .keepsOnlySelectedOwners) ?? false
+        // A missing or unknown value keeps cards a day, as 0.3.0 did, rather than rejecting the state.
+        let keepTimeName = try? container.decodeIfPresent(String.self, forKey: .terminalCardKeepTime)
+        terminalCardKeepTime = keepTimeName.flatMap(TerminalCardKeepTime.init(rawValue:)) ?? .default
         hideKeepsAlwaysOnTopNotes =
             try container.decodeIfPresent(Bool.self, forKey: .hideKeepsAlwaysOnTopNotes) ?? false
         hidesWhenSwitchingAway = try container.decodeIfPresent(Bool.self, forKey: .hidesWhenSwitchingAway) ?? true

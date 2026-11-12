@@ -272,7 +272,8 @@ final class AppStore {
             state.viewerLogin = result.viewerLogin
             setPullRequests(
                 reconcileSnapshots(
-                    previous: knownPullRequests, incoming: result.snapshots, pins: state.pins, now: result.fetchedAt))
+                    previous: knownPullRequests, incoming: result.snapshots, pins: state.pins, now: result.fetchedAt,
+                    keepTime: state.terminalCardKeepTime))
             isRefreshing = false
             state.lastRefreshAt = result.fetchedAt
             githubMessage =

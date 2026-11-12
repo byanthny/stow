@@ -50,6 +50,7 @@ final class StateCompatibilityTests: XCTestCase {
         var legacy = try object(original)
         let added = [
             "ownerSelection", "keepsOnlySelectedOwners", "hideKeepsAlwaysOnTopNotes", "hidesWhenSwitchingAway",
+            "terminalCardKeepTime",
         ]
         for key in added {
             legacy.removeValue(forKey: key)
@@ -65,8 +66,55 @@ final class StateCompatibilityTests: XCTestCase {
         XCTAssertFalse(decoded.keepsOnlySelectedOwners)
         XCTAssertFalse(decoded.hideKeepsAlwaysOnTopNotes)
         XCTAssertTrue(decoded.hidesWhenSwitchingAway)
+        XCTAssertEqual(decoded.terminalCardKeepTime, .day)
         XCTAssertEqual(decoded.boardLayout, BoardLayout())
         XCTAssertEqual(decoded, original)
+    }
+
+    func testKeepTimeDecodesLenientlyAndRoundTrips() throws {
+        for keepTime in TerminalCardKeepTime.allCases {
+            var state = fixture()
+            state.terminalCardKeepTime = keepTime
+            XCTAssertEqual(try decode(encode(state)).terminalCardKeepTime, keepTime)
+        }
+        XCTAssertEqual(
+            TerminalCardKeepTime.allCases.map(\.rawValue), ["dontKeep", "hour", "day", "week"],
+            "Saved names never change")
+        let original = fixture()
+        let damagedValues: [Any] = ["forever", "Day", "", 3_600, true, NSNull(), ["day"], ["value": "day"]]
+        for value in damagedValues {
+            var damaged = try object(original)
+            damaged["terminalCardKeepTime"] = value
+            let decoded = try decode(JSONSerialization.data(withJSONObject: damaged))
+            XCTAssertEqual(decoded.terminalCardKeepTime, .day, "\(value)")
+            XCTAssertEqual(decoded, original, "\(value)")
+        }
+    }
+
+    func testOlderStateRoundTripsAndNewStateKeepsEveryRequiredKeyInItsShape() throws {
+        // A 0.3.0 file: today's keys without the keep time.
+        let original = fixture()
+        var older = try object(original)
+        older.removeValue(forKey: "terminalCardKeepTime")
+        let decoded = try decode(JSONSerialization.data(withJSONObject: older))
+        XCTAssertEqual(decoded, original)
+        var written = try object(decoded)
+        XCTAssertEqual(written.removeValue(forKey: "terminalCardKeepTime") as? String, "day")
+        XCTAssertEqual(
+            try JSONSerialization.data(withJSONObject: written, options: [.sortedKeys]),
+            try JSONSerialization.data(withJSONObject: older, options: [.sortedKeys]),
+            "Nothing else changes")
+
+        var state = original
+        state.terminalCardKeepTime = .week
+        let saved = try object(state)
+        XCTAssertEqual(saved["schemaVersion"] as? Int, AppState.currentVersion)
+        XCTAssertEqual(AppState.currentVersion, 1)
+        for key in ["notes", "pins", "dismissedIDs", "pullRequests", "extensionInstances"] {
+            XCTAssertNotNil(saved[key] as? [Any], key)
+        }
+        XCTAssertEqual((saved["githubEnabled"] as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() }, true)
+        XCTAssertEqual(saved["terminalCardKeepTime"] as? String, "week")
     }
 
     func testOwnerSelectionNormalizesAndIgnoresCase() throws {

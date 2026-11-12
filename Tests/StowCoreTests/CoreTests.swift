@@ -432,53 +432,110 @@ final class ReconciliationTests: XCTestCase {
             observedStateSince: now.addingTimeInterval(-500))
     }
 
-    func testTerminalCardShowsOnceAndLeavesAtTheNextRefresh() {
-        let shownAt = now.addingTimeInterval(120)
-        let nextAt = now.addingTimeInterval(240)
-        for state in ["MERGED", "CLOSED"] {
-            let open = reconcileSnapshots(previous: [], incoming: [snapshot()], pins: [], now: now)
-            let shown = reconcileSnapshots(previous: open, incoming: [snapshot(state)], pins: [], now: shownAt)
-            XCTAssertEqual(shown.map(\.state), [state])
-            XCTAssertEqual(shown.first?.terminalObservedAt, shownAt)
-            XCTAssertEqual(shown.first?.observedStateSince, shownAt)
-            let next = reconcileSnapshots(previous: shown, incoming: [snapshot(state)], pins: [], now: nextAt)
-            XCTAssertTrue(next.isEmpty, state)
-            // A refresh that misses the card, or can't read it, still has its last observed state.
-            XCTAssertTrue(reconcileSnapshots(previous: shown, incoming: [], pins: [], now: nextAt).isEmpty, state)
-            var unavailable = snapshot()
-            unavailable.isUnavailable = true
+    func testTerminalCardsLeaveWhenTheirKeepTimeEnds() {
+        let seenAt = now.addingTimeInterval(120)
+        for keepTime in TerminalCardKeepTime.allCases {
+            for state in ["MERGED", "CLOSED"] {
+                let label = "\(state) kept \(keepTime)"
+                let open = reconcileSnapshots(previous: [], incoming: [snapshot()], pins: [], now: now)
+                let seen = reconcileSnapshots(
+                    previous: open, incoming: [snapshot(state)], pins: [], now: seenAt, keepTime: keepTime)
+                guard keepTime != .dontKeep else {
+                    XCTAssertTrue(seen.isEmpty, label)
+                    continue
+                }
+                XCTAssertEqual(seen.map(\.state), [state], label)
+                XCTAssertEqual(seen.first?.terminalObservedAt, seenAt, label)
+                XCTAssertEqual(seen.first?.observedStateSince, seenAt, label)
+                let justBefore = seenAt.addingTimeInterval(keepTime.interval - 1)
+                let kept = reconcileSnapshots(
+                    previous: seen, incoming: [snapshot(state)], pins: [], now: justBefore, keepTime: keepTime)
+                XCTAssertEqual(kept.first?.terminalObservedAt, seenAt, label)
+                let ended = seenAt.addingTimeInterval(keepTime.interval)
+                XCTAssertTrue(
+                    reconcileSnapshots(
+                        previous: kept, incoming: [snapshot(state)], pins: [], now: ended, keepTime: keepTime
+                    ).isEmpty, label)
+            }
+        }
+        XCTAssertEqual(TerminalCardKeepTime.default, .day)
+        XCTAssertEqual(TerminalCardKeepTime.hour.interval, 3_600)
+        XCTAssertEqual(TerminalCardKeepTime.day.interval, 86_400)
+        XCTAssertEqual(TerminalCardKeepTime.week.interval, 604_800)
+    }
+
+    func testPreservedStaleTerminalCardKeepsItsStateAndExpiresOnTime() {
+        var seen = snapshot("MERGED")
+        seen.terminalObservedAt = now
+        var unavailable = snapshot()
+        unavailable.isUnavailable = true
+        for incoming in [[], [unavailable]] {
+            let kept = reconcileSnapshots(
+                previous: [seen], incoming: incoming, pins: [], now: now.addingTimeInterval(3_599), keepTime: .hour)
+            XCTAssertEqual(kept.map(\.state), ["MERGED"])
+            XCTAssertEqual(kept.first?.isStale, true)
+            XCTAssertEqual(kept.first?.terminalObservedAt, now)
             XCTAssertTrue(
-                reconcileSnapshots(previous: shown, incoming: [unavailable], pins: [], now: nextAt).isEmpty, state)
+                reconcileSnapshots(
+                    previous: [seen], incoming: incoming, pins: [], now: now.addingTimeInterval(3_600), keepTime: .hour
+                ).isEmpty)
         }
+        // An open card a refresh misses stays open and stale; it is never taken for merged.
+        let open = reconcileSnapshots(previous: [snapshot()], incoming: [], pins: [], now: now, keepTime: .dontKeep)
+        XCTAssertEqual(open.map(\.state), ["OPEN"])
+        XCTAssertNil(open.first?.terminalObservedAt)
     }
 
-    func testOneRefreshResultAppliedTwiceKeepsANewlyMergedCard() {
+    func testOneRefreshResultAppliedTwiceNeitherMovesNorDropsACard() {
         let open = reconcileSnapshots(previous: [], incoming: [snapshot()], pins: [], now: now)
-        let shownAt = now.addingTimeInterval(120)
-        let first = reconcileSnapshots(previous: open, incoming: [snapshot("MERGED")], pins: [], now: shownAt)
-        let again = reconcileSnapshots(previous: first, incoming: [snapshot("MERGED")], pins: [], now: shownAt)
-        XCTAssertEqual(again.map(\.state), ["MERGED"])
-        XCTAssertEqual(again.first?.terminalObservedAt, shownAt)
-        XCTAssertTrue(
-            reconcileSnapshots(
-                previous: again, incoming: [snapshot("MERGED")], pins: [], now: now.addingTimeInterval(240)
-            ).isEmpty)
+        let seenAt = now.addingTimeInterval(120)
+        for keepTime in TerminalCardKeepTime.allCases {
+            let first = reconcileSnapshots(
+                previous: open, incoming: [snapshot("MERGED")], pins: [], now: seenAt, keepTime: keepTime)
+            let again = reconcileSnapshots(
+                previous: first, incoming: [snapshot("MERGED")], pins: [], now: seenAt, keepTime: keepTime)
+            XCTAssertEqual(again, first, "\(keepTime)")
+            XCTAssertEqual(again.isEmpty, keepTime == .dontKeep, "\(keepTime)")
+        }
     }
 
-    func testPinnedTerminalCardStaysUntilUnpinned() {
+    func testPinnedTerminalCardNeverExpiresUntilUnpinned() {
         let pins = [snapshot().reference]
-        var cards = reconcileSnapshots(previous: [], incoming: [snapshot("MERGED")], pins: pins, now: now)
-        for refresh in 1...3 {
-            cards = reconcileSnapshots(
-                previous: cards, incoming: [snapshot("MERGED")], pins: pins,
-                now: now.addingTimeInterval(Double(refresh) * 120))
-            XCTAssertEqual(cards.count, 1)
-            XCTAssertEqual(cards.first?.terminalObservedAt, now)
+        for keepTime in TerminalCardKeepTime.allCases {
+            var cards = reconcileSnapshots(
+                previous: [], incoming: [snapshot("MERGED")], pins: pins, now: now, keepTime: keepTime)
+            for later in [3_600.0, 86_400, 604_800, 6_048_000] {
+                cards = reconcileSnapshots(
+                    previous: cards, incoming: [snapshot("MERGED")], pins: pins, now: now.addingTimeInterval(later),
+                    keepTime: keepTime)
+                XCTAssertEqual(cards.count, 1, "\(keepTime)")
+                XCTAssertEqual(cards.first?.terminalObservedAt, now, "\(keepTime)")
+            }
+            XCTAssertTrue(
+                reconcileSnapshots(
+                    previous: cards, incoming: [snapshot("MERGED")], pins: [], now: now.addingTimeInterval(6_048_000),
+                    keepTime: keepTime
+                ).isEmpty, "\(keepTime)")
         }
-        XCTAssertTrue(
-            reconcileSnapshots(
-                previous: cards, incoming: [snapshot("MERGED")], pins: [], now: now.addingTimeInterval(600)
-            ).isEmpty)
+    }
+
+    func testDroppingExpiredTerminalCardsKeepsOpenPinnedAndUnobservedCards() {
+        var merged = snapshot("MERGED")
+        merged.terminalObservedAt = now
+        var pinned = merged
+        pinned.reference = .init(owner: "sample", repository: "synthetic", number: 2)
+        var unobserved = snapshot("CLOSED")
+        unobserved.reference = .init(owner: "sample", repository: "synthetic", number: 3)
+        var open = snapshot()
+        open.reference = .init(owner: "sample", repository: "synthetic", number: 4)
+        let cards = [merged, pinned, unobserved, open]
+        let later = now.addingTimeInterval(3_600)
+        XCTAssertEqual(
+            droppingExpiredTerminalCards(cards, pins: [pinned.reference], keepTime: .day, now: later).map(\.id),
+            cards.map(\.id))
+        XCTAssertEqual(
+            droppingExpiredTerminalCards(cards, pins: [pinned.reference], keepTime: .hour, now: later).map(\.id),
+            [pinned.id, unobserved.id, open.id])
     }
 
     func testPinnedTerminalRetainedAndReopenedClearsTerminalDate() {

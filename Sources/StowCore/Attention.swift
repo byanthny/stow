@@ -47,6 +47,9 @@ extension PullRequestSnapshot {
         }
     }
 
+    /// Merged or closed, as last observed.
+    public var isTerminal: Bool { state == "MERGED" || state == "CLOSED" }
+
     /// Open and approved on fresh data. A stale or unavailable approval doesn't count.
     public var isApproved: Bool { state == "OPEN" && reviewDecision == "APPROVED" && !isStale && !isUnavailable }
 }
