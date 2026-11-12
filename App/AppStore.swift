@@ -478,7 +478,8 @@ final class AppStore {
     func setTerminalCardKeepTime(_ keepTime: TerminalCardKeepTime) {
         guard keepTime != state.terminalCardKeepTime else { return }
         state.terminalCardKeepTime = keepTime
-        setPullRequests(droppingExpiredTerminalCards(knownPullRequests, pins: state.pins, keepTime: keepTime, now: .now))
+        setPullRequests(
+            droppingExpiredTerminalCards(knownPullRequests, pins: state.pins, keepTime: keepTime, now: .now))
         changed()
     }
 

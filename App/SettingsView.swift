@@ -209,8 +209,10 @@ private struct BoardSettingsView: View {
                     Text("A week").tag(TerminalCardKeepTime.week)
                 }.pickerStyle(.menu).labelsHidden().fixedSize().accessibilityIdentifier("board.terminalCardKeepTime")
             }.font(theme.font(size: 12))
-            Text("Unpinned pull requests leave the Merged group after this long. Pinned ones stay.")
-                .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(
+                "Unpinned merged and closed pull requests leave after this long; pinned ones stay. A shorter time removes them at once, and a longer one doesn’t bring them back. Notes stay."
+            )
+            .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             // Only a profile among several can hide.
             if (profile.manager?.profiles.count ?? 1) > 1 {
                 SettingsToggle(
