@@ -89,6 +89,10 @@ final class OwnerViewTests: XCTestCase {
                 reasons[card.id] = classify(card, isPinned: store.state.pins.contains(card.reference)).reason
             }
         }
+        // The merged card sits in the Merged group under Waiting, still classified as Merged.
+        let merged = store.mergedCards
+        XCTAssertEqual(merged.map(\.reference.number), [8])
+        for card in merged { reasons[card.id] = classify(card).reason }
         XCTAssertEqual(reasons.count, cards.count)
         XCTAssertEqual(
             Set(reasons.values),
@@ -113,6 +117,8 @@ final class OwnerViewTests: XCTestCase {
                     XCTAssertEqual(classification.reason, reasons[card.id])
                 }
             }
+            XCTAssertEqual(
+                store.mergedCards, merged.filter { selection.contains($0.reference.owner) }, "\(owners) in Merged")
             XCTAssertEqual(store.state.pullRequests, cached, "A selection never changes the cached cards")
         }
     }
@@ -244,6 +250,43 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(store.visibleNotes.count, 3)
         store.setGitHubEnabled(false)
         XCTAssertEqual(store.visibleNotes.map(\.id), notes.map(\.id))
+    }
+
+    func testMergedAndClosedCardsGroupUnderWaitingUnlessPinned() async throws {
+        func terminal(_ owner: String, _ number: Int, _ state: String) -> PullRequestSnapshot {
+            var snapshot = card(owner, "app", number, "Synthetic \(state.lowercased()) card \(number)")
+            snapshot.state = state
+            return snapshot
+        }
+        let open = card("acme", "app", 1, "Synthetic open card")
+        let merged = terminal("acme", 2, "MERGED")
+        let closed = terminal("beta", 3, "CLOSED")
+        let pinnedMerged = terminal("beta", 4, "MERGED")
+        let (store, _) = try await startStore(cards: [open, merged, closed, pinnedMerged]) {
+            $0.pins = [pinnedMerged.reference]
+        }
+        await store.refresh()
+        XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinnedMerged.id, open.id], "Pinned cards stay in Waiting")
+        XCTAssertEqual(store.mergedCards.map(\.id), [merged.id, closed.id])
+        XCTAssertEqual(store.mergedCards.map { classify($0).reason }, ["Merged", "Closed"])
+        XCTAssertTrue(store.cards(in: .needsYou).isEmpty)
+
+        // Collapsed at first, and only in memory: the saved collapsed sections never name the group.
+        XCTAssertTrue(store.sectionIsCollapsed(AppStore.mergedGroupID))
+        store.toggleSection(AppStore.mergedGroupID)
+        XCTAssertFalse(store.sectionIsCollapsed(AppStore.mergedGroupID))
+        XCTAssertTrue(store.state.collapsedSections.isEmpty)
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
+        let persisted = try await StateRepository(url: store.stateURL).load()
+        XCTAssertTrue(persisted.collapsedSections.isEmpty)
+
+        // Dismissing takes a card out at once; with none left, the group hides.
+        store.dismiss(merged.reference)
+        XCTAssertEqual(store.mergedCards.map(\.id), [closed.id])
+        store.dismiss(closed.reference)
+        XCTAssertTrue(store.mergedCards.isEmpty)
+        XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinnedMerged.id, open.id])
     }
 
     func testOwnerControlAppearsWithSeveralOwnersAndChangesTheSelection() async throws {

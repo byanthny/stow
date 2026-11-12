@@ -27,6 +27,8 @@ final class AppStore {
     var expandedPRs: Set<String> = []
     /// Board notes shown open this session; `boardLayout` decides the starting state.
     var expandedNoteIDs: Set<UUID> = []
+    /// The Merged group starts collapsed each launch; its state is kept only in memory.
+    private(set) var mergedGroupIsExpanded = false
     var loadingDetails: Set<String> = []
     var accessoryResults: [UUID: AccessoryResult] = [:]
     var focusNoteID: UUID?
@@ -173,6 +175,10 @@ final class AppStore {
     }
 
     func toggleSection(_ section: String) {
+        if section == Self.mergedGroupID {
+            mergedGroupIsExpanded.toggle()
+            return
+        }
         if state.collapsedSections.contains(section) {
             state.collapsedSections.removeAll { $0 == section }
         } else {
@@ -181,7 +187,9 @@ final class AppStore {
         changed()
     }
 
-    func sectionIsCollapsed(_ section: String) -> Bool { state.collapsedSections.contains(section) }
+    func sectionIsCollapsed(_ section: String) -> Bool {
+        section == Self.mergedGroupID ? !mergedGroupIsExpanded : state.collapsedSections.contains(section)
+    }
 
     func moveBoardSection(_ section: BoardLayout.Section, by offset: Int) {
         state.boardLayout.move(section, by: offset)
@@ -385,13 +393,26 @@ final class AppStore {
     }
 
     /// A section's cards, newest first. The owner selection leaves out other owners' cards, except pinned ones, and
-    /// never changes how a card is classified.
+    /// never changes how a card is classified. Unpinned merged and closed cards are in `mergedCards` instead.
     func cards(in section: AttentionSection) -> [PullRequestSnapshot] {
         let cards = visiblePRs.filter {
-            isShown($0, selection: state.ownerSelection, pins: state.pins)
-                && classify($0, isPinned: state.pins.contains($0.reference)).section == section
+            let isPinned = state.pins.contains($0.reference)
+            return isShown($0, selection: state.ownerSelection, pins: state.pins)
+                && classify($0, isPinned: isPinned).section == section && (isPinned || !$0.isTerminal)
         }
         return pinnedFirst(cards, pins: state.pins)
+    }
+
+    /// The section identifier of the Merged group, which sits under Waiting and isn't part of the saved order.
+    static let mergedGroupID = "merged"
+
+    /// The Merged group's cards: unpinned merged and closed ones of the selected owners, newest first.
+    var mergedCards: [PullRequestSnapshot] {
+        let cards = visiblePRs.filter {
+            $0.isTerminal && !state.pins.contains($0.reference)
+                && isShown($0, selection: state.ownerSelection, pins: state.pins)
+        }
+        return pinnedFirst(cards, pins: [])
     }
 
     /// Every card the profile knows now: the saved ones, then those kept only in memory.
