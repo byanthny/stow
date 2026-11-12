@@ -195,6 +195,22 @@ private struct BoardSettingsView: View {
                     get: { store.state.keepsOnlySelectedOwners }, set: { store.setKeepsOnlySelectedOwners($0) }))
             Text("Leaves other owners’ pull requests out of this profile’s files and backups. Pins are kept.")
                 .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("Keep merged and closed")
+                Spacer()
+                Picker(
+                    "Keep merged and closed",
+                    selection: Binding(
+                        get: { store.state.terminalCardKeepTime }, set: { store.setTerminalCardKeepTime($0) })
+                ) {
+                    Text("Don’t keep").tag(TerminalCardKeepTime.dontKeep)
+                    Text("An hour").tag(TerminalCardKeepTime.hour)
+                    Text("A day").tag(TerminalCardKeepTime.day)
+                    Text("A week").tag(TerminalCardKeepTime.week)
+                }.pickerStyle(.menu).labelsHidden().fixedSize().accessibilityIdentifier("board.terminalCardKeepTime")
+            }.font(theme.font(size: 12))
+            Text("Unpinned pull requests leave the Merged group after this long. Pinned ones stay.")
+                .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             // Only a profile among several can hide.
             if (profile.manager?.profiles.count ?? 1) > 1 {
                 SettingsToggle(

@@ -289,6 +289,33 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinnedMerged.id, open.id])
     }
 
+    func testAShorterKeepTimeTakesMergedCardsOffAtOnce() async throws {
+        var merged = card("acme", "app", 1, "Synthetic merged card")
+        merged.state = "MERGED"
+        var pinned = card("acme", "app", 2, "Synthetic pinned merged card")
+        pinned.state = "MERGED"
+        let open = card("acme", "app", 3, "Synthetic open card")
+        let (store, _) = try await startStore(cards: [merged, pinned, open]) { $0.pins = [pinned.reference] }
+        XCTAssertEqual(store.state.terminalCardKeepTime, .day)
+        await store.refresh()
+        XCTAssertEqual(store.mergedCards.map(\.id), [merged.id])
+        store.setTerminalCardKeepTime(.week)
+        store.setTerminalCardKeepTime(.hour)
+        XCTAssertEqual(store.mergedCards.map(\.id), [merged.id], "Seen moments ago")
+        store.setTerminalCardKeepTime(.dontKeep)
+        XCTAssertTrue(store.mergedCards.isEmpty)
+        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [pinned.id, open.id])
+
+        // Refreshes now drop merged cards before they show; a pinned one stays in Waiting.
+        await store.refresh()
+        XCTAssertTrue(store.mergedCards.isEmpty)
+        XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinned.id, open.id])
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
+        let persisted = try await StateRepository(url: store.stateURL).load()
+        XCTAssertEqual(persisted.terminalCardKeepTime, .dontKeep)
+    }
+
     func testOwnerControlAppearsWithSeveralOwnersAndChangesTheSelection() async throws {
         let acme = card("acme", "app", 1, "Synthetic acme card")
         let beta = card("beta", "lib", 2, "Synthetic beta card")

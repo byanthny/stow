@@ -474,6 +474,14 @@ final class AppStore {
         changed()
     }
 
+    /// Settings → Board → Keep merged and closed. A shorter time takes cards already past it off the board at once.
+    func setTerminalCardKeepTime(_ keepTime: TerminalCardKeepTime) {
+        guard keepTime != state.terminalCardKeepTime else { return }
+        state.terminalCardKeepTime = keepTime
+        setPullRequests(droppingExpiredTerminalCards(knownPullRequests, pins: state.pins, keepTime: keepTime, now: .now))
+        changed()
+    }
+
     /// The notes the board lists. With Settings → Board → Hide notes linked to hidden owners on, a note linked to
     /// another owner's pull request hides, unless that card is pinned and so shows. Standalone notes always show,
     /// and hiding never closes a detached note's window.
