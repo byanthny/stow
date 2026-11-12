@@ -91,23 +91,97 @@ final class StateCompatibilityTests: XCTestCase {
         }
     }
 
-    func testOlderStateRoundTripsAndNewStateKeepsEveryRequiredKeyInItsShape() throws {
-        // A 0.3.0 file: today's keys without the keep time.
-        let original = fixture()
-        var older = try object(original)
-        older.removeValue(forKey: "terminalCardKeepTime")
-        let decoded = try decode(JSONSerialization.data(withJSONObject: older))
-        XCTAssertEqual(decoded, original)
-        var written = try object(decoded)
-        XCTAssertEqual(written.removeValue(forKey: "terminalCardKeepTime") as? String, "day")
-        XCTAssertEqual(
-            try JSONSerialization.data(withJSONObject: written, options: [.sortedKeys]),
-            try JSONSerialization.data(withJSONObject: older, options: [.sortedKeys]),
-            "Nothing else changes")
+    /// A `state.json` as Stow 0.3.0 writes it, with every key it writes and no other.
+    private static let version030Index = #"""
+        {
+          "metadata": {
+            "appearance": {
+              "backgroundOpacity": 1,
+              "colorScheme": "dark",
+              "colors": {
+                "amber": "#D9A659", "background": "#0E0F11", "green": "#7DB38F", "muted": "#91969E",
+                "note": "#1F2022", "red": "#E0736E", "surface": "#1B1C1F", "text": "#E8E8E6"
+              },
+              "editorFontSize": 13,
+              "editorLineHeight": 1.3,
+              "interfaceFontSize": 13,
+              "name": "Stow",
+              "schemaVersion": 1
+            },
+            "boardAlwaysOnTop": true,
+            "boardLayout": {
+              "alwaysShowOwnerControl": false, "groupByOwner": false, "hidesNotesForHiddenOwners": false,
+              "notesStartCollapsed": true, "order": ["needsYou", "notes", "waiting"], "ownerOrder": "alphabetical",
+              "showsTitle": true, "visiblePullRequests": 3
+            },
+            "collapsedSections": ["waiting"],
+            "dismissedIDs": [],
+            "extensionInstances": [],
+            "githubEnabled": true,
+            "hideKeepsAlwaysOnTopNotes": false,
+            "hidesWhenSwitchingAway": true,
+            "keepsOnlySelectedOwners": false,
+            "lastRefreshAt": "2023-11-14T22:13:20Z",
+            "notes": [
+              {
+                "createdAt": "2023-11-14T22:13:20Z", "id": "00000000-0000-0000-0000-000000000027",
+                "isAlwaysOnTop": true, "isDetached": false, "markdown": "",
+                "pullRequest": {
+                  "host": "github.com", "number": 27, "owner": "synthetic", "repository": "compatibility"
+                },
+                "updatedAt": "2023-11-14T22:13:20Z"
+              }
+            ],
+            "ownerSelection": {"owners": []},
+            "pins": [],
+            "pullRequests": [
+              {
+                "authorLogin": "synthetic-viewer", "checksKnown": false, "fetchedAt": "2023-11-14T22:13:20Z",
+                "isDraft": false, "isStale": true, "isUnavailable": false, "isViewerAuthor": true,
+                "observedStateSince": "2023-11-14T22:13:20Z", "readinessIsComplete": false,
+                "reference": {"host": "github.com", "number": 27, "owner": "synthetic", "repository": "compatibility"},
+                "state": "MERGED", "terminalObservedAt": "2023-11-14T22:13:20Z", "title": "Synthetic merged change",
+                "updatedAt": "2023-11-14T22:13:20Z"
+              }
+            ],
+            "schemaVersion": 1,
+            "viewerLogin": "synthetic-viewer"
+          },
+          "notesDirectoryName": "notes",
+          "schemaVersion": 2
+        }
+        """#
 
-        var state = original
+    func testA030StateFileRoundTripsAndNewFilesKeepEveryRequiredKeyInItsShape() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("StowCompatibilityTests-\(UUID().uuidString)", isDirectory: true)
+        let notes = directory.appendingPathComponent("notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("state.json")
+        try Data(Self.version030Index.utf8).write(to: url)
+        try Data("Keep this synthetic note.".utf8).write(
+            to: notes.appendingPathComponent("00000000-0000-0000-0000-000000000027.md"))
+        let older = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(Self.version030Index.utf8)) as? [String: Any])
+
+        let repository = StateRepository(url: url)
+        var state = try await repository.load()
+        XCTAssertEqual(state.terminalCardKeepTime, .day)
+        XCTAssertEqual(state.notes.map(\.markdown), ["Keep this synthetic note."])
+        XCTAssertEqual(state.pullRequests.map(\.state), ["MERGED"])
+        XCTAssertEqual(state.collapsedSections, ["waiting"])
+        try await repository.save(state)
+        var written = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        var metadata = try XCTUnwrap(written["metadata"] as? [String: Any])
+        XCTAssertEqual(metadata.removeValue(forKey: "terminalCardKeepTime") as? String, "day")
+        written["metadata"] = metadata
+        XCTAssertEqual(written as NSDictionary, older as NSDictionary, "Only the keep time is added")
+
+        // A file with the new key keeps every key 0.3.0 requires, in its shape.
         state.terminalCardKeepTime = .week
-        let saved = try object(state)
+        try await repository.save(state)
+        let rewritten = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+        let saved = try XCTUnwrap(rewritten["metadata"] as? [String: Any])
         XCTAssertEqual(saved["schemaVersion"] as? Int, AppState.currentVersion)
         XCTAssertEqual(AppState.currentVersion, 1)
         for key in ["notes", "pins", "dismissedIDs", "pullRequests", "extensionInstances"] {
@@ -115,6 +189,7 @@ final class StateCompatibilityTests: XCTestCase {
         }
         XCTAssertEqual((saved["githubEnabled"] as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() }, true)
         XCTAssertEqual(saved["terminalCardKeepTime"] as? String, "week")
+        XCTAssertEqual(Set(saved.keys).subtracting(metadata.keys), ["terminalCardKeepTime"])
     }
 
     func testOwnerSelectionNormalizesAndIgnoresCase() throws {
