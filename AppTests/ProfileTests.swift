@@ -374,6 +374,39 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(b.githubMessage?.hasPrefix("GitHub requests are paused"), true)
     }
 
+    func testActivationRefreshesOnlyAMinuteAfterTheLastAttempt() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder) { $0.githubEnabled = true }
+        let client = CountingClient()
+        let store = AppStore(
+            stateURL: folder.appendingPathComponent("state.json"), githubClient: client, accessoryProviders: [])
+        await store.start()
+        defer { store.stop() }
+        let start = ContinuousClock.now
+        var elapsed = Duration.zero
+        store.now = { start + elapsed }
+        // The timer, a launch, or ⌘R.
+        await store.refresh()
+        elapsed = .seconds(59)
+        await store.refreshOnActivation()
+        var refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 1, "An activation within a minute of an attempt asks GitHub nothing")
+        elapsed = .seconds(61)
+        await store.refreshOnActivation()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 2, "An activation a minute after the last attempt refreshes")
+        // ⌘R refreshes whenever it's chosen, and counts as an attempt.
+        elapsed = .seconds(62)
+        await store.refresh()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 3)
+        elapsed = .seconds(100)
+        await store.refreshOnActivation()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 3)
+    }
+
     func testHideOrdersOutEveryWindowAndPausesRefresh() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }

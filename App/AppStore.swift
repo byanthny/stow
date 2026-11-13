@@ -87,6 +87,10 @@ final class AppStore {
     @ObservationIgnored private var deletedNoteIDs: Set<UUID> = []
     @ObservationIgnored private var isStopped = false
     @ObservationIgnored private var refreshTimer: Task<Void, Never>?
+    /// When a refresh last asked GitHub.
+    @ObservationIgnored private var lastRefreshAttempt: ContinuousClock.Instant?
+    /// The time activation refreshes compare with the last attempt; tests replace it.
+    @ObservationIgnored var now: () -> ContinuousClock.Instant = { .now }
     @ObservationIgnored private var accessoryTask: Task<Void, Never>?
     @ObservationIgnored private var sessionGeneration = 0
 
@@ -259,6 +263,7 @@ final class AppStore {
     func refresh() async {
         guard isLoaded, !isRestoringBackup, !isPaused, !isStopped, state.githubEnabled, !isDemo, let coordinator
         else { return }
+        lastRefreshAttempt = now()
         let generation = sessionGeneration
         isRefreshing = true
         defer { if generation == sessionGeneration { isRefreshing = false } }
@@ -294,6 +299,12 @@ final class AppStore {
             markCardsStale()
             githubMessage = error.localizedDescription
         }
+    }
+
+    /// Refreshes as Stow comes forward, unless a refresh asked GitHub within the last minute.
+    func refreshOnActivation() async {
+        if let lastRefreshAttempt, now() < lastRefreshAttempt + .seconds(60) { return }
+        await refresh()
     }
 
     /// Cards kept only in memory go stale too, so an owner selected afterwards never shows readiness it lost.
