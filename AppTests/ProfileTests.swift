@@ -2726,6 +2726,38 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(feed.count, 3)
     }
 
+    func testAFailedCheckSavesNothing() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let feed = ReleaseFeed()
+        feed.answer(["v1.1.0"])
+        let index = folder.appendingPathComponent(ProfileIndex.filename)
+        func writable(_ yes: Bool) throws {
+            try FileManager.default.setAttributes([.posixPermissions: yes ? 0o700 : 0o500], ofItemAtPath: folder.path)
+        }
+        defer { try? writable(true) }
+        let manager = makeManager(folder, updateFetch: feed.fetch)
+        defer { stop(manager) }
+        let opened = await manager.start()
+        XCTAssertTrue(opened)
+        let reports = OutcomeLog()
+        manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
+        try await manager.updates.setChecksForUpdates(true)
+        await manager.updates.checkAndReport()
+        let saved = try Data(contentsOf: index)
+
+        // A save now would fail and say so in Settings.
+        try writable(false)
+        feed.fail(.unreachable)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.last, .failed(.unreachable))
+        XCTAssertEqual(feed.count, 2)
+        XCTAssertNil(manager.updates.problem)
+        XCTAssertEqual(try Data(contentsOf: index), saved)
+        try writable(true)
+    }
+
     func testCheckForUpdatesAnswersWithTheSettingOffAndSavesNothing() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }

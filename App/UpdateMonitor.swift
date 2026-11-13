@@ -101,9 +101,10 @@ final class UpdateMonitor {
         } catch {
             result = .failure(error as? UpdateCheckError ?? .unreachable)
         }
+        let recorded = settings
         let outcome = settings.record(result, running: running, at: started)
         // With the setting off, a check leaves nothing on disk.
-        if settings.checksForUpdates { try? await save() }
+        if settings.checksForUpdates, settings != recorded { try? await save() }
         return outcome
     }
 
