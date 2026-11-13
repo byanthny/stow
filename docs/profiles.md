@@ -72,7 +72,7 @@ These count as failures even if everything else works:
 - One Stow process opens any number of profiles. A new `.stow-app.lock` in the data folder, held for the process lifetime, decides whether another launch hands over to the running copy, as the state lock does today.
 - Opening a profile takes that profile's `.stow.lock`, and closing it releases the lock. Stow checks its own open profiles before locking, because a second lock on the same file fails even within one process.
 - If another process holds a profile's lock, such as an older build using the first profile, Stow leaves that profile closed and says it is open in another copy of Stow. Other profiles open normally.
-- If a profile's lock can't be taken for any other reason than a volume without locks, such as a folder that can't be written, Stow leaves that profile closed and says so, naming its folder. If `.stow-app.lock` can't be taken that way, Stow shows an alert and quits.
+- A profile on a volume without locks, or in a folder that can't be written, opens without its lock. If something else stops the lock, such as a link, a folder, or another user's file at the lock path, Stow leaves that profile closed and says so, naming the lock file. If that happens to `.stow-app.lock`, Stow shows an alert and quits.
 - Each open profile owns its state repository, lock, store, theme, GitHub client and refresh coordinator, accessory host, notes-folder watcher, and timers. Nothing in one profile reads another profile's state.
 - The app-wide `ThemeController.shared` is replaced: each window renders with its own profile's theme, passed through the SwiftUI environment *(call)*.
 - Windows are keyed by profile ID and note ID. Each profile has its own board and its own Settings window.

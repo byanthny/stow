@@ -1002,11 +1002,6 @@ final class ProfileTests: XCTestCase {
         let profile = folder.appendingPathComponent("profiles/\(arrivalID.uuidString)")
         let stateURL = profile.appendingPathComponent("state.json")
         let before = try Data(contentsOf: stateURL)
-        // Its lock file came with it, so it can still be locked.
-        guard case .acquired(let lock) = StateLock.acquire(forStateAt: stateURL) else {
-            return XCTFail("The test could not take the profile lock")
-        }
-        lock.release()
         // The copied folder cannot be written, so GitHub stays off in memory but on in the saved state.
         try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: profile.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: profile.path) }
@@ -1054,6 +1049,26 @@ final class ProfileTests: XCTestCase {
         // A switch that cannot open its target leaves the profile it started from as it was.
         XCTAssertFalse(main.isHidden)
         XCTAssertTrue(main.board.isVisible)
+    }
+
+    func testLaunchOpensADataFolderThatCantBeWritten() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+        // Launch goes on without the instance lock, as it does on a volume without locks.
+        guard case .unavailable = StateLock.acquire(named: StateLock.instanceFilename, in: folder) else {
+            return XCTFail("A data folder that can't be written has no instance lock to give")
+        }
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertEqual(session.store.state.notes.map(\.markdown), ["Synthetic profile note"])
+        XCTAssertFalse(exists(StateLock.filename, in: folder))
     }
 
     func testProfileWhoseLockFailsStaysClosedAndSaysSo() async throws {
@@ -1160,11 +1175,9 @@ final class ProfileTests: XCTestCase {
         guard case .acquired(let held) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
         else { return XCTFail("The test could not take the profile lock") }
         defer { held.release() }
-        // Work's folder can't be written and has no lock file.
-        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: workEntry.folder.path)
-        defer {
-            try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workEntry.folder.path)
-        }
+        // A folder at Work's lock path makes locking fail.
+        try FileManager.default.createDirectory(
+            at: workEntry.folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
         let reports = Recorder()
         let manager = makeManager(folder)
         manager.reportLockFailed = { reports.names.append($0.name) }

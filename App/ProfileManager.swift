@@ -32,8 +32,7 @@ final class ProfileManager {
     let updates: UpdateMonitor
     /// Set once `start()` has shown a profile. From then on a quit records which profiles are open, even none.
     @ObservationIgnored private(set) var hasStarted = false
-    /// Set when `start()` opened nothing and said that a profile's folder can't be locked, and no profile is open
-    /// in another process; the launch then quits without handing over.
+    /// Set when `start()` opened nothing and reported a failed lock with no profile open elsewhere; Stow then quits.
     @ObservationIgnored private(set) var startReportedLockFailure = false
     /// Asks whether to close a profile whose changes could not be saved. True closes it without saving.
     @ObservationIgnored var confirmClosingWithoutSaving: @MainActor (ProfileEntry) -> Bool = { entry in
@@ -53,12 +52,13 @@ final class ProfileManager {
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
-    /// Says that a profile stays closed because its folder can't be locked, as with a folder that can't be written.
+    /// Says that a profile stays closed because its lock file can't be used.
     @ObservationIgnored var reportLockFailed: @MainActor (ProfileEntry) -> Void = { entry in
+        let lockFile = entry.folder.appendingPathComponent(StateLock.filename).path as NSString
         let alert = NSAlert()
         alert.messageText = "Stow can’t open \(entry.name)"
         alert.informativeText =
-            "Its folder can’t be locked, so \(entry.name) stays closed. Check the permissions of \((entry.folder.path as NSString).abbreviatingWithTildeInPath), then open the profile again."
+            "Its lock file can’t be used, so \(entry.name) stays closed. Check that \(lockFile.abbreviatingWithTildeInPath) is an ordinary file you own, then open the profile again."
         alert.addButton(withTitle: "OK")
         alert.runModal()
     }
@@ -178,8 +178,8 @@ final class ProfileManager {
     /// Only a new installation, with no index and no profile data anywhere, gets a first profile, which the data
     /// folder becomes when it first saves. When profile data exists but no profile can be listed, nothing opens
     /// and Stow says so, rather than start a new, empty profile beside the others. A profile another process
-    /// holds stays closed, and Stow says so once another profile is open. One whose folder can't be locked stays
-    /// closed, and Stow says so either way. Returns false when no profile opened.
+    /// holds stays closed, and Stow says so once another profile is open. One whose lock fails stays closed, and
+    /// Stow says so either way. Returns false when no profile opened.
     func start() async -> Bool {
         // When the catalog cannot read the data folder at all, the data folder opens and its store reports the
         // problem without writing.
@@ -245,8 +245,8 @@ final class ProfileManager {
     }
 
     /// Opens a profile, or brings its windows forward when it is already open. Returns false, after saying so,
-    /// when another copy of Stow has the profile open, when its folder can't be locked, or when its folder is gone,
-    /// such as one moved to the Trash after the menus listed it; the list then drops it.
+    /// when another copy of Stow has the profile open, when its lock fails, or when its folder is gone, such as one
+    /// moved to the Trash after the menus listed it; the list then drops it.
     @discardableResult
     func open(_ id: UUID) async -> Bool {
         await serialized(id) {
@@ -497,7 +497,7 @@ final class ProfileManager {
     }
 
     /// The profile's lock for a write to its folder, or nil when an open session here holds it already or the
-    /// volume cannot lock. Throws `.inUse` while another process holds it, `.unwritable` when it can't be taken,
+    /// lock is unavailable. Throws `.inUse` while another process holds it, `.unwritable` when it fails,
     /// and `.notFound` when the profile is gone. The catalog confirms the profile first, because taking a lock
     /// creates a missing folder, and an empty folder where a deleted profile was would make Finder's Put Back ask
     /// to replace it.

@@ -46,7 +46,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         let stateURL = entry.folder.appendingPathComponent("state.json")
         switch StateLock.acquire(forStateAt: stateURL) {
         case .acquired(let held): lock = held
-        // A volume without flock is written unguarded.
+        // A folder that cannot be locked, such as one on a volume without flock, is written unguarded.
         case .unavailable: break
         case .heldByAnotherProcess: throw ProfileError.inUse
         case .failed: throw ProfileError.unwritable
