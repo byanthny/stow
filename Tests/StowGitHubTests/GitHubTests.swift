@@ -404,6 +404,20 @@ struct GitHubTests {
         #expect(await transport.count == 4)
     }
 
+    @Test func forbiddenWithNoRequestsRemainingSetsNoBackoff() async throws {
+        let reset = String(Int(Date.now.timeIntervalSince1970) + 3_000)
+        let headers = ["X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset]
+        let transport = ScriptedTransport([
+            .init("StowViewer", json(#"{"message":"Synthetic forbidden"}"#, status: 403, headers: headers, exit: 1)),
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
+        ])
+        let client = GHClient(transport: transport)
+        await #expect(throws: GitHubError.requestFailed) { try await client.refresh(pins: [], previous: []) }
+        let next = try await client.refresh(pins: [], previous: [])
+        #expect(next.isComplete)
+        #expect(await transport.count == 3)
+    }
+
     /// A response GitHub refuses, and how long its back-off lasts.
     struct Refusal: Sendable, CustomTestStringConvertible {
         var testDescription: String
