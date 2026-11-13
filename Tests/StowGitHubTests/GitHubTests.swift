@@ -346,6 +346,25 @@ struct GitHubTests {
         #expect(await transport.count == 3)
     }
 
+    @Test func pinFromAListPageWithErrorsIsFetchedByID() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        var root = try fixture().object
+        root["errors"] = .array([
+            .object(["type": .string("FORBIDDEN"), "message": .string("Synthetic inaccessible field")])
+        ])
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(.object(root), exit: 1)), .init("StowReviewRequests", emptySearch),
+            .init("StowPinned", try pinned([try pullRequest("fixture", 1)])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [authored], previous: [])
+        #expect(!result.isComplete)
+        #expect(result.snapshots.map(\.id) == [authored.id])
+        let byID = try #require(await transport.queries.last)
+        #expect(byID.contains("StowPinned"))
+        #expect(byID.contains(#"name:"fixture""#))
+        #expect(await transport.count == 3)
+    }
+
     @Test func http200RateErrorPreservesPartialDataAndPreventsManualBypass() async throws {
         var root = try fixture().object
         root["errors"] = .array([
