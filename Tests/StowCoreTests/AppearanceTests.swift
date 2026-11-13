@@ -1,6 +1,7 @@
 import Foundation
-import StowCore
 import Testing
+
+@testable import StowCore
 
 struct AppearanceTests {
     @Test func defaultThemeRoundTrips() throws {
@@ -17,6 +18,29 @@ struct AppearanceTests {
         settings.editorLineHeight = 1.5
         settings.backgroundOpacity = 0.75
         #expect(try AppearanceSettings.decodeTheme(settings.encodedTheme()) == settings)
+    }
+
+    @Test func purpleOutlinesReadInEveryBuiltInTheme() throws {
+        for theme in [AppearanceSettings.default, .graphite, .paper] {
+            let purple = try #require(RGBColor(hex: theme.purple))
+            for (name, hex) in [("background", theme.colors.background), ("surface", theme.colors.surface)] {
+                let contrast = purple.contrast(with: try #require(RGBColor(hex: hex)))
+                #expect(contrast >= 4.5, "\(theme.name) purple on \(name): \(contrast)")
+            }
+        }
+    }
+
+    @Test func purpleFollowsTheColorSchemeAndIsNeverSaved() throws {
+        var lightStow = AppearanceSettings.default
+        lightStow.colorScheme = .light
+        #expect(lightStow.purple == AppearanceSettings.paper.purple)
+        #expect(AppearanceSettings.graphite.purple == AppearanceSettings.default.purple)
+        for theme in [AppearanceSettings.default, .graphite, .paper, lightStow] {
+            let saved = try #require(JSONSerialization.jsonObject(with: theme.encodedTheme()) as? [String: Any])
+            let colors = try #require(saved["colors"] as? [String: Any])
+            #expect(Set(colors.keys) == ["background", "surface", "note", "text", "muted", "amber", "red", "green"])
+            #expect(saved["purple"] == nil)
+        }
     }
 
     @Test func allPresetsValidate() throws {

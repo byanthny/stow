@@ -198,7 +198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let store = session.store
             Task {
                 _ = await store.flush()
-                await store.refresh()
+                await store.refreshOnActivation()
             }
         }
     }
