@@ -573,7 +573,7 @@ struct GHProcessTests {
     @Test(.timeLimit(.minutes(1))) func ghExitingWithoutReadingFailsTheRequest() async throws {
         let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
         defer { cleanUp(gh) }
-        // More input than a pipe holds, so the write meets the closed pipe.
+        // More input than a pipe holds.
         let query = String(repeating: "#", count: 1 << 20)
         await #expect(throws: GitHubError.requestFailed) { try await request(gh, timeout: 30, query: query) }
     }
@@ -650,7 +650,6 @@ struct GHProcessTests {
         let pending = Task { try await request(gh, timeout: 30) }
         try #require(await eventually { !children(of: gh).isEmpty })
         pending.cancel()
-        // The deadline would end it with `timedOut`.
         await #expect(throws: CancellationError.self) { try await pending.value }
     }
 
@@ -674,7 +673,7 @@ struct GHProcessTests {
             }
         }
         #expect(children(of: gh).count == requests)
-        // Each request read two pipes; fewer than one per request may belong to other tests.
+        // Each request read two pipes.
         #expect(await eventually { openPipes() - pipes < requests }, "Every pipe is closed once its request ends")
         let big = try fakeGH(
             #"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":"'; head -c 200000 /dev/zero | tr '\0' a; printf '"}'"#)

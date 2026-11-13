@@ -175,7 +175,7 @@ final class UpdateTests: XCTestCase {
         let time = Date(timeIntervalSince1970: 1_800_000_000)
         let hour: TimeInterval = 60 * 60
         var settings = UpdateSettings()
-        // A first check that fails records nothing, so the hourly wake-up asks again.
+        // A first check that fails records nothing, and the next hourly wake-up asks again.
         XCTAssertEqual(settings.record(.failure(.unreachable), running: running, at: time), .failed(.unreachable))
         XCTAssertEqual(settings, UpdateSettings())
         XCTAssertTrue(UpdatePolicy.standard.isDue(lastCheck: settings.lastCheckAt, now: time + hour))

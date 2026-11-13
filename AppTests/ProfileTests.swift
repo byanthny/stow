@@ -2747,7 +2747,7 @@ final class ProfileTests: XCTestCase {
         await manager.updates.checkAndReport()
         let saved = try Data(contentsOf: index)
 
-        // A save now would fail and say so in Settings.
+        // A failed check while the data folder can't be written.
         try writable(false)
         feed.fail(.unreachable)
         await manager.updates.checkAndReport()

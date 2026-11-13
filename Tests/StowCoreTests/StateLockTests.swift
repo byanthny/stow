@@ -74,7 +74,7 @@ final class StateLockTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: directory.appendingPathComponent("folder.lock"), withIntermediateDirectories: false)
         XCTAssertEqual(kind(StateLock.acquire(named: "folder.lock", in: directory)), "failed")
-        // A FIFO answers that it cannot lock, like a volume without flock.
+        // A FIFO there fails too.
         XCTAssertEqual(mkfifo(directory.appendingPathComponent("fifo.lock").path, 0o600), 0)
         XCTAssertEqual(kind(StateLock.acquire(named: "fifo.lock", in: directory)), "failed")
     }
