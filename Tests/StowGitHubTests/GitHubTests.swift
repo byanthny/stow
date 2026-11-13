@@ -271,6 +271,81 @@ struct GitHubTests {
         #expect(snapshot.isUnavailable && snapshot.isStale && !snapshot.readinessIsComplete)
     }
 
+    /// A `StowPinned` answer with these pull requests as `pr0`, `pr1`, and so on.
+    private func pinned(_ pullRequests: [GraphQLValue]) throws -> GraphQLResponse {
+        var data: [String: GraphQLValue] = [:]
+        for (index, node) in pullRequests.enumerated() { data["pr\(index)"] = .object(["pullRequest": node]) }
+        return try encoded(.object(["data": .object(data)]))
+    }
+
+    private func search(_ pullRequests: [GraphQLValue]) throws -> GraphQLResponse {
+        try encoded(
+            .object([
+                "data": .object([
+                    "search": .object([
+                        "issueCount": .integer(pullRequests.count), "nodes": .array(pullRequests),
+                        "pageInfo": .object(["hasNextPage": .bool(false), "endCursor": .null]),
+                    ])
+                ])
+            ]))
+    }
+
+    @Test func everyKnownCardInTheListsSendsTwoRequests() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let requested = PullRequestReference(owner: "example", repository: "requested", number: 5)
+        let previous = [
+            PullRequestSnapshot(reference: authored, title: "Synthetic fixture"),
+            PullRequestSnapshot(reference: requested, title: "Synthetic review request"),
+        ]
+        let reviewRequest = try pullRequest("requested", 5, ["author": .object(["login": .string("synthetic-author")])])
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", try search([reviewRequest])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [authored], previous: previous)
+        #expect(result.isComplete)
+        #expect(Set(result.snapshots.map(\.id)) == [authored.id, requested.id])
+        #expect(await transport.count == 2)
+    }
+
+    @Test func knownCardMissingFromTheListsIsFetchedAndCanComeBackMerged() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let finished = PullRequestReference(owner: "example", repository: "finished", number: 4)
+        let previous = [
+            PullRequestSnapshot(reference: authored, title: "Synthetic fixture"),
+            PullRequestSnapshot(reference: finished, title: "Synthetic finished card", state: "OPEN"),
+        ]
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
+            .init("StowPinned", try pinned([try pullRequest("finished", 4, ["state": .string("MERGED")])])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [], previous: previous)
+        #expect(result.isComplete)
+        let card = try #require(result.snapshots.first { $0.id == finished.id })
+        #expect(card.state == "MERGED")
+        #expect(card.terminalObservedAt != nil)
+        let byID = try #require(await transport.queries.last)
+        #expect(byID.contains(#"name:"finished""#))
+        #expect(!byID.contains(#"name:"fixture""#))
+        #expect(await transport.count == 3)
+    }
+
+    @Test func pinMissingFromTheListsIsFetched() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let watched = PullRequestReference(owner: "example", repository: "watched", number: 9)
+        let other = try pullRequest("watched", 9, ["author": .object(["login": .string("synthetic-author")])])
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
+            .init("StowPinned", try pinned([other])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [authored, watched], previous: [])
+        #expect(result.isComplete)
+        #expect(Set(result.snapshots.map(\.id)) == [authored.id, watched.id])
+        let byID = try #require(await transport.queries.last)
+        #expect(byID.contains(#"name:"watched""#))
+        #expect(!byID.contains(#"name:"fixture""#))
+        #expect(await transport.count == 3)
+    }
+
     @Test func http200RateErrorPreservesPartialDataAndPreventsManualBypass() async throws {
         var root = try fixture().object
         root["errors"] = .array([

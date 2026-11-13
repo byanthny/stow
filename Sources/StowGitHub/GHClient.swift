@@ -444,9 +444,11 @@ public actor GHClient: GitHubClient {
                 searchCursor = cursor
             } while true
 
+            // Pins and known cards the lists returned without errors need no request of their own.
+            let listed = Set(nodes.filter { $0.value.1 }.keys)
             let references = Dictionary(
                 (pins + previous.map(\.reference)).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }
-            ).values.sorted { $0.id < $1.id }
+            ).values.filter { !listed.contains($0.id) }.sorted { $0.id < $1.id }
             for start in stride(from: 0, to: references.count, by: 25) {
                 let batch = Array(references[start..<min(start + 25, references.count)])
                 var aliases: [String: PullRequestReference] = [:]
