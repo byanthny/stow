@@ -334,12 +334,17 @@ public actor GHClient: GitHubClient {
         let limited =
             response.statusCode == 429 || rateError || (response.statusCode == 403 && headers["retry-after"] != nil)
         if limited {
-            let reset = headers["x-ratelimit-reset"].flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
             let after =
                 headers["retry-after"].flatMap(Double.init).map { Date.now.addingTimeInterval($0) }
                 ?? headers["retry-after"].flatMap(Self.httpDate)
-            let graphReset = root?["data"]["rateLimit"]["resetAt"].string.flatMap(Self.date)
-            retryAt = [reset, after, graphReset, Date.now.addingTimeInterval(60)].compactMap { $0 }.max()
+            // The hourly reset applies only when no requests remain.
+            let exhausted =
+                headers["x-ratelimit-remaining"] == "0" || root?["data"]["rateLimit"]["remaining"].int == 0
+            let reset =
+                headers["x-ratelimit-reset"].flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+                ?? root?["data"]["rateLimit"]["resetAt"].string.flatMap(Self.date)
+            let minimum = Date.now.addingTimeInterval(60)
+            retryAt = max(after ?? (exhausted ? reset : nil) ?? minimum, minimum)
         }
         if response.statusCode == 401 { throw GitHubError.authenticationRequired }
         guard let root else {

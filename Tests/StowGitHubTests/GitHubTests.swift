@@ -390,29 +390,41 @@ struct GitHubTests {
         var testDescription: String
         var status: Int
         var body: String
+        var remaining: String? = nil
         var resetIn: TimeInterval? = nil
         var retryAfter: String? = nil
         var backoff: TimeInterval
     }
 
-    static let refusals: [Refusal] = [
-        .init(testDescription: "429", status: 429, body: "{}", resetIn: 1_800, backoff: 1_800),
-        .init(
-            testDescription: "403 with retry-after", status: 403, body: #"{"message":"Synthetic forbidden"}"#,
-            retryAfter: "300", backoff: 300),
-        .init(
-            testDescription: "rate-limit error", status: 200,
-            body: #"{"data":null,"errors":[{"type":"RATE_LIMIT","message":"Synthetic limit"}]}"#, resetIn: 1_800,
-            backoff: 1_800),
-        .init(
-            testDescription: "secondary limit message", status: 403,
-            body: #"{"message":"You have exceeded a secondary rate limit."}"#, backoff: 60),
-    ]
+    static let refusals: [Refusal] = {
+        let secondary = #"{"message":"You have exceeded a secondary rate limit."}"#
+        return [
+            .init(
+                testDescription: "429 with none remaining", status: 429, body: "{}", remaining: "0", resetIn: 1_800,
+                backoff: 1_800),
+            .init(
+                testDescription: "429 with retry-after", status: 429, body: "{}", resetIn: 3_000, retryAfter: "300",
+                backoff: 300),
+            .init(
+                testDescription: "403 with retry-after", status: 403, body: #"{"message":"Synthetic forbidden"}"#,
+                retryAfter: "300", backoff: 300),
+            .init(
+                testDescription: "secondary limit with retry-after", status: 403, body: secondary, remaining: "4000",
+                resetIn: 3_000, retryAfter: "60", backoff: 60),
+            .init(
+                testDescription: "secondary limit without retry-after", status: 403, body: secondary, remaining: "4000",
+                resetIn: 3_000, backoff: 60),
+            .init(
+                testDescription: "rate-limit error with none remaining", status: 200,
+                body: #"{"data":null,"errors":[{"type":"RATE_LIMIT","message":"Synthetic limit"}]}"#, remaining: "0",
+                resetIn: 1_800, backoff: 1_800),
+        ]
+    }()
 
     @Test(arguments: GitHubTests.refusals) func refusalBacksOffUntilGitHubsTime(_ refusal: Refusal) async throws {
         var headers: [String: String] = [:]
+        if let remaining = refusal.remaining { headers["X-RateLimit-Remaining"] = remaining }
         if let resetIn = refusal.resetIn {
-            headers["X-RateLimit-Remaining"] = "0"
             headers["X-RateLimit-Reset"] = String(Int(Date.now.timeIntervalSince1970 + resetIn))
         }
         if let retryAfter = refusal.retryAfter { headers["Retry-After"] = retryAfter }
