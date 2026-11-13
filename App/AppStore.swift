@@ -263,7 +263,8 @@ final class AppStore {
     func refresh() async {
         guard isLoaded, !isRestoringBackup, !isPaused, !isStopped, state.githubEnabled, !isDemo, let coordinator
         else { return }
-        lastRefreshAttempt = now()
+        let attempt = now()
+        lastRefreshAttempt = attempt
         let generation = sessionGeneration
         isRefreshing = true
         defer { if generation == sessionGeneration { isRefreshing = false } }
@@ -275,6 +276,7 @@ final class AppStore {
                 expected.caseInsensitiveCompare(result.viewerLogin) != .orderedSame
             {
                 // Defense for injected clients: another account's result is never applied.
+                forgetFailedAttempt(attempt)
                 markAccountMismatch(actual: result.viewerLogin)
                 return
             }
@@ -290,21 +292,28 @@ final class AppStore {
                 ?? (result.isComplete ? nil : "Some GitHub data is incomplete. Cached cards are retained.")
             changed()
         } catch GitHubError.accountMismatch(let actual) {
+            forgetFailedAttempt(attempt)
             guard generation == sessionGeneration else { return }
             // A refresh that asked for an older login can name the one this profile now uses; that is no mismatch.
             if state.viewerLogin?.caseInsensitiveCompare(actual) == .orderedSame { return }
             markAccountMismatch(actual: actual)
         } catch {
+            forgetFailedAttempt(attempt)
             guard generation == sessionGeneration else { return }
             markCardsStale()
             githubMessage = error.localizedDescription
         }
     }
 
-    /// Refreshes as Stow comes forward, unless a refresh asked GitHub within the last minute.
+    /// Refreshes as Stow comes forward, unless a refresh that didn't fail asked GitHub within the last minute.
     func refreshOnActivation() async {
         if let lastRefreshAttempt, now() < lastRefreshAttempt + .seconds(60) { return }
         await refresh()
+    }
+
+    /// Lets the next activation refresh, unless a later attempt has started since.
+    private func forgetFailedAttempt(_ attempt: ContinuousClock.Instant) {
+        if lastRefreshAttempt == attempt { lastRefreshAttempt = nil }
     }
 
     /// Cards kept only in memory go stale too, so an owner selected afterwards never shows readiness it lost.
