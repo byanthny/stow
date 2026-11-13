@@ -2,11 +2,12 @@
 
 Work through this queue in order. These are future tasks, not authorization to publish, purchase a domain, enroll in paid services, or distribute a release.
 
-## Next: 0.3.1
+## Next
 
 - [ ] Smooth expanding and collapsing that respects Reduce Motion.
 - [ ] Offer to move Stow to Applications, then eject the DMG and move the downloaded DMG to the Trash.
-- [ ] Use as little CPU, memory, and energy as possible. Measure idle wakeups and typing cost first. Then fix the largest costs from the 0.3.0 performance review: the board redrawing on every keystroke, note heights measured from scratch, saves that rescan every note, refreshes that fetch known pull requests again, and a timer for every row.
+- [ ] Use as little CPU, memory, and energy as possible. Measure idle wakeups and typing cost first. Then fix the largest costs from the 0.3.0 performance review: the board redrawing on every keystroke, note heights measured from scratch, saves that rescan every note, and a timer for every row.
+- [x] Ask GitHub for less: list pages of 25 pull requests with 10 review requests each, by-ID fetches only for cards the lists didn't return, and a pause only when GitHub refuses a request (0.3.1, 2026-11-12).
 - [ ] Show review comments on cards: unresolved conversations and new comments, fetched with the refresh Stow already makes.
 
 ## 1. Finish native acceptance

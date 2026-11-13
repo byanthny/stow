@@ -53,7 +53,14 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Evidence
 
-Current counts, at 0.3.0: `./scripts/test.sh` runs 383 tests. The package suite in `Tests/` has 204 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 132 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+Current counts, at 0.3.1: `./scripts/test.sh` runs 445 tests. The package suite in `Tests/` has 227 XCTest and 70 Swift Testing cases, and the hosted app suite in `AppTests/` has 148 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Release 0.3.1 validation on 2026-11-12, macOS 26.5 (Apple silicon), Xcode 26.6, with the card outlines and Merged group, the GitHub request changes, and the split release workflow merged:
+
+- `./scripts/release.sh 0.3.1` ran `./scripts/test.sh`, which passed: 227 XCTest and 70 Swift Testing cases in the package, and 148 hosted cases. New coverage includes the approved and merged outlines, the Merged group, each keep time, one refresh result applied twice, a literal 0.3.0 `state.json`, the purple's contrast in every built-in theme, refusals and rate-limit headers, list page sizes, by-ID fetches only for cards the lists didn't return, and an activation right after a failed refresh. The fixes merged earlier in this release added restyling only the changed lines, link and click-away hit tests, and the `gh` process and state lock checks.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED.
+- The Debug smoke test, labeled 0.3.1 build 5, against a new synthetic folder exited 0 and wrote 14 checks, all true.
+- Not run yet: `./scripts/accessibility.sh`, the `acceptance` run on an Intel runner, the release workflow, whose first run is this release, keyboard navigation, VoiceOver, and the manual checks above. The Merged group and the purple outline haven't been checked by hand.
 
 GitHub request measurements on 2026-11-12, macOS 26.5, `gh` 2.103.3, against an account with 57 open authored pull requests, none with more than one review request, and no pins. Each row is one read-only `gh api graphql` query of the authored list with Stow's card fields, sent between another local client's bursts. Only numbers were kept: time, status, `rateLimit { cost nodeCount }`, the `X-RateLimit-*` headers, and `gh api rate_limit` read before and after.
 
