@@ -143,12 +143,25 @@ final class StateLockTests: XCTestCase {
         XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "unavailable")
     }
 
-    func testFileAtTheFolderPathFails() throws {
+    func testFolderThatIsNotARealFolderIsUnavailable() throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let file = directory.appendingPathComponent("Stow")
+        let file = directory.appendingPathComponent("file")
         XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: nil))
-        XCTAssertEqual(kind(StateLock.acquire(forStateAt: file.appendingPathComponent("state.json"))), "failed")
+        let target = directory.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        let link = directory.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let closed = directory.appendingPathComponent("closed", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: closed.appendingPathComponent("Stow"), withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: closed.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: closed.path) }
+        for folder in [file, link, closed.appendingPathComponent("Stow")] {
+            let outcome = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
+            XCTAssertEqual(kind(outcome), "unavailable", folder.lastPathComponent)
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: target.path), [])
     }
 
     func testOpenErrorsAreUnavailableOnlyWhenNothingElseIsAtTheLockPath() throws {

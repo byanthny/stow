@@ -12,7 +12,7 @@ public final class StateLock: @unchecked Sendable {
         case acquired(StateLock)
         /// Another live process owns this state folder.
         case heldByAnotherProcess
-        /// The folder can't be written or the volume has no locks; writing proceeds unguarded.
+        /// The folder isn't a real folder this user can write, or the volume has no locks; writing proceeds unguarded.
         case unavailable
         /// The lock path holds something other than this user's own lock file, or locking failed; nothing writes.
         case failed
@@ -38,13 +38,7 @@ public final class StateLock: @unchecked Sendable {
 
     /// `makePrivate` sets the lock file's mode and returns 0 or -1 with `errno`; tests replace it.
     static func acquire(named filename: String, in directory: URL, makePrivate: (Int32) -> Int32) -> Outcome {
-        do {
-            try LiveNoteIO.ensureDirectory(directory)
-        } catch StateError.unwritable {
-            return .unavailable
-        } catch {
-            return .failed
-        }
+        do { try LiveNoteIO.ensureDirectory(directory) } catch { return .unavailable }
         let path = directory.appendingPathComponent(filename).path
         // Never follow a planted link, never wait on a FIFO, and never let a launched child inherit the lock.
         let descriptor = path.withCString {

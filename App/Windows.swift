@@ -140,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let dataFolder = stateURL.deletingLastPathComponent()
         switch StateLock.acquire(named: StateLock.instanceFilename, in: dataFolder) {
         case .acquired(let lock): instanceLock = lock
-        // A folder that can't be written, or a volume without flock, runs unguarded.
+        // A folder that can't be locked, such as one on a volume without flock, runs unguarded.
         case .unavailable: break
         case .heldByAnotherProcess:
             // Another Stow already runs on this data folder. Hand over to it instead of competing.
