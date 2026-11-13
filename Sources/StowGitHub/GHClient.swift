@@ -323,23 +323,23 @@ public actor GHClient: GitHubClient {
             response.headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, last in last })
         let root = try? JSONDecoder().decode(GraphQLValue.self, from: response.body)
         let errors = root?["errors"].array ?? []
-        let rateError = errors.contains { e in
-            let type = e["type"].string ?? e["extensions"]["type"].string ?? e["extensions"]["code"].string ?? ""
-            let message = e["message"].string?.lowercased() ?? ""
-            return type.uppercased().contains("RATE") || message.contains("rate limit")
-                || message.contains("secondary rate")
-        }
+        let rateError =
+            errors.contains { e in
+                let type = e["type"].string ?? e["extensions"]["type"].string ?? e["extensions"]["code"].string ?? ""
+                let message = e["message"].string?.lowercased() ?? ""
+                return type.uppercased().contains("RATE") || message.contains("rate limit")
+                    || message.contains("secondary rate")
+            } || root?["message"].string?.lowercased().contains("rate limit") == true
+        // Only a refusal backs off, never a rate-limit header alone.
         let limited =
-            response.statusCode == 429 || rateError
-            || (response.statusCode == 403
-                && (headers["retry-after"] != nil || headers["x-ratelimit-remaining"] == "0"))
-        if limited || headers["x-ratelimit-remaining"] == "0" {
+            response.statusCode == 429 || rateError || (response.statusCode == 403 && headers["retry-after"] != nil)
+        if limited {
             let reset = headers["x-ratelimit-reset"].flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
             let after =
                 headers["retry-after"].flatMap(Double.init).map { Date.now.addingTimeInterval($0) }
                 ?? headers["retry-after"].flatMap(Self.httpDate)
             let graphReset = root?["data"]["rateLimit"]["resetAt"].string.flatMap(Self.date)
-            retryAt = [reset, after, graphReset, Date.now.addingTimeInterval(limited ? 60 : 1)].compactMap { $0 }.max()
+            retryAt = [reset, after, graphReset, Date.now.addingTimeInterval(60)].compactMap { $0 }.max()
         }
         if response.statusCode == 401 { throw GitHubError.authenticationRequired }
         guard let root else {

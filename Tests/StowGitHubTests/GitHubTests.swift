@@ -239,6 +239,68 @@ struct GitHubTests {
         #expect(await transport.count == 1)
     }
 
+    @Test func dataWithNoRequestsRemainingSetsNoBackoff() async throws {
+        let reset = String(Int(Date.now.timeIntervalSince1970) + 3_000)
+        let headers = ["X-RateLimit-Remaining": "0", "X-RateLimit-Used": "5000", "X-RateLimit-Reset": reset]
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture(), headers: headers)), .init("StowReviewRequests", emptySearch),
+            .init("StowViewer", try encoded(fixture(), headers: headers)), .init("StowReviewRequests", emptySearch),
+        ])
+        let client = GHClient(transport: transport)
+        let first = try await client.refresh(pins: [], previous: [])
+        #expect(first.isComplete)
+        #expect(first.warning == nil)
+        let second = try await client.refresh(pins: [], previous: [])
+        #expect(second.isComplete)
+        #expect(await transport.count == 4)
+    }
+
+    /// A response GitHub refuses, and how long its back-off lasts.
+    struct Refusal: Sendable, CustomTestStringConvertible {
+        var testDescription: String
+        var status: Int
+        var body: String
+        var resetIn: TimeInterval? = nil
+        var retryAfter: String? = nil
+        var backoff: TimeInterval
+    }
+
+    static let refusals: [Refusal] = [
+        .init(testDescription: "429", status: 429, body: "{}", resetIn: 1_800, backoff: 1_800),
+        .init(
+            testDescription: "403 with retry-after", status: 403, body: #"{"message":"Synthetic forbidden"}"#,
+            retryAfter: "300", backoff: 300),
+        .init(
+            testDescription: "rate-limit error", status: 200,
+            body: #"{"data":null,"errors":[{"type":"RATE_LIMIT","message":"Synthetic limit"}]}"#, resetIn: 1_800,
+            backoff: 1_800),
+        .init(
+            testDescription: "secondary limit message", status: 403,
+            body: #"{"message":"You have exceeded a secondary rate limit."}"#, backoff: 60),
+    ]
+
+    @Test(arguments: GitHubTests.refusals) func refusalBacksOffUntilGitHubsTime(_ refusal: Refusal) async throws {
+        var headers: [String: String] = [:]
+        if let resetIn = refusal.resetIn {
+            headers["X-RateLimit-Remaining"] = "0"
+            headers["X-RateLimit-Reset"] = String(Int(Date.now.timeIntervalSince1970 + resetIn))
+        }
+        if let retryAfter = refusal.retryAfter { headers["Retry-After"] = retryAfter }
+        let transport = ScriptedTransport([
+            .init("StowViewer", json(refusal.body, status: refusal.status, headers: headers, exit: 1))
+        ])
+        let client = GHClient(transport: transport)
+        for _ in 0..<2 {
+            do {
+                _ = try await client.refresh(pins: [], previous: [])
+                Issue.record("The refusal set no backoff")
+            } catch GitHubError.rateLimited(let until) {
+                #expect(abs(until.timeIntervalSinceNow - refusal.backoff) < 5)
+            }
+        }
+        #expect(await transport.count == 1)
+    }
+
     @Test func lazyDetailsPaginateAllConnectionsAndPickNewestComment() async throws {
         let checks1 = json(
             #"{"data":{"repository":{"pullRequest":{"statusCheckRollup":{"contexts":{"nodes":[{"__typename":"CheckRun","name":"Build","status":"COMPLETED","conclusion":"SUCCESS","detailsUrl":"https://example.com/build"}],"pageInfo":{"hasNextPage":true,"endCursor":"checks-2"}}}}}}}"#
