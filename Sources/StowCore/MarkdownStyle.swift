@@ -2,7 +2,7 @@ import Foundation
 
 /// Ranges of a note's Markdown to style while it is edited, in UTF-16 offsets as `NSString` counts them.
 public enum MarkdownStyle {
-    public enum Kind: Equatable, Sendable {
+    public enum Kind: Hashable, Sendable {
         /// The note's first line, shown as its title.
         case title
         case heading(level: Int)
@@ -16,7 +16,7 @@ public enum MarkdownStyle {
         case marker
     }
 
-    public struct Span: Equatable, Sendable {
+    public struct Span: Hashable, Sendable {
         public var kind: Kind
         public var range: NSRange
 
@@ -79,6 +79,33 @@ public enum MarkdownStyle {
             spans.append(Span(kind: .link(url), range: match.range))
         }
         return spans
+    }
+
+    /// The lines to restyle after an edit: the edited ones and every span that changed.
+    /// `edited` and `delta` describe the edit in `text` as `NSTextStorage` reports it.
+    public static func changedRange(
+        from old: [Span], to new: [Span], in text: NSString, edited: NSRange, delta: Int
+    ) -> NSRange {
+        let replacedEnd = NSMaxRange(edited) - delta
+        var changed = edited
+        var kept = Set<Span>()
+        for span in old {
+            let start = span.range.location
+            let end = NSMaxRange(span.range)
+            if end <= edited.location {
+                kept.insert(span)
+            } else if start >= replacedEnd {
+                kept.insert(Span(kind: span.kind, range: NSRange(location: start + delta, length: span.range.length)))
+            } else {
+                let mappedEnd = end > replacedEnd ? end + delta : NSMaxRange(edited)
+                let mappedStart = min(start, edited.location)
+                changed = NSUnionRange(changed, NSRange(location: mappedStart, length: mappedEnd - mappedStart))
+            }
+        }
+        let fresh = Set(new)
+        for span in kept where !fresh.contains(span) { changed = NSUnionRange(changed, span.range) }
+        for span in new where !kept.contains(span) { changed = NSUnionRange(changed, span.range) }
+        return text.lineRange(for: changed)
     }
 
     /// A note's title: its first line with text outside fenced code, without heading marks.

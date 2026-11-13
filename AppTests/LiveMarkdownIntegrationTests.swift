@@ -26,6 +26,22 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         await shutdown(app)
     }
 
+    func testASaveWithNothingNewLeavesTheStateAlone() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        let first = await app.store.flush()
+        XCTAssertTrue(first)
+        final class Flag: @unchecked Sendable { var raised = false }
+        let changed = Flag()
+        withObservationTracking { _ = app.store.state } onChange: { changed.raised = true }
+        let saved = await app.store.flush()
+        XCTAssertTrue(saved)
+        XCTAssertFalse(changed.raised, "A save that found nothing new still rewrote the notes, redrawing the board")
+        await shutdown(app)
+    }
+
     func testOrdinaryFlushAndPortableSnapshotAreBlockedDuringRestore() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

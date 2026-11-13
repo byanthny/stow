@@ -899,8 +899,10 @@ final class AppStore {
             if let index = state.notes.firstIndex(where: { $0.id == incoming.id }) {
                 guard let original = previous[incoming.id] else { continue }
                 if state.notes[index].markdown == original.markdown {
-                    state.notes[index].markdown = incoming.markdown
-                    if incoming.markdown != original.markdown { state.notes[index].updatedAt = incoming.updatedAt }
+                    if incoming.markdown != original.markdown {
+                        state.notes[index].markdown = incoming.markdown
+                        state.notes[index].updatedAt = incoming.updatedAt
+                    }
                 } else if incoming.markdown != original.markdown, incoming.markdown != state.notes[index].markdown {
                     let preserved = Note(markdown: incoming.markdown, pullRequest: incoming.pullRequest)
                     state.notes.append(preserved)

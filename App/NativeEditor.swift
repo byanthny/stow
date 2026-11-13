@@ -51,7 +51,8 @@ struct NativeEditor: NSViewRepresentable {
         editor.string = text
         Self.applyAppearance(appearance, to: editor)
         context.coordinator.appliedAppearance = appearance
-        Self.styleMarkdown(in: editor, appearance: appearance)
+        context.coordinator.watchEdits(of: editor)
+        context.coordinator.restyle(editor, everything: true)
         scroll.documentView = editor
         return scroll
     }
@@ -69,7 +70,7 @@ struct NativeEditor: NSViewRepresentable {
         if sourceChanged || context.coordinator.appliedAppearance != appearance {
             Self.applyAppearance(appearance, to: editor)
             context.coordinator.appliedAppearance = appearance
-            Self.styleMarkdown(in: editor, appearance: appearance)
+            context.coordinator.restyle(editor, everything: true)
         }
         if shouldFocus && context.coordinator.focusedRequestID != focusRequestID {
             let request = focusRequestID
@@ -130,15 +131,23 @@ struct NativeEditor: NSViewRepresentable {
     }
 
     /// Shows the note's Markdown as it reads, leaving its text, and so its Markdown file, as typed.
-    static func styleMarkdown(in editor: NSTextView, appearance: AppearanceSettings) {
+    /// Restyles only `range`, whole lines, when given, using `spans` parsed from the whole text.
+    static func styleMarkdown(
+        in editor: NSTextView, appearance: AppearanceSettings, spans: [MarkdownStyle.Span]? = nil,
+        range: NSRange? = nil
+    ) {
         // Restyling while an input method is composing would disturb it; the composed text arrives as an edit later.
         guard let storage = editor.textStorage, !editor.hasMarkedText() else { return }
         let base = editorFont(appearance)
         let text = NSColor(Color(stowHex: appearance.colors.text))
         let muted = NSColor(Color(stowHex: appearance.colors.muted))
-        let whole = NSRange(location: 0, length: storage.length)
-        let spans = MarkdownStyle.spans(in: storage.string)
-        let title = spans.first { $0.kind == .title }?.range
+        let whole = range ?? NSRange(location: 0, length: storage.length)
+        let parsed = spans ?? MarkdownStyle.spans(in: storage.string)
+        let title = parsed.first { $0.kind == .title }?.range
+        let spans = parsed.compactMap { span -> MarkdownStyle.Span? in
+            let visible = NSIntersectionRange(span.range, whole)
+            return visible.length > 0 ? MarkdownStyle.Span(kind: span.kind, range: visible) : nil
+        }
         storage.beginEditing()
         storage.addAttributes([.font: base, .foregroundColor: text], range: whole)
         for key in styleKeys { storage.removeAttribute(key, range: whole) }
@@ -223,6 +232,7 @@ struct NativeEditor: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
         coordinator.stopWatchingClicks()
+        NotificationCenter.default.removeObserver(coordinator)
     }
 
     @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -235,6 +245,11 @@ struct NativeEditor: NSViewRepresentable {
         /// A focus change the note hasn't heard about yet.
         private var reportedEditing: Bool?
         private var waitsForRelease = false
+        /// The spans last styled, and the length of the text they were parsed from.
+        private var styledSpans: [MarkdownStyle.Span] = []
+        private var styledLength = 0
+        /// Text edits since the last restyle.
+        private var edits: [(range: NSRange, delta: Int)] = []
         init(_ parent: NativeEditor) { self.parent = parent }
 
         /// Any link the text view finds itself opens only if it's a web link.
@@ -243,9 +258,36 @@ struct NativeEditor: NSViewRepresentable {
             return true
         }
 
+        func watchEdits(of editor: NSTextView) {
+            NotificationCenter.default.addObserver(
+                self, selector: #selector(textStorageEdited(_:)), name: NSTextStorage.didProcessEditingNotification,
+                object: editor.textStorage)
+        }
+
+        @objc private func textStorageEdited(_ notification: Notification) {
+            guard let storage = notification.object as? NSTextStorage, storage.editedMask.contains(.editedCharacters)
+            else { return }
+            edits.append((storage.editedRange, storage.changeInLength))
+        }
+
+        /// Restyles the lines a single edit changed, or the whole text.
+        func restyle(_ editor: NSTextView, everything: Bool) {
+            guard let storage = editor.textStorage, !editor.hasMarkedText() else { return }
+            let spans = MarkdownStyle.spans(in: storage.string)
+            var range: NSRange?
+            if !everything, edits.count == 1, let edit = edits.first, styledLength == storage.length - edit.delta {
+                range = MarkdownStyle.changedRange(
+                    from: styledSpans, to: spans, in: storage.string as NSString, edited: edit.range, delta: edit.delta)
+            }
+            NativeEditor.styleMarkdown(in: editor, appearance: parent.appearance, spans: spans, range: range)
+            styledSpans = spans
+            styledLength = storage.length
+            edits = []
+        }
+
         func textDidChange(_ notification: Notification) {
             guard let editor = notification.object as? NSTextView else { return }
-            NativeEditor.styleMarkdown(in: editor, appearance: parent.appearance)
+            restyle(editor, everything: false)
             // A note that fits its text measures itself again.
             if parent.fitsText != nil { editor.enclosingScrollView?.invalidateIntrinsicContentSize() }
             if parent.text != editor.string { parent.text = editor.string }
@@ -292,9 +334,10 @@ struct NativeEditor: NSViewRepresentable {
                     self, selector: #selector(windowKeyChanged(_:)), name: name, object: editor.window)
             }
             clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak editor] event in
+                // Ends editing unless the window would send the click to the note's own views.
                 if let editor, let window = editor.window, event.window === window, window.firstResponder === editor,
                     let scroll = editor.enclosingScrollView,
-                    !scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil))
+                    window.contentView?.hitTest(event.locationInWindow)?.isDescendant(of: scroll) != true
                 {
                     window.makeFirstResponder(nil)
                 }
@@ -355,16 +398,42 @@ final class NoteTextView: NSTextView {
     }
 
     private func link(at event: NSEvent) -> URL? {
-        link(atInsertionPoint: characterIndexForInsertion(at: convert(event.locationInWindow, from: nil)))
+        link(at: convert(event.locationInWindow, from: nil))
     }
 
-    /// The link on either side of an insertion point, so a click anywhere on a link's characters finds it.
-    func link(atInsertionPoint index: Int) -> URL? {
+    /// The link whose laid-out text lies under `point`, in this view's coordinates.
+    func link(at point: NSPoint) -> URL? {
         guard let storage = textStorage else { return nil }
+        let index = characterIndexForInsertion(at: point)
+        let whole = NSRange(location: 0, length: storage.length)
+        // The nearest insertion point lies on either side of the character under the point.
         for candidate in [index, index - 1] where candidate >= 0 && candidate < storage.length {
-            if let url = storage.attribute(.noteLink, at: candidate, effectiveRange: nil) as? URL { return url }
+            var range = NSRange()
+            if let url = storage.attribute(.noteLink, at: candidate, longestEffectiveRange: &range, in: whole) as? URL,
+                text(in: range, contains: point)
+            {
+                return url
+            }
         }
         return nil
+    }
+
+    /// Whether `point`, in this view's coordinates, lies on the text of `range`, measured by TextKit 2's layout.
+    private func text(in range: NSRange, contains point: NSPoint) -> Bool {
+        guard let layout = textLayoutManager, let content = layout.textContentManager,
+            let start = content.location(content.documentRange.location, offsetBy: range.location),
+            let end = content.location(start, offsetBy: range.length),
+            let textRange = NSTextRange(location: start, end: end)
+        else { return false }
+        let origin = textContainerOrigin
+        let target = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        layout.ensureLayout(for: textRange)
+        var contains = false
+        layout.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, segment, _, _ in
+            contains = segment.contains(target)
+            return !contains
+        }
+        return contains
     }
 }
 

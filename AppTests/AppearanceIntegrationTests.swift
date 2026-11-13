@@ -162,33 +162,68 @@ final class AppearanceIntegrationTests: XCTestCase {
     }
 
     func testWebLinksOpenFromTheirContextMenu() throws {
+        let (window, editor) = linkEditor("Read https://example.com/guide today. Not [this](javascript:alert).")
+        defer { window.close() }
+        let link = center(of: "example.com", in: editor)
+        let guide = URL(string: "https://example.com/guide")
+
+        XCTAssertEqual(editor.link(at: link), guide)
+        XCTAssertNil(editor.link(at: center(of: "Read", in: editor)))
+        XCTAssertNil(editor.link(at: center(of: "this", in: editor)))
+
+        let menu = try XCTUnwrap(editor.menu(for: try rightClick(at: link, in: editor)))
+        XCTAssertEqual(menu.items.first?.title, "Open Link")
+        XCTAssertEqual(menu.items.first?.representedObject as? URL, guide)
+    }
+
+    func testOnlyALinksOwnTextOpensIt() throws {
+        let (window, editor) = linkEditor("See https://example.com/guide\nSynthetic next line")
+        defer { window.close() }
+        let link = frame(of: "https://example.com/guide", in: editor)
+        let beside = NSPoint(x: link.maxX + 60, y: link.midY)
+        let guide = URL(string: "https://example.com/guide")
+
+        // The insertion point nearest the click ends the link, but the click is past its text.
+        XCTAssertNil(editor.link(at: beside))
+        let menu = try XCTUnwrap(editor.menu(for: try rightClick(at: beside, in: editor)))
+        XCTAssertFalse(menu.items.contains { $0.title == "Open Link" })
+        XCTAssertEqual(editor.link(at: NSPoint(x: link.maxX - 2, y: link.midY)), guide)
+        XCTAssertNotNil(editor.textLayoutManager, "Hit testing keeps the note on TextKit 2")
+    }
+
+    /// A window showing `source` in a styled note text view, inset as the note editor is.
+    private func linkEditor(_ source: String) -> (NSWindow, NoteTextView) {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 200), styleMask: [.titled], backing: .buffered,
             defer: false)
         window.isReleasedWhenClosed = false
-        defer { window.close() }
         let editor = NoteTextView(frame: window.contentView?.bounds ?? .zero)
         editor.isRichText = false
+        editor.textContainerInset = NSSize(width: 4, height: 8)
         window.contentView = editor
-        editor.string = "Read https://example.com/guide today. Not [this](javascript:alert)."
+        editor.string = source
         NativeEditor.applyAppearance(.paper, to: editor)
         NativeEditor.styleMarkdown(in: editor, appearance: .paper)
-        let text = editor.string as NSString
-        let link = text.range(of: "example.com")
-        let guide = URL(string: "https://example.com/guide")
+        return (window, editor)
+    }
 
-        XCTAssertEqual(editor.link(atInsertionPoint: link.location), guide)
-        XCTAssertNil(editor.link(atInsertionPoint: text.range(of: "Read").location))
-        XCTAssertNil(editor.link(atInsertionPoint: text.range(of: "this").location))
+    /// Where `word` is drawn, in `editor`'s coordinates.
+    private func frame(of word: String, in editor: NSTextView) -> NSRect {
+        let screen = editor.firstRect(forCharacterRange: (editor.string as NSString).range(of: word), actualRange: nil)
+        return editor.convert(editor.window?.convertFromScreen(screen) ?? .zero, from: nil)
+    }
 
-        let rect = window.convertFromScreen(editor.firstRect(forCharacterRange: link, actualRange: nil))
-        let click = try XCTUnwrap(
+    private func center(of word: String, in editor: NSTextView) -> NSPoint {
+        let rect = frame(of: word, in: editor)
+        return NSPoint(x: rect.midX, y: rect.midY)
+    }
+
+    /// A right-click at `point`, in `view`'s coordinates.
+    private func rightClick(at point: NSPoint, in view: NSView) throws -> NSEvent {
+        try XCTUnwrap(
             NSEvent.mouseEvent(
-                with: .rightMouseDown, location: NSPoint(x: rect.midX, y: rect.midY), modifierFlags: [], timestamp: 0,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
-        let menu = try XCTUnwrap(editor.menu(for: click))
-        XCTAssertEqual(menu.items.first?.title, "Open Link")
-        XCTAssertEqual(menu.items.first?.representedObject as? URL, guide)
+                with: .rightMouseDown, location: view.convert(point, to: nil), modifierFlags: [], timestamp: 0,
+                windowNumber: view.window?.windowNumber ?? 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
     }
 
     func testBoardNotesGrowWithTheirTextUpToTheLimit() async throws {
@@ -275,6 +310,97 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertLessThanOrEqual(scroll.frame.height, 176.5)
     }
 
+    func testAClickOnAPinnedSectionHeaderOverATallNoteEndsEditing() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
+        let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 400), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        // A header pinned over the board's top while the note scrolls under it, as a section header stays.
+        let board = ScrollView {
+            VStack(spacing: 0) {
+                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                Color.clear.frame(height: 600)
+            }
+        }
+        .overlay(alignment: .top) {
+            Text(verbatim: "Synthetic section").frame(maxWidth: .infinity, minHeight: 32).background(.gray)
+        }
+        .themed(by: store.theme)
+        let host = NSHostingView(rootView: board)
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        let laidOut = await waitUntil(host) { !self.noteScrollViews(in: host).isEmpty }
+        XCTAssertTrue(laidOut, "The board lays out the note")
+        await settle(host)
+        let scroll = try XCTUnwrap(noteScrollViews(in: host).first)
+        let editor = try XCTUnwrap(scroll.documentView as? NSTextView)
+        let boardScroll = try XCTUnwrap(scroll.enclosingScrollView)
+        window.makeFirstResponder(editor)
+        await settle(host)
+        XCTAssertTrue(window.firstResponder === editor)
+
+        // Scrolls the board until the pinned header covers the note's text.
+        let note = boardScroll.contentView.convert(scroll.bounds, from: scroll)
+        boardScroll.contentView.scroll(to: NSPoint(x: 0, y: note.minY + 60))
+        boardScroll.reflectScrolledClipView(boardScroll.contentView)
+        let headerPoint = {
+            let visible = boardScroll.convert(boardScroll.bounds, to: nil)
+            return NSPoint(x: visible.midX, y: visible.maxY - 12)
+        }
+        let covered = await waitUntil(host) { scroll.bounds.contains(scroll.convert(headerPoint(), from: nil)) }
+        XCTAssertTrue(covered, "The header is drawn over the note")
+        await settle(host)
+        let visible = boardScroll.convert(boardScroll.bounds, to: nil)
+        let header = headerPoint()
+
+        // A click on the note's own text below the header keeps editing.
+        let onText = NSPoint(x: editor.convert(editor.bounds, to: nil).minX + 30, y: visible.maxY - 100)
+        XCTAssertTrue(scroll.bounds.contains(scroll.convert(onText, from: nil)))
+        try postClick(at: onText, in: window)
+        let handled = try await waitForPostedEvents(host)
+        XCTAssertTrue(handled, "The app handles the click on the note's text")
+        XCTAssertTrue(window.firstResponder === editor, "A click on the note's text keeps editing")
+
+        try postClick(at: header, in: window)
+        let ended = await waitUntil(host) { window.firstResponder !== editor }
+        XCTAssertTrue(ended, "A click on the header ends the editing")
+    }
+
+    /// Posts a left click at `location`, in `window`'s coordinates, for the app to handle as a real one.
+    private func postClick(at location: NSPoint, in window: NSWindow) throws {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let click = try XCTUnwrap(
+                NSEvent.mouseEvent(
+                    with: type, location: location, modifierFlags: [], timestamp: 0,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+            NSApp.postEvent(click, atStart: false)
+        }
+    }
+
+    /// Posts a marker behind the events already posted and waits up to five seconds for the app to dispatch it.
+    private func waitForPostedEvents(_ host: NSView) async throws -> Bool {
+        let token = Int.random(in: 1...Int.max)
+        let marker = try XCTUnwrap(
+            NSEvent.otherEvent(
+                with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                context: nil, subtype: 0, data1: token, data2: 0))
+        var dispatched = false
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .applicationDefined) { event in
+            guard event.data1 == token else { return event }
+            dispatched = true
+            return nil
+        }
+        defer { if let monitor { NSEvent.removeMonitor(monitor) } }
+        NSApp.postEvent(marker, atStart: false)
+        return await waitUntil(host) { dispatched }
+    }
+
     func testBoardNotesShrinkWhileAnotherAppIsInFrontAndGrowOnReturn() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -338,6 +464,55 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertFalse(window.firstResponder === rebuilt)
     }
 
+    func testRestylingWhatAnEditChangedMatchesAFullRestyle() async throws {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let source = "# Plan\n\nSome **bold** and *it*.\n```\ncode\n```\n> quote\n- [a](https://example.com) ~~old~~\n"
+        let host = NSHostingView(rootView: GrowingEditorHost(text: source))
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        let editor = try XCTUnwrap(noteScrollViews(in: host).first?.documentView as? NSTextView)
+        let pieces = ["*", "**", "_", "`", "```", "# ", " ", "\n", "x", "> ", "- ", "[b](https://example.org)", "~~"]
+        var seed: UInt64 = 11
+        func next(_ bound: Int) -> Int {
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            return Int((seed >> 33) % UInt64(bound + 1))
+        }
+        for step in 0..<150 {
+            let length = (editor.string as NSString).length
+            let location = next(length)
+            let removed = next(min(3, length - location))
+            let piece = next(1) == 0 ? pieces[next(pieces.count - 1)] : ""
+            editor.insertText(piece, replacementRange: NSRange(location: location, length: removed))
+
+            let reference = NSTextView()
+            reference.isRichText = false
+            reference.string = editor.string
+            NativeEditor.applyAppearance(.paper, to: reference)
+            NativeEditor.styleMarkdown(in: reference, appearance: .paper)
+            let styled = try XCTUnwrap(editor.textStorage)
+            let expected = try XCTUnwrap(reference.textStorage)
+            XCTAssertEqual(styles(of: styled), styles(of: expected), "Step \(step) left stale styles")
+        }
+    }
+
+    /// Each UTF-16 offset's Markdown styles, described so two texts can be compared.
+    private func styles(of storage: NSTextStorage) -> [String] {
+        let keys: [NSAttributedString.Key] = [
+            .foregroundColor, .backgroundColor, .strikethroughStyle, .underlineStyle, .obliqueness, .strokeWidth,
+            .noteLink, .toolTip,
+        ]
+        return (0..<storage.length).map { position in
+            let font = storage.attribute(.font, at: position, effectiveRange: nil) as? NSFont
+            let rest = keys.map { "\(storage.attribute($0, at: position, effectiveRange: nil) ?? "-")" }
+            return ([font.map { "\($0.fontName) \($0.pointSize)" } ?? "-"] + rest).joined(separator: "|")
+        }
+    }
+
     /// Hosts a board-style editor showing `text`, and reports its height and whether its text scrolls inside.
     private func hostedEditor(_ text: String) async throws -> (height: CGFloat, scrolls: Bool) {
         let window = NSWindow(
@@ -361,6 +536,16 @@ final class AppearanceIntegrationTests: XCTestCase {
             host.layoutSubtreeIfNeeded()
             try? await Task.sleep(for: .milliseconds(20))
         }
+    }
+
+    /// Lays out `host` and checks `predicate` every 20 ms for up to five seconds.
+    private func waitUntil(_ host: NSView, _ predicate: @MainActor () -> Bool) async -> Bool {
+        for _ in 0..<250 {
+            host.layoutSubtreeIfNeeded()
+            if predicate() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return predicate()
     }
 
     private func noteScrollViews(in view: NSView) -> [NoteScrollView] {
