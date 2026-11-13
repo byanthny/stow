@@ -562,7 +562,7 @@ private func openPipes() -> Int {
     }.count
 }
 
-/// Launches synthetic `gh` scripts. Serialized, since one test counts this process's pipes.
+/// Launches synthetic `gh` scripts, one test at a time.
 @Suite("StowGitHub process tests", .serialized)
 struct GHProcessTests {
     private func request(_ gh: URL, timeout: TimeInterval, query: String = "{}") async throws -> GraphQLResponse {
