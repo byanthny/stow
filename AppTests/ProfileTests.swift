@@ -2732,11 +2732,6 @@ final class ProfileTests: XCTestCase {
         try await seed(folder)
         let feed = ReleaseFeed()
         feed.answer(["v1.1.0"])
-        let index = folder.appendingPathComponent(ProfileIndex.filename)
-        func writable(_ yes: Bool) throws {
-            try FileManager.default.setAttributes([.posixPermissions: yes ? 0o700 : 0o500], ofItemAtPath: folder.path)
-        }
-        defer { try? writable(true) }
         let manager = makeManager(folder, updateFetch: feed.fetch)
         defer { stop(manager) }
         let opened = await manager.start()
@@ -2745,17 +2740,18 @@ final class ProfileTests: XCTestCase {
         manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
         try await manager.updates.setChecksForUpdates(true)
         await manager.updates.checkAndReport()
-        let saved = try Data(contentsOf: index)
+        XCTAssertNil(manager.updates.problem)
 
-        // A failed check while the data folder can't be written.
-        try writable(false)
+        // A newer Stow rewrites the list, which this one can't save to, and then a check fails.
+        let index = folder.appendingPathComponent(ProfileIndex.filename)
+        let newer = Data(#"{"schemaVersion":2}"#.utf8)
+        try newer.write(to: index)
         feed.fail(.unreachable)
         await manager.updates.checkAndReport()
         XCTAssertEqual(reports.outcomes.last, .failed(.unreachable))
         XCTAssertEqual(feed.count, 2)
         XCTAssertNil(manager.updates.problem)
-        XCTAssertEqual(try Data(contentsOf: index), saved)
-        try writable(true)
+        XCTAssertEqual(try Data(contentsOf: index), newer)
     }
 
     func testCheckForUpdatesAnswersWithTheSettingOffAndSavesNothing() async throws {
