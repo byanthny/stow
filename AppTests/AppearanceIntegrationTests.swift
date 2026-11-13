@@ -396,7 +396,7 @@ final class AppearanceIntegrationTests: XCTestCase {
             dispatched = true
             return nil
         }
-        defer { monitor.map(NSEvent.removeMonitor) }
+        defer { if let monitor { NSEvent.removeMonitor(monitor) } }
         NSApp.postEvent(marker, atStart: false)
         return await waitUntil(host) { dispatched }
     }
