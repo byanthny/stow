@@ -35,9 +35,9 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     /// The windows `hide()` ordered out, ordered back in by `show()`.
     private var hiddenWindows: [NSWindow] = []
 
-    /// Takes the profile's `.stow.lock`. Throws `.inUse` when another holder has it and `.unwritable` when it can't
-    /// be taken. Callers check their own open sessions first, because a second lock on the same file fails even
-    /// within one process.
+    /// Takes the profile's `.stow.lock`. Throws `.inUse` when another holder has it and `.unwritable` when it fails.
+    /// Callers check their own open sessions first, because a second lock on the same file fails even within one
+    /// process.
     init(
         entry: ProfileEntry, profile: ProfileHandle, dataFolder: URL, isDemo: Bool, githubClient: (any GitHubClient)?,
         githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
