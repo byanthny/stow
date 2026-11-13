@@ -334,20 +334,29 @@ final class AppearanceIntegrationTests: XCTestCase {
         window.contentView = host
         window.orderFront(nil)
         await settle(host)
+        let laidOut = await waitUntil(host) { !self.noteScrollViews(in: host).isEmpty }
+        XCTAssertTrue(laidOut, "The lazy board lays out the note")
+        await settle(host)
         let scroll = try XCTUnwrap(noteScrollViews(in: host).first)
         let editor = try XCTUnwrap(scroll.documentView as? NSTextView)
         let boardScroll = try XCTUnwrap(scroll.enclosingScrollView)
         window.makeFirstResponder(editor)
         await settle(host)
+        XCTAssertTrue(window.firstResponder === editor)
 
         // Scrolls the board until the pinned header covers the note's text.
         let note = boardScroll.contentView.convert(scroll.bounds, from: scroll)
         boardScroll.contentView.scroll(to: NSPoint(x: 0, y: note.minY + 60))
         boardScroll.reflectScrolledClipView(boardScroll.contentView)
+        let headerPoint = {
+            let visible = boardScroll.convert(boardScroll.bounds, to: nil)
+            return NSPoint(x: visible.midX, y: visible.maxY - 12)
+        }
+        let covered = await waitUntil(host) { scroll.bounds.contains(scroll.convert(headerPoint(), from: nil)) }
+        XCTAssertTrue(covered, "The header is drawn over the note")
         await settle(host)
         let visible = boardScroll.convert(boardScroll.bounds, to: nil)
-        let header = NSPoint(x: visible.midX, y: visible.maxY - 12)
-        XCTAssertTrue(scroll.bounds.contains(scroll.convert(header, from: nil)), "The header is drawn over the note")
+        let header = headerPoint()
 
         // A click on the note's own text below the header keeps editing.
         let onText = NSPoint(x: editor.convert(editor.bounds, to: nil).minX + 30, y: visible.maxY - 100)
@@ -507,6 +516,16 @@ final class AppearanceIntegrationTests: XCTestCase {
             host.layoutSubtreeIfNeeded()
             try? await Task.sleep(for: .milliseconds(20))
         }
+    }
+
+    /// Lays out `host` and checks `predicate` every 20 ms for up to five seconds.
+    private func waitUntil(_ host: NSView, _ predicate: @MainActor () -> Bool) async -> Bool {
+        for _ in 0..<250 {
+            host.layoutSubtreeIfNeeded()
+            if predicate() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return predicate()
     }
 
     private func noteScrollViews(in view: NSView) -> [NoteScrollView] {
