@@ -267,10 +267,8 @@ public actor GHClient: GitHubClient {
     private let maxPages = 200
     /// Without a usable `gh` outside `folder`, every request fails with `executableNotFound`.
     public init(executableURL: URL? = nil, excluding folder: URL? = nil) {
-        let executable = executableURL ?? Self.discoverExecutable(excluding: folder)
-        transport = executable.flatMap {
-            Self.isUsableExecutable(atPath: $0.path, excluding: folder)
-                ? GHProcessTransport(executableURL: $0, excluding: folder) : nil
+        transport = (executableURL ?? Self.discoverExecutable(excluding: folder)).map {
+            GHProcessTransport(executableURL: $0, excluding: folder)
         }
     }
     public init(transport: any GraphQLTransport) { self.transport = transport }
