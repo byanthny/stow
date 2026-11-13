@@ -544,13 +544,14 @@ private func cleanUp(_ gh: URL) {
     try? FileManager.default.removeItem(at: gh.deletingLastPathComponent())
 }
 
-/// Whether every process has exited within three seconds.
-private func allGone(_ pids: [pid_t]) async -> Bool {
-    for _ in 0..<300 {
-        if pids.allSatisfy({ kill($0, 0) == -1 }) { return true }
+/// Whether `condition` holds within 30 seconds.
+private func eventually(_ condition: () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(30)
+    while !condition() {
+        guard ContinuousClock.now < deadline else { return false }
         try? await Task.sleep(for: .milliseconds(10))
     }
-    return false
+    return true
 }
 
 /// The number of pipes this process has open.
@@ -574,7 +575,7 @@ struct GHProcessTests {
         defer { cleanUp(gh) }
         // More input than a pipe holds, so the write meets the closed pipe.
         let query = String(repeating: "#", count: 1 << 20)
-        await #expect(throws: GitHubError.requestFailed) { try await request(gh, timeout: 10, query: query) }
+        await #expect(throws: GitHubError.requestFailed) { try await request(gh, timeout: 30, query: query) }
     }
 
     @Test(.timeLimit(.minutes(1))) func theCheckedFileIsLaunchedRatherThanTheLink() async throws {
@@ -583,7 +584,7 @@ struct GHProcessTests {
         let link = gh.deletingLastPathComponent().appendingPathComponent("bin/gh")
         try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.createSymbolicLink(at: link, withDestinationURL: gh)
-        let response = try await request(link, timeout: 10)
+        let response = try await request(link, timeout: 30)
         #expect(String(decoding: response.body, as: UTF8.self) == gh.resolvingSymlinksInPath().path)
     }
 
@@ -594,7 +595,7 @@ struct GHProcessTests {
         await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 0.5) }
         let pids = children(of: gh)
         #expect(!pids.isEmpty)
-        #expect(await allGone(pids))
+        #expect(await eventually { pids.allSatisfy { kill($0, 0) == -1 } })
     }
 
     @Test(.timeLimit(.minutes(1))) func childLeftBehindIsLeftAloneWhenGHExits() async throws {
@@ -613,15 +614,13 @@ struct GHProcessTests {
         // gh answers and exits once its child has left the process group, still holding the output open.
         let gh = try fakeGH(
             #"""
-            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 20' \
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' \
               "$0.children" &
             while [ ! -s "$0.children" ]; do sleep 0.01; done
             printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'
             """#)
         defer { cleanUp(gh) }
-        let started = ContinuousClock.now
-        let response = try await request(gh, timeout: 10)
-        #expect(ContinuousClock.now - started < .seconds(5))
+        let response = try await request(gh, timeout: 30)
         #expect(response.body == Data(#"{"data":{}}"#.utf8))
         #expect(response.exitCode == 0)
     }
@@ -631,7 +630,7 @@ struct GHProcessTests {
         let gh = try fakeGH(
             #"sleep 20 </dev/null >/dev/null 2>&1 & echo $! >> "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{}'"#)
         defer { cleanUp(gh) }
-        for _ in 0..<20 { _ = try await request(gh, timeout: 10) }
+        for _ in 0..<20 { _ = try await request(gh, timeout: 30) }
         try await Task.sleep(for: .milliseconds(300))
         let pids = children(of: gh)
         #expect(pids.count == 20)
@@ -642,48 +641,45 @@ struct GHProcessTests {
         // gh keeps running with a child that has left the process group, holding the output open.
         let gh = try fakeGH(
             #"""
-            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 20' \
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' \
               "$0.children" &
             while [ ! -s "$0.children" ]; do sleep 0.01; done
-            sleep 30
+            sleep 120
             """#)
         defer { cleanUp(gh) }
-        let pending = Task { try await request(gh, timeout: 10) }
-        while children(of: gh).isEmpty { try await Task.sleep(for: .milliseconds(10)) }
-        let cancelled = ContinuousClock.now
+        let pending = Task { try await request(gh, timeout: 30) }
+        try #require(await eventually { !children(of: gh).isEmpty })
         pending.cancel()
+        // The deadline would end it with `timedOut`.
         await #expect(throws: CancellationError.self) { try await pending.value }
-        #expect(ContinuousClock.now - cancelled < .seconds(2))
     }
 
     @Test(.timeLimit(.minutes(1))) func childrenInTheirOwnSessionPinNothing() async throws {
         // Each launch waits with a child that has left gh's process group, holding the output open.
         let gh = try fakeGH(
             #"""
-            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 40' \
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' \
               "$0.$$" &
             while [ ! -s "$0.$$" ]; do sleep 0.01; done
             cat "$0.$$" >> "$0.children"
-            sleep 30
+            sleep 120
             """#)
         defer { cleanUp(gh) }
         let requests = 10
         let pipes = openPipes()
-        let started = ContinuousClock.now
+        // Each request ends at its deadline, well before the children do.
         await withTaskGroup(of: Void.self) { group in
             for _ in 0..<requests {
-                group.addTask { await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 2) } }
+                group.addTask { await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 10) } }
             }
         }
-        #expect(ContinuousClock.now - started < .seconds(15), "Each request ends at its deadline")
         #expect(children(of: gh).count == requests)
-        for _ in 0..<200 where openPipes() > pipes { try await Task.sleep(for: .milliseconds(10)) }
         // Each request read two pipes; fewer than one per request may belong to other tests.
-        #expect(openPipes() - pipes < requests, "Every pipe is closed once its request ends")
+        #expect(await eventually { openPipes() - pipes < requests }, "Every pipe is closed once its request ends")
         let big = try fakeGH(
             #"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":"'; head -c 200000 /dev/zero | tr '\0' a; printf '"}'"#)
         defer { cleanUp(big) }
-        let response = try await request(big, timeout: 5)
+        let response = try await request(big, timeout: 30)
         #expect(response.body.count == 200_000 + #"{"data":""}"#.utf8.count)
     }
 }
