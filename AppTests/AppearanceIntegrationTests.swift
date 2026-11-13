@@ -363,12 +363,13 @@ final class AppearanceIntegrationTests: XCTestCase {
         let onText = NSPoint(x: editor.convert(editor.bounds, to: nil).minX + 30, y: visible.maxY - 100)
         XCTAssertTrue(scroll.bounds.contains(scroll.convert(onText, from: nil)))
         try postClick(at: onText, in: window)
-        await settle(host)
+        let handled = try await waitForPostedEvents(host)
+        XCTAssertTrue(handled, "The app handles the click on the note's text")
         XCTAssertTrue(window.firstResponder === editor, "A click on the note's text keeps editing")
 
         try postClick(at: header, in: window)
-        await settle(host)
-        XCTAssertFalse(window.firstResponder === editor, "A click on the header ends the editing")
+        let ended = await waitUntil(host) { window.firstResponder !== editor }
+        XCTAssertTrue(ended, "A click on the header ends the editing")
     }
 
     /// Posts a left click at `location`, in `window`'s coordinates, for the app to handle as a real one.
@@ -380,6 +381,24 @@ final class AppearanceIntegrationTests: XCTestCase {
                     windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
             NSApp.postEvent(click, atStart: false)
         }
+    }
+
+    /// Posts a marker behind the events already posted and waits up to five seconds for the app to dispatch it.
+    private func waitForPostedEvents(_ host: NSView) async throws -> Bool {
+        let token = Int.random(in: 1...Int.max)
+        let marker = try XCTUnwrap(
+            NSEvent.otherEvent(
+                with: .applicationDefined, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0,
+                context: nil, subtype: 0, data1: token, data2: 0))
+        var dispatched = false
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: .applicationDefined) { event in
+            guard event.data1 == token else { return event }
+            dispatched = true
+            return nil
+        }
+        defer { monitor.map(NSEvent.removeMonitor) }
+        NSApp.postEvent(marker, atStart: false)
+        return await waitUntil(host) { dispatched }
     }
 
     func testBoardNotesShrinkWhileAnotherAppIsInFrontAndGrowOnReturn() async throws {
