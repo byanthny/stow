@@ -274,11 +274,10 @@ private final class ProcessControl: @unchecked Sendable {
         return Self.parse(raw, exitCode: status)
     }
 
-    /// Kills gh and its process group while gh still runs.
+    /// Kills gh's process group while gh still runs.
     private static func end(_ process: Process) {
         guard process.isRunning else { return }
-        let pid = process.processIdentifier
-        if killpg(pid, SIGKILL) != 0 { _ = Darwin.kill(pid, SIGKILL) }
+        _ = killpg(process.processIdentifier, SIGKILL)
     }
 
     static func parse(_ raw: Data, exitCode: Int32) -> GraphQLResponse {

@@ -653,6 +653,22 @@ struct GHProcessTests {
         await #expect(throws: CancellationError.self) { try await pending.value }
     }
 
+    @Test(.timeLimit(.minutes(1))) func onlyGHsProcessGroupIsSignaled() async throws {
+        // gh joins this process's group, so no group has gh's process ID.
+        let gh = try fakeGH(
+            #"""
+            exec perl -e 'setpgrp(0, getpgrp(getppid())) or die;
+              open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' "$0.children"
+            """#)
+        defer { cleanUp(gh) }
+        let pending = Task { try await request(gh, timeout: 30) }
+        try #require(await eventually { !children(of: gh).isEmpty })
+        pending.cancel()
+        await #expect(throws: CancellationError.self) { try await pending.value }
+        try await Task.sleep(for: .seconds(1))
+        #expect(children(of: gh).allSatisfy { kill($0, 0) == 0 }, "gh's process ID alone is never signaled")
+    }
+
     @Test(.timeLimit(.minutes(1))) func childrenInTheirOwnSessionPinNothing() async throws {
         // Each launch waits with a child that has left gh's process group, holding the output open.
         let gh = try fakeGH(
