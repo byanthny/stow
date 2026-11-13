@@ -590,9 +590,9 @@ struct GHProcessTests {
 
     @Test(.timeLimit(.minutes(1))) func timedOutRequestLeavesNoChildAlive() async throws {
         // The child ignores SIGTERM.
-        let gh = try fakeGH(#"(trap '' TERM; exec sleep 30) & echo $! > "$0.children"; sleep 30"#)
+        let gh = try fakeGH(#"(trap '' TERM; exec sleep 120) & echo $! > "$0.children"; sleep 120"#)
         defer { cleanUp(gh) }
-        await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 0.5) }
+        await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 5) }
         let pids = children(of: gh)
         #expect(!pids.isEmpty)
         #expect(await eventually { pids.allSatisfy { kill($0, 0) == -1 } })
@@ -628,7 +628,7 @@ struct GHProcessTests {
     @Test(.timeLimit(.minutes(1))) func ordinaryRequestsLeaveGHsOtherChildrenAlone() async throws {
         // Each child holds none of gh's pipes.
         let gh = try fakeGH(
-            #"sleep 20 </dev/null >/dev/null 2>&1 & echo $! >> "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{}'"#)
+            #"sleep 120 </dev/null >/dev/null 2>&1 & echo $! >> "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{}'"#)
         defer { cleanUp(gh) }
         for _ in 0..<20 { _ = try await request(gh, timeout: 30) }
         try await Task.sleep(for: .milliseconds(300))
