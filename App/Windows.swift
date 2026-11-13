@@ -137,20 +137,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 return
             }
         #endif
-        switch StateLock.acquire(named: StateLock.instanceFilename, in: stateURL.deletingLastPathComponent()) {
+        let dataFolder = stateURL.deletingLastPathComponent()
+        switch StateLock.acquire(named: StateLock.instanceFilename, in: dataFolder) {
         case .acquired(let lock): instanceLock = lock
+        // A folder that can't be locked, such as one on a volume without flock, runs unguarded.
         case .unavailable: break
         case .heldByAnotherProcess:
             // Another Stow already runs on this data folder. Hand over to it instead of competing.
             Self.activateRunningCopy()
             NSApp.terminate(nil)
             return
+        case .failed:
+            Self.reportLockFailure(dataFolder)
+            NSApp.terminate(nil)
+            return
         }
         Task {
             guard await prepare(stateURL: stateURL, isDemo: demo), let manager else {
                 // Another process, such as an older build, has the profiles open: hand over to it. With no profile
-                // to list, the manager has already said so.
-                if self.manager?.profiles.isEmpty == false { Self.activateRunningCopy() }
+                // to list, or only ones whose locks fail, the manager has already said so.
+                if let manager = self.manager, !manager.profiles.isEmpty, !manager.startReportedLockFailure {
+                    Self.activateRunningCopy()
+                }
                 NSApp.terminate(nil)
                 return
             }
@@ -294,6 +302,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+    }
+
+    /// Says that the data folder's lock file can't be used, before Stow quits.
+    private static func reportLockFailure(_ dataFolder: URL) {
+        let lockFile = dataFolder.appendingPathComponent(StateLock.instanceFilename).path as NSString
+        let alert = NSAlert()
+        alert.messageText = "Stow can’t lock its data folder"
+        alert.informativeText =
+            "Stow will quit. Check that \(lockFile.abbreviatingWithTildeInPath) is an ordinary file you own, then open Stow again."
+        alert.addButton(withTitle: "Quit")
+        alert.runModal()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }

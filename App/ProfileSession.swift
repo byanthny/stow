@@ -35,25 +35,27 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     /// The windows `hide()` ordered out, ordered back in by `show()`.
     private var hiddenWindows: [NSWindow] = []
 
-    /// Takes the profile's `.stow.lock`, or returns nil when another holder has it. Callers check their own open
-    /// sessions first, because a second lock on the same file fails even within one process.
-    init?(
-        entry: ProfileEntry, profile: ProfileHandle, isDemo: Bool, githubClient: (any GitHubClient)?,
+    /// Takes the profile's `.stow.lock`. Throws `.inUse` when another holder has it and `.unwritable` when it fails.
+    /// Callers check their own open sessions first, because a second lock on the same file fails even within one
+    /// process.
+    init(
+        entry: ProfileEntry, profile: ProfileHandle, dataFolder: URL, isDemo: Bool, githubClient: (any GitHubClient)?,
         githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
         accessoryProviders: [any AccessoryProvider]
-    ) {
+    ) throws {
         let stateURL = entry.folder.appendingPathComponent("state.json")
         switch StateLock.acquire(forStateAt: stateURL) {
         case .acquired(let held): lock = held
         // A folder that cannot be locked, such as one on a volume without flock, is written unguarded.
         case .unavailable: break
-        case .heldByAnotherProcess: return nil
+        case .heldByAnotherProcess: throw ProfileError.inUse
+        case .failed: throw ProfileError.unwritable
         }
         self.entry = entry
         self.profile = profile
         store = AppStore(
-            stateURL: stateURL, isDemo: isDemo, githubClient: githubClient, githubClientFactory: githubClientFactory,
-            accessoryProviders: accessoryProviders, arrival: entry.isArrival)
+            stateURL: stateURL, dataFolder: dataFolder, isDemo: isDemo, githubClient: githubClient,
+            githubClientFactory: githubClientFactory, accessoryProviders: accessoryProviders, arrival: entry.isArrival)
         super.init()
         store.onDetach = { [weak self] id in self?.showNote(id) }
         store.onDelete = { [weak self] id in

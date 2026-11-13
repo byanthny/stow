@@ -163,10 +163,31 @@ final class UpdateTests: XCTestCase {
         let later = time.addingTimeInterval(60)
         XCTAssertEqual(settings.record(.failure(.rateLimited), running: running, at: later), .failed(.rateLimited))
         XCTAssertEqual(settings.available, found)
-        XCTAssertEqual(settings.lastCheckAt, later)
+        XCTAssertEqual(settings.lastCheckAt, time)
         // An empty list means up to date, and clears the old release.
         XCTAssertEqual(settings.record(.success([]), running: running, at: later), .upToDate)
         XCTAssertNil(settings.available)
+        XCTAssertEqual(settings.lastCheckAt, later)
+    }
+
+    func testAFailedCheckLeavesTheNextOneDue() throws {
+        let running = try XCTUnwrap(ReleaseVersion("0.2.1"))
+        let time = Date(timeIntervalSince1970: 1_800_000_000)
+        let hour: TimeInterval = 60 * 60
+        var settings = UpdateSettings()
+        // A first check that fails records nothing, and the next hourly wake-up asks again.
+        XCTAssertEqual(settings.record(.failure(.unreachable), running: running, at: time), .failed(.unreachable))
+        XCTAssertEqual(settings, UpdateSettings())
+        XCTAssertTrue(UpdatePolicy.standard.isDue(lastCheck: settings.lastCheckAt, now: time + hour))
+        // A day after a check that worked, a failed one keeps that check's time, and the next wake-up asks again.
+        XCTAssertEqual(settings.record(.success([]), running: running, at: time), .upToDate)
+        let dayLater = time + UpdatePolicy.standard.interval
+        XCTAssertEqual(settings.record(.failure(.rateLimited), running: running, at: dayLater), .failed(.rateLimited))
+        XCTAssertEqual(settings.lastCheckAt, time)
+        XCTAssertTrue(UpdatePolicy.standard.isDue(lastCheck: settings.lastCheckAt, now: dayLater + hour))
+        // Once one works, the next is a day away.
+        XCTAssertEqual(settings.record(.success([]), running: running, at: dayLater + hour), .upToDate)
+        XCTAssertFalse(UpdatePolicy.standard.isDue(lastCheck: settings.lastCheckAt, now: dayLater + 2 * hour))
     }
 
     func testChecksAreDueOnceADay() {

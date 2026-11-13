@@ -316,6 +316,35 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(made.count, 2)
     }
 
+    func testSavedGHInsideTheDataFolderIsNeverUsed() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let planted = folder.appendingPathComponent("tools/gh")
+        try FileManager.default.createDirectory(
+            at: planted.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("#!/bin/sh\nexit 1\n".utf8).write(to: planted)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: planted.path)
+        XCTAssertTrue(GHClient.isUsableExecutable(atPath: planted.path), "Usable anywhere else")
+        try await seed(folder) { state in
+            state.githubEnabled = true
+            state.ghExecutablePath = planted.path
+        }
+        // Clients are made but never launch anything, whichever gh the store settles on.
+        var made: [URL] = []
+        let manager = makeManager(
+            folder,
+            githubClientMaker: { url in
+                made.append(url)
+                return CountingClient()
+            })
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertEqual(session.store.state.ghExecutablePath, planted.path)
+        XCTAssertFalse(made.contains { $0.resolvingSymlinksInPath() == planted.resolvingSymlinksInPath() })
+    }
+
     func testRateLimitPausesEveryProfileOnTheClient() async throws {
         let reference = PullRequestReference(owner: "example", repository: "fixture", number: 1)
         let transport = RateLimitedTransport()
@@ -1020,6 +1049,145 @@ final class ProfileTests: XCTestCase {
         // A switch that cannot open its target leaves the profile it started from as it was.
         XCTAssertFalse(main.isHidden)
         XCTAssertTrue(main.board.isVisible)
+    }
+
+    func testLaunchOpensADataFolderThatCantBeWritten() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path) }
+        // Launch goes on without the instance lock, as it does on a volume without locks.
+        guard case .unavailable = StateLock.acquire(named: StateLock.instanceFilename, in: folder) else {
+            return XCTFail("A data folder that can't be written has no instance lock to give")
+        }
+        let manager = makeManager(folder)
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        let session = try XCTUnwrap(manager.activeSession)
+        XCTAssertEqual(session.store.state.notes.map(\.markdown), ["Synthetic profile note"])
+        XCTAssertFalse(exists(StateLock.filename, in: folder))
+    }
+
+    func testProfileWhoseLockFailsStaysClosedAndSaysSo() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        // A folder at the lock path makes locking fail.
+        try FileManager.default.createDirectory(
+            at: workEntry.folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
+        let before = try tree(workEntry.folder)
+
+        let opened = await manager.open(workEntry.id)
+        XCTAssertFalse(opened)
+        XCTAssertNil(manager.sessions[workEntry.id])
+        XCTAssertEqual(reports.names, ["Work"])
+        do {
+            try await manager.rename(workEntry.id, to: "Renamed")
+            XCTFail("A profile whose lock fails must not be written")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        XCTAssertEqual(try tree(workEntry.folder), before)
+        XCTAssertEqual(manager.profiles.first { $0.id == workEntry.id }?.name, "Work")
+    }
+
+    func testLaunchSaysWhichProfilesCantBeLocked() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        let catalog = ProfileCatalog(dataFolder: folder)
+        let listed = try await catalog.load().profiles
+        let stowID = try XCTUnwrap(listed.first(where: \.isDataFolder)).id
+        try await catalog.recordSession(
+            open: [.init(id: stowID, isHidden: false), .init(id: workEntry.id, isHidden: false)],
+            lastActiveID: stowID)
+        // Folders at the lock paths make locking fail.
+        let workLock = workEntry.folder.appendingPathComponent(StateLock.filename)
+        for lock in [folder.appendingPathComponent(StateLock.filename), workLock] {
+            try FileManager.default.createDirectory(at: lock, withIntermediateDirectories: false)
+        }
+        let before = try tree(folder)
+        let reports = Recorder()
+        let blocked = makeManager(folder)
+        blocked.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(blocked) }
+
+        let blockedStart = await blocked.start()
+        XCTAssertFalse(blockedStart)
+        XCTAssertTrue(blocked.sessions.isEmpty)
+        XCTAssertEqual(reports.names.sorted(), ["Stow", "Work"])
+        XCTAssertTrue(blocked.startReportedLockFailure, "A launch that opened nothing quits without handing over")
+        XCTAssertEqual(try tree(folder), before)
+
+        // Once another profile opens, the launch still says which one stayed closed.
+        try FileManager.default.removeItem(at: workLock)
+        reports.names = []
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+        let started = await manager.start()
+        XCTAssertTrue(started)
+        XCTAssertEqual(Set(manager.sessions.keys), [workEntry.id])
+        XCTAssertEqual(reports.names, ["Stow"])
+        XCTAssertFalse(manager.startReportedLockFailure)
+    }
+
+    func testLaunchWithoutAnIndexSaysItsProfileCantBeLocked() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        // The usual single profile with no index; a folder at its lock path makes locking fail.
+        try FileManager.default.createDirectory(
+            at: folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
+        let before = try tree(folder)
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertFalse(started)
+        XCTAssertTrue(manager.sessions.isEmpty)
+        XCTAssertEqual(reports.names, ["Stow"])
+        XCTAssertTrue(manager.startReportedLockFailure, "Nothing is open elsewhere, so the launch doesn't hand over")
+        XCTAssertEqual(try tree(folder), before)
+    }
+
+    func testLaunchHandsOverWhenAnotherProfileIsOpenElsewhere() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let workEntry = try await addProfile("Work", in: folder)
+        // An older build has the first profile open, and Work was the only profile open at quit.
+        try await ProfileCatalog(dataFolder: folder).recordSession(
+            open: [.init(id: workEntry.id, isHidden: false)], lastActiveID: workEntry.id)
+        guard case .acquired(let held) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
+        else { return XCTFail("The test could not take the profile lock") }
+        defer { held.release() }
+        // A folder at Work's lock path makes locking fail.
+        try FileManager.default.createDirectory(
+            at: workEntry.folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
+        let reports = Recorder()
+        let manager = makeManager(folder)
+        manager.reportLockFailed = { reports.names.append($0.name) }
+        defer { stop(manager) }
+
+        let started = await manager.start()
+        XCTAssertFalse(started)
+        XCTAssertTrue(manager.sessions.isEmpty)
+        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertFalse(manager.startReportedLockFailure, "The launch hands over to the copy holding Stow")
     }
 
     func testSwitchShowsTargetAndHidesSourceByDefault() async throws {
@@ -2489,6 +2657,103 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(feed.count, 2)
     }
 
+    func testAFailedSaveOfTheUpdateSettingsShowsUntilOneWorks() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let feed = ReleaseFeed()
+        feed.answer(["v1.1.0"])
+        let index = folder.appendingPathComponent(ProfileIndex.filename)
+        func saved() throws -> UpdateSettings { try ProfileIndex.decode(Data(contentsOf: index)).updates }
+        func writable(_ yes: Bool) throws {
+            try FileManager.default.setAttributes([.posixPermissions: yes ? 0o700 : 0o500], ofItemAtPath: folder.path)
+        }
+        defer { try? writable(true) }
+        let manager = makeManager(folder, updateFetch: feed.fetch)
+        defer { stop(manager) }
+        let opened = await manager.start()
+        XCTAssertTrue(opened)
+        let reports = OutcomeLog()
+        manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
+        XCTAssertNil(manager.updates.problem)
+        let unwritable =
+            "Stow couldn’t save its update settings. Check that the data folder can be written to and has space."
+
+        // Turning checks on can't be saved: Settings says why, the setting stays off, and nothing is asked.
+        try writable(false)
+        do {
+            try await manager.updates.setChecksForUpdates(true)
+            XCTFail("The data folder can't be written")
+        } catch {
+            XCTAssertEqual(error as? ProfileError, .unwritable)
+        }
+        XCTAssertEqual(manager.updates.problem, unwritable)
+        XCTAssertFalse(manager.updates.settings.checksForUpdates)
+        XCTAssertEqual(feed.count, 0)
+
+        // A save that works clears it. Asking at once shares the check that turning it on starts.
+        try writable(true)
+        try await manager.updates.setChecksForUpdates(true)
+        XCTAssertNil(manager.updates.problem)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.count, 1)
+        XCTAssertEqual(feed.count, 1)
+        XCTAssertEqual(try saved().available?.version.description, "1.1.0")
+        let checkedAt = try XCTUnwrap(saved().lastCheckAt)
+
+        // A failed check is reported where it was asked for, and leaves Settings and the last check's time alone.
+        feed.fail(.unreachable)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.last, .failed(.unreachable))
+        XCTAssertNil(manager.updates.problem)
+        XCTAssertEqual(manager.updates.settings.lastCheckAt, checkedAt)
+
+        // A check whose result can't be saved says so.
+        feed.answer(["v1.2.0", "v1.1.0"])
+        try writable(false)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.count, 3)
+        XCTAssertEqual(manager.updates.problem, unwritable)
+        XCTAssertEqual(try saved().available?.version.description, "1.1.0")
+
+        // The next save that works, here a dismissal's, clears it and catches up.
+        try writable(true)
+        manager.updates.dismissNotice()
+        let cleared = await waitUntil { manager.updates.problem == nil }
+        XCTAssertTrue(cleared)
+        XCTAssertEqual(try saved().available?.version.description, "1.2.0")
+        XCTAssertEqual(try saved().dismissedVersion, ReleaseVersion("1.2.0"))
+        XCTAssertEqual(feed.count, 3)
+    }
+
+    func testAFailedCheckSavesNothing() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder)
+        let feed = ReleaseFeed()
+        feed.answer(["v1.1.0"])
+        let manager = makeManager(folder, updateFetch: feed.fetch)
+        defer { stop(manager) }
+        let opened = await manager.start()
+        XCTAssertTrue(opened)
+        let reports = OutcomeLog()
+        manager.updates.report = { outcome, _ in reports.outcomes.append(outcome) }
+        try await manager.updates.setChecksForUpdates(true)
+        await manager.updates.checkAndReport()
+        XCTAssertNil(manager.updates.problem)
+
+        // A newer Stow rewrites the list, which this one can't save to, and then a check fails.
+        let index = folder.appendingPathComponent(ProfileIndex.filename)
+        let newer = Data(#"{"schemaVersion":2}"#.utf8)
+        try newer.write(to: index)
+        feed.fail(.unreachable)
+        await manager.updates.checkAndReport()
+        XCTAssertEqual(reports.outcomes.last, .failed(.unreachable))
+        XCTAssertEqual(feed.count, 2)
+        XCTAssertNil(manager.updates.problem)
+        XCTAssertEqual(try Data(contentsOf: index), newer)
+    }
+
     func testCheckForUpdatesAnswersWithTheSettingOffAndSavesNothing() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -2549,6 +2814,7 @@ final class ProfileTests: XCTestCase {
     /// Fails the test on any report the test does not expect, instead of opening a modal alert.
     private func failOnReports(from manager: ProfileManager) {
         manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
+        manager.reportLockFailed = { entry in XCTFail("Unexpected report that \(entry.name) can't be locked") }
         manager.reportNotFound = { entry in XCTFail("Unexpected report that \(entry.name) cannot be found") }
         manager.reportUnreadable = { entry in XCTFail("Unexpected report that \(entry.name)'s folder can't be read") }
         manager.reportNoProfiles = { XCTFail("Unexpected report that no profile can be found") }
@@ -2592,11 +2858,13 @@ final class ProfileTests: XCTestCase {
         _ folder: URL, catalog: ProfileCatalog? = nil,
         githubOverride: @escaping @MainActor (ProfileEntry) -> (any GitHubClient)? = { _ in nil },
         accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()],
+        githubClientMaker: (@MainActor (URL) -> any GitHubClient)? = nil,
         updateFetch: @escaping UpdateMonitor.Fetch = unexpectedUpdateCheck
     ) -> ProfileManager {
         let manager = ProfileManager(
             dataFolder: folder, isDemo: false, catalog: catalog, githubOverride: githubOverride,
-            accessoryProviders: accessoryProviders, updateFetch: updateFetch, runningVersion: ReleaseVersion("1.0.0"))
+            accessoryProviders: accessoryProviders, githubClientMaker: githubClientMaker, updateFetch: updateFetch,
+            runningVersion: ReleaseVersion("1.0.0"))
         manager.confirmClosingWithoutSaving = { entry in
             XCTFail("Unexpected question about closing \(entry.name) without saving")
             return false
@@ -2743,7 +3011,7 @@ final class ProfileTests: XCTestCase {
         case .acquired(let lock):
             lock.release()
             return false
-        case .unavailable: return false
+        case .unavailable, .failed: return false
         }
     }
 

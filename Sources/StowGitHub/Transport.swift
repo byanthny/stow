@@ -88,9 +88,12 @@ public enum GitHubError: Error, LocalizedError, Sendable, Equatable {
 public struct GHProcessTransport: GraphQLTransport {
     public var executableURL: URL
     public var timeout: TimeInterval
-    public init(executableURL: URL, timeout: TimeInterval = 45) {
+    /// A folder whose `gh` is never launched.
+    public var excludedFolder: URL?
+    public init(executableURL: URL, timeout: TimeInterval = 45, excluding folder: URL? = nil) {
         self.executableURL = executableURL
         self.timeout = timeout
+        excludedFolder = folder
     }
     static func decodeCLIOutput(_ output: Data, exitCode: Int32) -> GraphQLResponse {
         ProcessControl.parse(output, exitCode: exitCode)
@@ -100,117 +103,166 @@ public struct GHProcessTransport: GraphQLTransport {
             GraphQLValue.object(["query": .string(query), "variables": .object(variables)]))
         let control = ProcessControl()
         return try await withTaskCancellationHandler {
-            try await Task.detached {
-                try Task.checkCancellation()
-                return try control.run(executable: executableURL, input: input, timeout: timeout)
-            }.value
+            try await control.run(executable: executableURL, excluding: excludedFolder, input: input, timeout: timeout)
         } onCancel: {
             control.cancel()
         }
     }
 }
 
-private final class DataBuffer: @unchecked Sendable {
-    private let lock = NSLock()
+/// Output read so far, at most 32 MiB. Used only on its control's queue.
+private final class DataBuffer {
     private var bytes = Data()
     private var overflow = false
-    func drain(_ file: FileHandle) {
-        while true {
-            let part = file.availableData
-            if part.isEmpty { break }
-            lock.lock()
-            if bytes.count + part.count <= 32 * 1_024 * 1_024 { bytes.append(part) } else { overflow = true }
-            lock.unlock()
+    func append(_ part: DispatchData) {
+        guard bytes.count + part.count <= 32 * 1_024 * 1_024 else {
+            overflow = true
+            return
         }
+        part.enumerateBytes { buffer, _, _ in bytes.append(buffer) }
     }
     func result() throws -> Data {
-        lock.lock()
-        defer { lock.unlock() }
         if overflow { throw GitHubError.invalidResponse }
         return bytes
     }
 }
 
+/// One launch of `gh`. Its pipes, deadline, and cancellation are handled on one serial queue, and nothing blocks.
 private final class ProcessControl: @unchecked Sendable {
-    private let lock = NSLock()
+    private let queue = DispatchQueue(label: "org.stow.gh")
+    // The rest is used only on `queue`.
+    private var continuation: CheckedContinuation<GraphQLResponse, any Error>?
     private var process: Process?
+    private var channels: [DispatchIO] = []
+    private var openReads = 0
     private var cancelled = false
-    private var expired = false
+    private var wroteInput = false
+    private let out = DataBuffer()
+    private let err = DataBuffer()
+
     func cancel() {
-        lock.lock()
-        cancelled = true
-        let p = process
-        lock.unlock()
-        stop(p)
-    }
-    private func expire() {
-        lock.lock()
-        expired = true
-        let p = process
-        lock.unlock()
-        stop(p)
-    }
-    private func stop(_ process: Process?) {
-        guard let process, process.isRunning else { return }
-        process.terminate()
-        // A hung helper must not prevent cancellation or retain the pipe readers forever.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-            if process.isRunning { _ = Darwin.kill(process.processIdentifier, SIGKILL) }
+        queue.async {
+            self.cancelled = true
+            self.stop(throwing: CancellationError())
         }
     }
-    func run(executable: URL, input: Data, timeout: TimeInterval) throws -> GraphQLResponse {
+
+    func run(executable: URL, excluding folder: URL?, input: Data, timeout: TimeInterval) async throws
+        -> GraphQLResponse
+    {
+        // Checks the path again before launch.
+        guard let checked = GHClient.checkedExecutable(atPath: executable.path, excluding: folder) else {
+            throw GitHubError.executableNotFound
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async { self.start(continuation, executable: checked, input: input, timeout: timeout) }
+        }
+    }
+
+    private func start(
+        _ continuation: CheckedContinuation<GraphQLResponse, any Error>, executable: URL, input: Data,
+        timeout: TimeInterval
+    ) {
+        if cancelled { return continuation.resume(throwing: CancellationError()) }
+        self.continuation = continuation
         let p = Process()
         let stdout = Pipe()
         let stderr = Pipe()
         let stdin = Pipe()
+        // A write to a closed pipe fails with EPIPE instead of raising SIGPIPE.
+        guard fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1) != -1 else {
+            return finish(throwing: GitHubError.requestFailed)
+        }
         p.executableURL = executable
         p.arguments = ["api", "--hostname", "github.com", "graphql", "--input", "-", "--include"]
         p.standardOutput = stdout
         p.standardError = stderr
         p.standardInput = stdin
-        lock.lock()
-        if cancelled {
-            lock.unlock()
-            throw CancellationError()
+        let done = DispatchGroup()
+        done.enter()
+        p.terminationHandler = { _ in
+            self.queue.async {
+                self.exited()
+                done.leave()
+            }
+        }
+        do { try p.run() } catch {
+            p.terminationHandler = nil
+            return finish(throwing: GitHubError.requestFailed)
         }
         process = p
-        do { try p.run() } catch {
-            lock.unlock()
-            throw GitHubError.requestFailed
+        for (handle, buffer) in [(stdout.fileHandleForReading, out), (stderr.fileHandleForReading, err)] {
+            let channel = open(handle, done: done)
+            openReads += 1
+            channel.setLimit(lowWater: 1)
+            channel.read(offset: 0, length: Int.max, queue: queue) { finished, data, _ in
+                if let data { buffer.append(data) }
+                guard finished else { return }
+                self.openReads -= 1
+                self.ended(channel, done: done)
+            }
         }
-        lock.unlock()
-        let out = DataBuffer()
-        let err = DataBuffer()
-        let group = DispatchGroup()
-        group.enter()
-        DispatchQueue.global().async {
-            out.drain(stdout.fileHandleForReading)
-            group.leave()
+        let writer = open(stdin.fileHandleForWriting, done: done)
+        writer.write(offset: 0, data: input.withUnsafeBytes { DispatchData(bytes: $0) }, queue: queue) {
+            finished, _, error in
+            guard finished else { return }
+            self.wroteInput = error == 0
+            self.ended(writer, done: done)
         }
-        group.enter()
-        DispatchQueue.global().async {
-            err.drain(stderr.fileHandleForReading)
-            group.leave()
+        queue.asyncAfter(deadline: .now() + timeout) { [weak self] in self?.stop(throwing: GitHubError.timedOut) }
+        done.notify(queue: queue) { self.complete(status: p.terminationStatus) }
+    }
+
+    /// A channel that closes `handle` once it's closed itself.
+    private func open(_ handle: FileHandle, done: DispatchGroup) -> DispatchIO {
+        done.enter()
+        let channel = DispatchIO(type: .stream, fileDescriptor: handle.fileDescriptor, queue: queue) { _ in
+            try? handle.close()
         }
-        let deadline = DispatchWorkItem { self.expire() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: deadline)
-        do {
-            try stdin.fileHandleForWriting.write(contentsOf: input)
-            try stdin.fileHandleForWriting.close()
-        } catch { try? stdin.fileHandleForWriting.close() }
-        p.waitUntilExit()
-        deadline.cancel()
-        group.wait()
-        lock.lock()
-        let wasCancelled = cancelled
-        let wasExpired = expired
+        channels.append(channel)
+        return channel
+    }
+
+    private func ended(_ channel: DispatchIO, done: DispatchGroup) {
+        channel.close()
+        done.leave()
+    }
+
+    /// Gives gh's output a second to end once gh exits, and signals nothing from then on.
+    private func exited() {
         process = nil
-        lock.unlock()
-        if wasCancelled { throw CancellationError() }
-        if wasExpired { throw GitHubError.timedOut }
+        queue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.lingered() }
+    }
+
+    /// Stops reading output that something gh left behind holds open, and keeps the output gh wrote.
+    private func lingered() {
+        guard openReads > 0, continuation != nil else { return }
+        for channel in channels { channel.close(flags: .stop) }
+    }
+
+    /// Ends gh and its process group, closes every pipe, and fails the request.
+    private func stop(throwing error: any Error) {
+        guard continuation != nil else { return }
+        if let process { Self.end(process) }
+        for channel in channels { channel.close(flags: .stop) }
+        finish(throwing: error)
+    }
+
+    private func finish(throwing error: any Error) {
+        continuation?.resume(throwing: error)
+        continuation = nil
+    }
+
+    private func complete(status: Int32) {
+        guard let continuation else { return }
+        self.continuation = nil
+        continuation.resume(with: Result { try response(status: status) })
+    }
+
+    private func response(status: Int32) throws -> GraphQLResponse {
         let raw = try out.result()
         // Inspect only known authentication markers; never return stderr or private API text.
-        if raw.isEmpty {
+        if raw.isEmpty || !wroteInput {
             let marker = (try? err.result()).flatMap { String(data: $0, encoding: .utf8) }?.lowercased() ?? ""
             if marker.contains("gh auth login") || marker.contains("requires authentication")
                 || marker.contains("http 401")
@@ -219,8 +271,15 @@ private final class ProcessControl: @unchecked Sendable {
             }
             throw GitHubError.requestFailed
         }
-        return Self.parse(raw, exitCode: p.terminationStatus)
+        return Self.parse(raw, exitCode: status)
     }
+
+    /// Kills gh's process group while gh still runs.
+    private static func end(_ process: Process) {
+        guard process.isRunning else { return }
+        _ = killpg(process.processIdentifier, SIGKILL)
+    }
+
     static func parse(_ raw: Data, exitCode: Int32) -> GraphQLResponse {
         guard let text = String(data: raw, encoding: .utf8), text.hasPrefix("HTTP/") else {
             return .init(body: raw, exitCode: exitCode)

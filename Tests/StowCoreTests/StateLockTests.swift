@@ -64,10 +64,154 @@ final class StateLockTests: XCTestCase {
         let target = directory.appendingPathComponent("elsewhere")
         try FileManager.default.createSymbolicLink(
             at: directory.appendingPathComponent(StateLock.filename), withDestinationURL: target)
-        guard case .unavailable = StateLock.acquire(forStateAt: directory.appendingPathComponent("state.json")) else {
-            return XCTFail("A symlinked lock path must not be used")
-        }
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: directory.appendingPathComponent("state.json"))), "failed")
         XCTAssertFalse(FileManager.default.fileExists(atPath: target.path))
+    }
+
+    func testFolderOrFifoAtTheLockPathFails() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(
+            at: directory.appendingPathComponent("folder.lock"), withIntermediateDirectories: false)
+        XCTAssertEqual(kind(StateLock.acquire(named: "folder.lock", in: directory)), "failed")
+        // A FIFO there fails too.
+        XCTAssertEqual(mkfifo(directory.appendingPathComponent("fifo.lock").path, 0o600), 0)
+        XCTAssertEqual(kind(StateLock.acquire(named: "fifo.lock", in: directory)), "failed")
+    }
+
+    func testHardLinkAtTheLockPathFailsAndLeavesItsFileAlone() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let elsewhere = directory.appendingPathComponent("elsewhere")
+        XCTAssertTrue(
+            FileManager.default.createFile(
+                atPath: elsewhere.path, contents: Data("kept".utf8), attributes: [.posixPermissions: 0o644]))
+        XCTAssertEqual(link(elsewhere.path, directory.appendingPathComponent(StateLock.filename).path), 0)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: directory.appendingPathComponent("state.json"))), "failed")
+        let mode = try FileManager.default.attributesOfItem(atPath: elsewhere.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(mode?.intValue, 0o644)
+        let other = open(elsewhere.path, O_RDWR | O_CLOEXEC | O_EXLOCK | O_NONBLOCK)
+        XCTAssertGreaterThanOrEqual(other, 0, "The linked file must not stay locked")
+        close(other)
+    }
+
+    func testLockExcludesBuildsThatLockWhileOpening() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent(StateLock.filename).path
+        // Earlier builds take the lock with open(O_EXLOCK).
+        func openLocked() -> (descriptor: Int32, error: Int32) {
+            let descriptor = open(path, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC | O_EXLOCK | O_NONBLOCK, 0o600)
+            return (descriptor, errno)
+        }
+        let earlier = openLocked()
+        XCTAssertGreaterThanOrEqual(earlier.descriptor, 0)
+        XCTAssertEqual(kind(StateLock.acquire(named: StateLock.filename, in: directory)), "held")
+        close(earlier.descriptor)
+        guard case .acquired(let lock) = StateLock.acquire(named: StateLock.filename, in: directory) else {
+            return XCTFail("The lock must be free once the earlier build closes it")
+        }
+        let refused = openLocked()
+        XCTAssertEqual(refused.descriptor, -1)
+        XCTAssertEqual(refused.error, EWOULDBLOCK)
+        lock.release()
+        let after = openLocked()
+        XCTAssertGreaterThanOrEqual(after.descriptor, 0)
+        close(after.descriptor)
+    }
+
+    func testFolderThatCannotBeWrittenIsUnavailableUntilItHasALockFile() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let state = directory.appendingPathComponent("state.json")
+        func setMode(_ mode: Int) throws {
+            try FileManager.default.setAttributes([.posixPermissions: mode], ofItemAtPath: directory.path)
+        }
+        defer { try? setMode(0o700) }
+        try setMode(0o500)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "unavailable")
+        let missing = directory.appendingPathComponent("missing/state.json")
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: missing)), "unavailable")
+        // A lock file made while the folder could be written still locks.
+        try setMode(0o700)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "acquired")
+        try setMode(0o500)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "acquired")
+        // This user's lock file that can't be written is unavailable too.
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o400], ofItemAtPath: directory.appendingPathComponent(StateLock.filename).path)
+        XCTAssertEqual(kind(StateLock.acquire(forStateAt: state)), "unavailable")
+    }
+
+    func testFolderThatIsNotARealFolderIsUnavailable() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("file")
+        XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: nil))
+        let target = directory.appendingPathComponent("target", isDirectory: true)
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: false)
+        let link = directory.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+        let closed = directory.appendingPathComponent("closed", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: closed.appendingPathComponent("Stow"), withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: closed.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: closed.path) }
+        for folder in [file, link, closed.appendingPathComponent("Stow")] {
+            let outcome = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
+            XCTAssertEqual(kind(outcome), "unavailable", folder.lastPathComponent)
+        }
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: target.path), [])
+    }
+
+    func testOpenErrorsAreUnavailableOnlyWhenNothingElseIsAtTheLockPath() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let missing = directory.appendingPathComponent("missing.lock").path
+        for code in [EROFS, EACCES, EPERM] {
+            XCTAssertEqual(kind(StateLock.outcome(ofOpenError: code, at: missing)), "unavailable", "errno \(code)")
+        }
+        for code in [ELOOP, EISDIR, EIO, ENOSPC, ENOENT, ENXIO] {
+            XCTAssertEqual(kind(StateLock.outcome(ofOpenError: code, at: missing)), "failed", "errno \(code)")
+        }
+        let own = directory.appendingPathComponent("own.lock")
+        XCTAssertTrue(FileManager.default.createFile(atPath: own.path, contents: nil))
+        XCTAssertEqual(kind(StateLock.outcome(ofOpenError: EACCES, at: own.path)), "unavailable")
+        XCTAssertEqual(kind(StateLock.outcome(ofOpenError: EACCES, at: own.path, owner: getuid() + 1)), "failed")
+        let folder = directory.appendingPathComponent("folder.lock")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+        let symlink = directory.appendingPathComponent("link.lock")
+        try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: own)
+        let hardLink = directory.appendingPathComponent("hard.lock")
+        XCTAssertEqual(link(own.path, hardLink.path), 0)
+        XCTAssertEqual(mkfifo(directory.appendingPathComponent("fifo.lock").path, 0o600), 0)
+        for odd in [folder, symlink, hardLink, directory.appendingPathComponent("fifo.lock")] {
+            XCTAssertEqual(kind(StateLock.outcome(ofOpenError: EACCES, at: odd.path)), "failed", odd.lastPathComponent)
+        }
+    }
+
+    func testLockFileWhoseModeCannotBeSetFails() throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for code in [ENOTSUP, EOPNOTSUPP, EPERM] {
+            let outcome = StateLock.acquire(named: "a.lock", in: directory) { _ in
+                errno = code
+                return -1
+            }
+            XCTAssertEqual(kind(outcome), "failed", "errno \(code)")
+        }
+        // The failed attempts dropped the lock they took.
+        XCTAssertEqual(kind(StateLock.acquire(named: "a.lock", in: directory)), "acquired")
+    }
+
+    func testOnlyMissingLockSupportIsUnavailable() {
+        XCTAssertEqual(kind(StateLock.outcome(ofLockError: EWOULDBLOCK)), "held")
+        for code in [ENOTSUP, EOPNOTSUPP, ENOLCK] {
+            XCTAssertEqual(kind(StateLock.outcome(ofLockError: code)), "unavailable", "errno \(code)")
+        }
+        for code in [ELOOP, EISDIR, EACCES, EPERM, EROFS, EIO, ENOSPC, ENOENT] {
+            XCTAssertEqual(kind(StateLock.outcome(ofLockError: code)), "failed", "errno \(code)")
+        }
     }
 
     func testNamedLocksAreIndependent() throws {
@@ -95,5 +239,16 @@ final class StateLockTests: XCTestCase {
             return XCTFail("The lock must be available again after release")
         }
         again.release()
+    }
+
+    private func kind(_ outcome: StateLock.Outcome) -> String {
+        switch outcome {
+        case .acquired(let lock):
+            lock.release()
+            return "acquired"
+        case .heldByAnotherProcess: return "held"
+        case .unavailable: return "unavailable"
+        case .failed: return "failed"
+        }
     }
 }

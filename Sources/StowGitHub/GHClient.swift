@@ -22,9 +22,8 @@ extension GHClient {
         let selectors: [String: String] = [
             "contexts":
                 "statusCheckRollup { contexts(first:100, after:$cursor) { nodes { __typename ... on CheckRun { name conclusion status detailsUrl } ... on StatusContext { context state targetUrl } } \(Self.pageInfo) } }",
-            // Also carries the last three commits.
             "latestReviews":
-                "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) } \(Self.recentCommits)",
+                "latestReviews(first:100, after:$cursor) { nodes { author { login } state body submittedAt } \(Self.pageInfo) }",
             "reviewThreads":
                 "reviewThreads(first:100, after:$cursor) { nodes { isResolved comments(last:1) { nodes { body createdAt author { login } } } } \(Self.pageInfo) }",
         ]
@@ -46,10 +45,13 @@ extension GHClient {
             var connectionComplete = true
             do {
                 repeat {
+                    // The first reviews page also carries the last three commits.
+                    let fields =
+                        name == "latestReviews" && pages == 0 ? "\(selection) \(Self.recentCommits)" : selection
                     let page = try await request(
                         """
                         query StowDetails($owner:String!,$repository:String!,$number:Int!,$cursor:String) {
-                          repository(owner:$owner,name:$repository) { pullRequest(number:$number) { \(selection) } }
+                          repository(owner:$owner,name:$repository) { pullRequest(number:$number) { \(fields) } }
                         }
                         """,
                         [
@@ -263,32 +265,46 @@ public actor GHClient: GitHubClient {
     private let transport: (any GraphQLTransport)?
     private var retryAt: Date?
     private let maxPages = 200
-    public init(executableURL: URL? = nil) {
-        transport = (executableURL ?? Self.discoverExecutable()).map { GHProcessTransport(executableURL: $0) }
+    /// Without a usable `gh` outside `folder`, every request fails with `executableNotFound`.
+    public init(executableURL: URL? = nil, excluding folder: URL? = nil) {
+        transport = (executableURL ?? Self.discoverExecutable(excluding: folder)).map {
+            GHProcessTransport(executableURL: $0, excluding: folder)
+        }
     }
     public init(transport: any GraphQLTransport) { self.transport = transport }
 
-    public nonisolated static func discoverExecutable(preferredPath: String? = nil) -> URL? {
+    public nonisolated static func discoverExecutable(preferredPath: String? = nil, excluding folder: URL? = nil)
+        -> URL?
+    {
         let explicit = preferredPath.map { [$0] } ?? []
         let paths =
             explicit + ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
             + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map { "\($0)/gh" }
-        return paths.first(where: isUsableExecutable(atPath:)).map { URL(fileURLWithPath: $0) }
+        return paths.first { isUsableExecutable(atPath: $0, excluding: folder) }.map { URL(fileURLWithPath: $0) }
     }
 
-    /// Stow launches only an absolute path named `gh` that resolves to a regular executable file
-    /// other users cannot modify. Anything else is ignored, whatever saved state or a restore says.
-    public nonisolated static func isUsableExecutable(atPath path: String) -> Bool {
-        guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return false }
+    /// Stow launches only an absolute path named `gh` that resolves to a regular executable file whose permission
+    /// bits allow no writes by its group or other users and no setuid or setgid, outside `folder` both where it is
+    /// and where it leads. Anything else is ignored, whatever saved state or a restore says.
+    public nonisolated static func isUsableExecutable(atPath path: String, excluding folder: URL? = nil) -> Bool {
+        checkedExecutable(atPath: path, excluding: folder) != nil
+    }
+
+    /// The file `path` resolves to, when `isUsableExecutable` accepts it.
+    nonisolated static func checkedExecutable(atPath path: String, excluding folder: URL?) -> URL? {
+        guard path.hasPrefix("/"), (path as NSString).lastPathComponent == "gh" else { return nil }
         // A link named gh must also lead to a program named gh, as Homebrew and installer links do.
         let resolved = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
         var info = stat()
         guard (resolved as NSString).lastPathComponent == "gh",
             resolved.withCString({ Darwin.lstat($0, &info) }) == 0,
             (info.st_mode & S_IFMT) == S_IFREG,
-            info.st_mode & (S_IWGRP | S_IWOTH) == 0
-        else { return false }
-        return FileManager.default.isExecutableFile(atPath: resolved)
+            info.st_mode & (S_IWGRP | S_IWOTH | S_ISUID | S_ISGID) == 0
+        else { return nil }
+        if let folder, [path, resolved].contains(where: { URL(fileURLWithPath: $0).isInside(folder) }) {
+            return nil
+        }
+        return FileManager.default.isExecutableFile(atPath: resolved) ? URL(fileURLWithPath: resolved) : nil
     }
 
     private struct Envelope {
