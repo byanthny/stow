@@ -55,6 +55,20 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 Current counts, at 0.3.0: `./scripts/test.sh` runs 383 tests. The package suite in `Tests/` has 204 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 132 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
 
+GitHub request measurements on 2026-11-12, macOS 26.5, `gh` 2.103.3, against an account with 57 open authored pull requests, none with more than one review request, and no pins. Each row is one read-only `gh api graphql` query of the authored list with Stow's card fields, sent between another local client's bursts. Only numbers were kept: time, status, `rateLimit { cost nodeCount }`, the `X-RateLimit-*` headers, and `gh api rate_limit` read before and after.
+
+| List query (pull requests × review requests) | Time | `nodeCount` | `X-RateLimit-Used` vs `rate_limit` used |
+| --- | --- | --- | --- |
+| Before: 100 × 100 | 8.8 s, 7.1 s | 10,100 | 3,117 vs 3,117; 24 vs 2 |
+| 100 × 10 | refused twice in 0.3 s; then 502 after 10.9 s | — | 5,000 vs 3,117 on both refusals |
+| 50 × 10 | 8.2 s | 550 | 23 vs 1 |
+| After: 25 × 10 | 4.8 s, 3.6 s | 275 | 1 vs 1; 29 vs 2 |
+
+- Every query that answered cost 1. Time grows with the number of pull requests, not review requests: 50 or more take 7 to 11 seconds, near the point where GitHub returns an HTML 502 page instead, and 25 take about 4.
+- The header didn't follow the query's shape. Responses carried one of two counters with different reset times, and only one matched `rate_limit`. The two refusals were HTTP 200 with a `RATE_LIMIT` error and no data while `rate_limit` showed 1,883 left; the 502 and the refusals didn't move `rate_limit`.
+- Requests for a refresh where every card is listed: 5 before (the list, the search, and three by-ID batches for 57 known cards), 4 after (three list pages and the search). With 25 or fewer authored pull requests, 2.
+- The measurement sent 8 queries; the 5 that answered cost 5 points.
+
 Release 0.3.0 validation on 2026-11-05, macOS 26.5 (Apple silicon), Xcode 26.6, with live notes, the update check, and the audit fixes merged:
 
 - `./scripts/release.sh 0.3.0` ran `./scripts/test.sh`, which passed: 204 XCTest and 47 Swift Testing cases in the package, and 131 hosted cases. New coverage includes styling a 64 KB line of unclosed marks within 2 seconds (24 seconds before the fix), repository colors at 4.5:1 on 268 surfaces, a new note taking focus once, Settings' level after the last pinned note closes, reviews on other people's cards, release pages tied to their tag, and a stable release keeping pre-releases away.
