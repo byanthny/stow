@@ -135,7 +135,6 @@ private final class ProcessControl: @unchecked Sendable {
     private var process: Process?
     private var channels: [DispatchIO] = []
     private var openReads = 0
-    private var hasExited = false
     private var cancelled = false
     private var wroteInput = false
     private let out = DataBuffer()
@@ -229,28 +228,22 @@ private final class ProcessControl: @unchecked Sendable {
         done.leave()
     }
 
-    /// Looks again shortly after gh exits, once its output has had time to reach the end.
+    /// Gives gh's output a second to end once gh exits, and signals nothing from then on.
     private func exited() {
-        hasExited = true
-        guard let process else { return }
-        self.process = nil
-        queue.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.lingered(process) }
+        process = nil
+        queue.asyncAfter(deadline: .now() + 1) { [weak self] in self?.lingered() }
     }
 
-    /// Ends what gh left holding its output open, then stops reading and keeps the output gh wrote.
-    private func lingered(_ process: Process) {
+    /// Stops reading output that something gh left behind holds open, and keeps the output gh wrote.
+    private func lingered() {
         guard openReads > 0, continuation != nil else { return }
-        Self.end(process)
-        queue.asyncAfter(deadline: .now() + 1) { [weak self] in
-            guard let self, openReads > 0 else { return }
-            for channel in channels { channel.close(flags: .stop) }
-        }
+        for channel in channels { channel.close(flags: .stop) }
     }
 
     /// Ends gh and its process group, closes every pipe, and fails the request.
     private func stop(throwing error: any Error) {
         guard continuation != nil else { return }
-        if !hasExited, let process { Self.end(process) }
+        if let process { Self.end(process) }
         for channel in channels { channel.close(flags: .stop) }
         finish(throwing: error)
     }
@@ -281,15 +274,11 @@ private final class ProcessControl: @unchecked Sendable {
         return Self.parse(raw, exitCode: status)
     }
 
-    /// Sends SIGTERM to gh and its process group, then SIGKILL a second later to whatever is left.
+    /// Kills gh and its process group while gh still runs.
     private static func end(_ process: Process) {
+        guard process.isRunning else { return }
         let pid = process.processIdentifier
-        let grouped = killpg(pid, SIGTERM) == 0 || errno != ESRCH
-        if process.isRunning { process.terminate() }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
-            if grouped { _ = killpg(pid, SIGKILL) }
-            if process.isRunning { _ = Darwin.kill(pid, SIGKILL) }
-        }
+        if killpg(pid, SIGKILL) != 0 { _ = Darwin.kill(pid, SIGKILL) }
     }
 
     static func parse(_ raw: Data, exitCode: Int32) -> GraphQLResponse {

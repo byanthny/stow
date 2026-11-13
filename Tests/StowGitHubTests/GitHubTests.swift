@@ -597,16 +597,16 @@ struct GHProcessTests {
         #expect(await allGone(pids))
     }
 
-    @Test(.timeLimit(.minutes(1))) func childLeftBehindIsEndedWhenGHExits() async throws {
-        let gh = try fakeGH(#"sleep 30 & echo $! > "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
+    @Test(.timeLimit(.minutes(1))) func childLeftBehindIsLeftAloneWhenGHExits() async throws {
+        // The child holds gh's output open past the deadline.
+        let gh = try fakeGH(#"sleep 120 & echo $! > "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
         defer { cleanUp(gh) }
-        let started = ContinuousClock.now
-        let response = try await request(gh, timeout: 5)
-        #expect(ContinuousClock.now - started < .seconds(3))
+        let response = try await request(gh, timeout: 30)
         #expect(response.body == Data(#"{"data":{}}"#.utf8))
         let pids = children(of: gh)
         #expect(!pids.isEmpty)
-        #expect(await allGone(pids))
+        try await Task.sleep(for: .seconds(2))
+        #expect(pids.allSatisfy { kill($0, 0) == 0 }, "Nothing is signaled once gh has exited")
     }
 
     @Test(.timeLimit(.minutes(1))) func outputHeldOutsideTheGroupStillReturnsTheResponse() async throws {
