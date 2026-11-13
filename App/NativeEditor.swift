@@ -334,9 +334,10 @@ struct NativeEditor: NSViewRepresentable {
                     self, selector: #selector(windowKeyChanged(_:)), name: name, object: editor.window)
             }
             clickMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak editor] event in
+                // Ends editing unless the window would send the click to the note's own views.
                 if let editor, let window = editor.window, event.window === window, window.firstResponder === editor,
                     let scroll = editor.enclosingScrollView,
-                    !scroll.bounds.contains(scroll.convert(event.locationInWindow, from: nil))
+                    window.contentView?.hitTest(event.locationInWindow)?.isDescendant(of: scroll) != true
                 {
                     window.makeFirstResponder(nil)
                 }
@@ -397,16 +398,42 @@ final class NoteTextView: NSTextView {
     }
 
     private func link(at event: NSEvent) -> URL? {
-        link(atInsertionPoint: characterIndexForInsertion(at: convert(event.locationInWindow, from: nil)))
+        link(at: convert(event.locationInWindow, from: nil))
     }
 
-    /// The link on either side of an insertion point, so a click anywhere on a link's characters finds it.
-    func link(atInsertionPoint index: Int) -> URL? {
+    /// The link whose laid-out text lies under `point`, in this view's coordinates.
+    func link(at point: NSPoint) -> URL? {
         guard let storage = textStorage else { return nil }
+        let index = characterIndexForInsertion(at: point)
+        let whole = NSRange(location: 0, length: storage.length)
+        // The nearest insertion point lies on either side of the character under the point.
         for candidate in [index, index - 1] where candidate >= 0 && candidate < storage.length {
-            if let url = storage.attribute(.noteLink, at: candidate, effectiveRange: nil) as? URL { return url }
+            var range = NSRange()
+            if let url = storage.attribute(.noteLink, at: candidate, longestEffectiveRange: &range, in: whole) as? URL,
+                text(in: range, contains: point)
+            {
+                return url
+            }
         }
         return nil
+    }
+
+    /// Whether `point`, in this view's coordinates, lies on the text of `range`, measured by TextKit 2's layout.
+    private func text(in range: NSRange, contains point: NSPoint) -> Bool {
+        guard let layout = textLayoutManager, let content = layout.textContentManager,
+            let start = content.location(content.documentRange.location, offsetBy: range.location),
+            let end = content.location(start, offsetBy: range.length),
+            let textRange = NSTextRange(location: start, end: end)
+        else { return false }
+        let origin = textContainerOrigin
+        let target = NSPoint(x: point.x - origin.x, y: point.y - origin.y)
+        layout.ensureLayout(for: textRange)
+        var contains = false
+        layout.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, segment, _, _ in
+            contains = segment.contains(target)
+            return !contains
+        }
+        return contains
     }
 }
 
