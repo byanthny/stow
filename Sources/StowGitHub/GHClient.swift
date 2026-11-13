@@ -368,7 +368,7 @@ public actor GHClient: GitHubClient {
     private static let pageInfo = "pageInfo { hasNextPage endCursor }"
     private static let recentCommits = "commits(last:3) { nodes { commit { messageHeadline committedDate } } }"
     /// Authored pull requests per page.
-    static let authoredPageSize = 25
+    private static let authoredPageSize = 25
     /// Review requests per pull request in a list; `StowReviewerPage` fetches the rest.
     private static let reviewRequests =
         "reviewRequests(first:10) { nodes { requestedReviewer { __typename ... on User { id login } ... on Team { id name } } } \(pageInfo) }"
