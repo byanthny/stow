@@ -362,8 +362,11 @@ public actor GHClient: GitHubClient {
 
     private static let pageInfo = "pageInfo { hasNextPage endCursor }"
     private static let recentCommits = "commits(last:3) { nodes { commit { messageHeadline committedDate } } }"
+    /// Authored pull requests per page.
+    static let authoredPageSize = 25
+    /// Review requests per pull request in a list; `StowReviewerPage` fetches the rest.
     private static let reviewRequests =
-        "reviewRequests(first:100) { nodes { requestedReviewer { __typename ... on User { id login } ... on Team { id name } } } \(pageInfo) }"
+        "reviewRequests(first:10) { nodes { requestedReviewer { __typename ... on User { id login } ... on Team { id name } } } \(pageInfo) }"
     private static let fields = """
         id number title url state isDraft mergeable mergeStateStatus reviewDecision createdAt updatedAt
         author { login } repository { name owner { login } }
@@ -377,7 +380,7 @@ public actor GHClient: GitHubClient {
         let now = Date.now
         let first = try await request(
             """
-            query StowViewer { viewer { id login pullRequests(first:100, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
+            query StowViewer { viewer { id login pullRequests(first:\(Self.authoredPageSize), states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
             """)
         guard let login = first.data["viewer"]["login"].string, let viewerID = first.data["viewer"]["id"].string else {
             throw GitHubError.invalidResponse
@@ -410,7 +413,7 @@ public actor GHClient: GitHubClient {
                 }
                 let page = try await request(
                     """
-                    query StowAuthored($cursor:String!) { viewer { pullRequests(first:100, after:$cursor, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
+                    query StowAuthored($cursor:String!) { viewer { pullRequests(first:\(Self.authoredPageSize), after:$cursor, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
                     """, ["cursor": .string(cursor)])
                 connection = page.data["viewer"]["pullRequests"]
                 complete = complete && !page.hasErrors && Self.validConnection(connection)

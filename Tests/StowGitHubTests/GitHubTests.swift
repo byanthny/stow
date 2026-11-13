@@ -63,6 +63,17 @@ struct GitHubTests {
         object["data"] = .object(data)
         return .object(object)
     }
+    /// The fixture's pull request as `example/<repository>#<number>`, with `changes` applied.
+    private func pullRequest(_ repository: String, _ number: Int, _ changes: [String: GraphQLValue] = [:]) throws
+        -> GraphQLValue
+    {
+        var node = try fixture()["data"]["viewer"]["pullRequests"]["nodes"].array[0].object
+        node["id"] = .string("synthetic-\(repository)-\(number)")
+        node["number"] = .integer(number)
+        node["repository"] = .object(["name": .string(repository), "owner": .object(["login": .string("example")])])
+        node.merge(changes) { _, new in new }
+        return .object(node)
+    }
 
     @Test func explicitNullRollupAndReviewDecisionAreKnown() async throws {
         let transport = ScriptedTransport([
@@ -174,6 +185,50 @@ struct GitHubTests {
         let result = try await GHClient(transport: transport).refresh(pins: [], previous: [])
         #expect(result.isComplete)
         #expect(result.snapshots.first?.hasDirectReviewRequest == true)
+        #expect(await transport.count == 3)
+    }
+
+    @Test func listsAskForSmallPagesAndPageReviewRequestsOnward() async throws {
+        let teams = (0..<10).map { index in
+            GraphQLValue.object([
+                "requestedReviewer": .object([
+                    "__typename": .string("Team"), "id": .string("team-\(index)"),
+                    "name": .string("Synthetic team \(index)"),
+                ])
+            ])
+        }
+        let requested = try pullRequest(
+            "requested", 5,
+            [
+                "author": .object(["login": .string("synthetic-author")]),
+                "reviewRequests": .object([
+                    "nodes": .array(teams),
+                    "pageInfo": .object(["hasNextPage": .bool(true), "endCursor": .string("review-page-2")]),
+                ]),
+            ])
+        let search = GraphQLValue.object([
+            "data": .object([
+                "search": .object([
+                    "issueCount": .integer(1), "nodes": .array([requested]),
+                    "pageInfo": .object(["hasNextPage": .bool(false), "endCursor": .null]),
+                ])
+            ])
+        ])
+        let page = json(
+            #"{"data":{"node":{"reviewRequests":{"nodes":[{"requestedReviewer":{"__typename":"User","id":"viewer-synthetic","login":"synthetic-viewer"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        )
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", try encoded(search)),
+            .init("StowReviewerPage", page, cursor: "review-page-2"),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [], previous: [])
+        #expect(result.isComplete)
+        let card = try #require(result.snapshots.first { $0.reference.repository == "requested" })
+        #expect(card.hasDirectReviewRequest == true)
+        #expect(card.readinessIsComplete)
+        let list = try #require(await transport.queries.first)
+        #expect(list.contains("pullRequests(first:25,"))
+        #expect(list.contains("reviewRequests(first:10)"))
         #expect(await transport.count == 3)
     }
 
