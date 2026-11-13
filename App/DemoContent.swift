@@ -81,7 +81,18 @@ enum DemoContent {
                 isDraft: false, mergeable: "MERGEABLE", mergeStateStatus: "BEHIND", reviewDecision: "APPROVED",
                 checksState: "SUCCESS", checksKnown: true, readinessIsComplete: true,
                 updatedAt: .now.addingTimeInterval(-14400)),
+            // Shows the Merged group under Waiting.
+            .init(
+                reference: PullRequestReference(owner: "example", repository: "toolkit", number: 6),
+                title: "Speed up launch", authorLogin: "developer", isViewerAuthor: true, state: "MERGED",
+                isDraft: false, reviewDecision: "APPROVED", checksState: "SUCCESS", checksKnown: true,
+                updatedAt: .now.addingTimeInterval(-2400), terminalObservedAt: .now),
         ]
+        // Cards show as cached until a refresh, except one fresh approved card that shows the green outline.
+        for index in state.pullRequests.indices where state.pullRequests[index].reference != second {
+            state.pullRequests[index].isStale = true
+            state.pullRequests[index].readinessIsComplete = false
+        }
         state.notes = [
             Note(
                 markdown:
