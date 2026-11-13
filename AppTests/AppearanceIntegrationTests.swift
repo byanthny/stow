@@ -320,22 +320,23 @@ final class AppearanceIntegrationTests: XCTestCase {
             defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
+        // A header pinned over the board's top while the note scrolls under it, as a section header stays.
         let board = ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
-                    Color.clear.frame(height: 600)
-                } header: {
-                    Text(verbatim: "Synthetic section").frame(maxWidth: .infinity, minHeight: 32).background(.gray)
-                }
+            VStack(spacing: 0) {
+                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                Color.clear.frame(height: 600)
             }
-        }.themed(by: store.theme)
+        }
+        .overlay(alignment: .top) {
+            Text(verbatim: "Synthetic section").frame(maxWidth: .infinity, minHeight: 32).background(.gray)
+        }
+        .themed(by: store.theme)
         let host = NSHostingView(rootView: board)
         window.contentView = host
         window.orderFront(nil)
         await settle(host)
         let laidOut = await waitUntil(host) { !self.noteScrollViews(in: host).isEmpty }
-        XCTAssertTrue(laidOut, "The lazy board lays out the note")
+        XCTAssertTrue(laidOut, "The board lays out the note")
         await settle(host)
         let scroll = try XCTUnwrap(noteScrollViews(in: host).first)
         let editor = try XCTUnwrap(scroll.documentView as? NSTextView)
