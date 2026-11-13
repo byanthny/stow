@@ -99,11 +99,11 @@ struct SettingsView: View {
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        guard GHClient.isUsableExecutable(atPath: url.path) else {
+        guard GHClient.isUsableExecutable(atPath: url.path, excluding: store.dataFolder) else {
             let alert = NSAlert()
             alert.messageText = "Stow can't use that file"
             alert.informativeText =
-                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh and must not be writable by other users."
+                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh, not setuid or setgid, not writable by its group or other users, and outside Stow's data folder."
             alert.addButton(withTitle: "OK")
             alert.runModal()
             return
@@ -229,10 +229,10 @@ private struct BoardSettingsView: View {
 private struct UpdateSettingsView: View {
     let profile: ProfileHandle
     @Environment(\.stowTheme) private var theme
-    @State private var problem: String?
 
     var body: some View {
-        let explanation = "Asks GitHub once a day whether a newer Stow is out. Nothing is downloaded."
+        let explanation =
+            "Asks GitHub once a day whether a newer Stow is out, and again within the hour after a check fails. Nothing is downloaded."
         VStack(alignment: .leading, spacing: 10) {
             Text("Updates").font(theme.font(size: 14, weight: .semibold))
             SettingsToggle(
@@ -242,7 +242,7 @@ private struct UpdateSettingsView: View {
                     set: { checks in setChecksForUpdates(checks) }))
             Text((profile.manager?.profiles.count ?? 1) > 1 ? explanation + " Applies to every profile." : explanation)
                 .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            if let problem {
+            if let problem = profile.manager?.updates.problem {
                 Text(problem).font(theme.font(size: 11)).foregroundStyle(.stowRed)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -251,14 +251,7 @@ private struct UpdateSettingsView: View {
 
     private func setChecksForUpdates(_ checks: Bool) {
         guard let updates = profile.manager?.updates else { return }
-        problem = nil
-        Task {
-            do {
-                try await updates.setChecksForUpdates(checks)
-            } catch {
-                problem = profileProblem(error, name: "Stow")
-            }
-        }
+        Task { try? await updates.setChecksForUpdates(checks) }
     }
 }
 

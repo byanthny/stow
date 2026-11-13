@@ -18,11 +18,13 @@ private actor ScriptedTransport: GraphQLTransport {
     }
     var steps: [Step]
     private(set) var count = 0
+    private(set) var queries: [String] = []
     init(_ steps: [Step]) { self.steps = steps }
     func execute(query: String, variables: [String: GraphQLValue]) async throws -> GraphQLResponse {
         guard !steps.isEmpty else { throw UnexpectedRequest() }
         let step = steps.removeFirst()
         count += 1
+        queries.append(query)
         #expect(query.contains(step.contains))
         if let cursor = step.cursor { #expect(variables["cursor"] == .string(cursor)) }
         return step.response
@@ -274,6 +276,29 @@ struct GitHubTests {
         #expect(await transport.count == 6)
     }
 
+    @Test func onlyTheFirstReviewsPageAsksForCommits() async throws {
+        let reviews1 = json(
+            #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[],"pageInfo":{"hasNextPage":true,"endCursor":"reviews-2"}},"commits":{"nodes":[]}}}}}"#
+        )
+        let reviews2 = json(
+            #"{"data":{"repository":{"pullRequest":{"latestReviews":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}"#
+        )
+        let threads = json(
+            #"{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}"#
+        )
+        let transport = ScriptedTransport([
+            .init("contexts", json(#"{"data":{"repository":{"pullRequest":{"statusCheckRollup":null}}}}"#)),
+            .init("latestReviews", reviews1), .init("latestReviews", reviews2, cursor: "reviews-2"),
+            .init("reviewThreads", threads),
+        ])
+        _ = try await GHClient(transport: transport).details(
+            for: .init(owner: "example", repository: "fixture", number: 1))
+        let reviewPages = await transport.queries.filter { $0.contains("latestReviews") }
+        #expect(reviewPages.count == 2)
+        #expect(reviewPages.first?.contains("commits(last:3)") == true)
+        #expect(reviewPages.last?.contains("commits") == false)
+    }
+
     @Test func lazyDetailsBoundPagesItemsNamesAndLinks() async throws {
         func checkRun(_ name: String, _ conclusion: String, url: String = "https://example.com/check") -> GraphQLValue {
             .object([
@@ -345,13 +370,85 @@ struct GitHubTests {
         let groupWritable = try file("group/gh", mode: 0o775)
         let worldWritable = try file("world/gh", mode: 0o757)
         let notExecutable = try file("plain/gh", mode: 0o644)
+        let setuid = try file("setuid/gh", mode: 0o4755)
+        let setgid = try file("setgid/gh", mode: 0o2755)
+        for (path, bit) in [(setuid, S_ISUID), (setgid, S_ISGID)] {
+            let mode = try #require(manager.attributesOfItem(atPath: path)[.posixPermissions] as? Int)
+            try #require(mode & Int(bit) != 0, "The file system kept the mode bit")
+        }
         let disguisedShell = try link("disguised/gh", to: otherName)
         let directory = root.appendingPathComponent("folder/gh").path
         try manager.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        for rejected in [otherName, groupWritable, worldWritable, notExecutable, disguisedShell, directory, "gh"] {
+        let modes = [groupWritable, worldWritable, notExecutable, setuid, setgid]
+        for rejected in [otherName, disguisedShell, directory, "gh"] + modes {
             #expect(!GHClient.isUsableExecutable(atPath: rejected), "\(rejected) must not be launched")
             #expect(GHClient.discoverExecutable(preferredPath: rejected)?.path != rejected)
         }
+    }
+
+    @Test func ghInsideTheDataFolderIsRefused() throws {
+        let manager = FileManager.default
+        let root = manager.temporaryDirectory.appendingPathComponent("StowGHFolderTests-\(UUID().uuidString)")
+        defer { try? manager.removeItem(at: root) }
+        let data = root.appendingPathComponent("data")
+        func gh(_ relative: String) throws -> String {
+            let url = root.appendingPathComponent(relative)
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("#!/bin/sh\n".utf8).write(to: url)
+            try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+            return url.path
+        }
+        func link(_ relative: String, to target: String) throws -> String {
+            let url = root.appendingPathComponent(relative)
+            try manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try manager.createSymbolicLink(atPath: url.path, withDestinationPath: target)
+            return url.path
+        }
+        let inside = try gh("data/profiles/bin/gh")
+        let outside = try gh("tools/bin/gh")
+        let dataLink = try link("data-link", to: data.path)
+        #expect(GHClient.isUsableExecutable(atPath: inside))
+        #expect(GHClient.isUsableExecutable(atPath: outside, excluding: data))
+        #expect(GHClient.discoverExecutable(preferredPath: outside, excluding: data)?.path == outside)
+        let real = try #require(realpath(inside, nil))
+        defer { free(real) }
+        // Other spellings of the same file: a different case, where the volume ignores it, and the firmlinked path.
+        let upper = root.appendingPathComponent("DATA/profiles/bin/gh").path
+        let firmlinked = "/System/Volumes/Data" + String(cString: real)
+        let spellings = (manager.fileExists(atPath: upper) ? [upper] : []) + [firmlinked]
+        let links = [try link("data/gh", to: outside), try link("elsewhere/gh", to: inside)]
+        let refused = [inside, dataLink + "/profiles/bin/gh"] + links + spellings
+        for path in refused {
+            #expect(GHClient.isUsableExecutable(atPath: path))
+            #expect(!GHClient.isUsableExecutable(atPath: path, excluding: data), "\(path) is in the data folder")
+            #expect(!GHClient.isUsableExecutable(atPath: path, excluding: URL(fileURLWithPath: dataLink)))
+            #expect(GHClient.discoverExecutable(preferredPath: path, excluding: data)?.path != path)
+        }
+        // A data folder that can't be checked refuses every gh.
+        let locked = root.appendingPathComponent("locked")
+        try manager.createDirectory(at: locked.appendingPathComponent("data"), withIntermediateDirectories: true)
+        try manager.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer { try? manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: locked.path) }
+        for folder in [root.appendingPathComponent("missing"), locked.appendingPathComponent("data")] {
+            #expect(!GHClient.isUsableExecutable(atPath: outside, excluding: folder), "\(folder.path) can't be checked")
+        }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func unusableGHIsNeverLaunched() async throws {
+        let gh = try fakeGH(#"touch "$0.ran""#)
+        let folder = gh.deletingLastPathComponent()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let client = GHClient(executableURL: gh)
+        try FileManager.default.setAttributes([.posixPermissions: 0o775], ofItemAtPath: gh.path)
+        await #expect(throws: GitHubError.executableNotFound) { try await client.refresh(pins: [], previous: []) }
+        await #expect(throws: GitHubError.executableNotFound) {
+            try await GHClient(executableURL: gh).refresh(pins: [], previous: [])
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: gh.path)
+        await #expect(throws: GitHubError.executableNotFound) {
+            try await GHClient(executableURL: gh, excluding: folder).refresh(pins: [], previous: [])
+        }
+        #expect(!FileManager.default.fileExists(atPath: gh.appendingPathExtension("ran").path))
     }
 
     @Test func inaccessibleDetailsAndUnsupportedHostsAreSafeErrors() async throws {
@@ -422,6 +519,183 @@ struct GitHubTests {
         // A refresh that cancel() missed would wait on the gate forever; opening it makes that fail instead of hang.
         await client.open()
         await #expect(throws: CancellationError.self) { try await task.value }
+    }
+}
+
+/// A synthetic `gh` shell script in a new temporary folder.
+private func fakeGH(_ body: String) throws -> URL {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("StowFakeGH-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let url = folder.appendingPathComponent("gh")
+    try Data("#!/bin/sh\n\(body)\n".utf8).write(to: url)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
+    return url
+}
+
+/// The process IDs a fake `gh` wrote to `gh.children`, one per line.
+private func children(of gh: URL) -> [pid_t] {
+    let text = (try? String(contentsOf: gh.appendingPathExtension("children"), encoding: .utf8)) ?? ""
+    return text.split(whereSeparator: \.isNewline).compactMap { pid_t($0) }
+}
+
+/// Kills the children a fake `gh` recorded that are still alive and removes its folder.
+private func cleanUp(_ gh: URL) {
+    for pid in children(of: gh) where kill(pid, 0) == 0 { kill(pid, SIGKILL) }
+    try? FileManager.default.removeItem(at: gh.deletingLastPathComponent())
+}
+
+/// Whether `condition` holds within 30 seconds.
+private func eventually(_ condition: () -> Bool) async -> Bool {
+    let deadline = ContinuousClock.now + .seconds(30)
+    while !condition() {
+        guard ContinuousClock.now < deadline else { return false }
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    return true
+}
+
+/// The number of pipes this process has open.
+private func openPipes() -> Int {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: "/dev/fd")) ?? []
+    return names.compactMap { Int32($0) }.filter { fd in
+        var info = stat()
+        return fstat(fd, &info) == 0 && info.st_mode & S_IFMT == S_IFIFO
+    }.count
+}
+
+/// Launches synthetic `gh` scripts, one test at a time.
+@Suite("StowGitHub process tests", .serialized)
+struct GHProcessTests {
+    private func request(_ gh: URL, timeout: TimeInterval, query: String = "{}") async throws -> GraphQLResponse {
+        try await GHProcessTransport(executableURL: gh, timeout: timeout).execute(query: query, variables: [:])
+    }
+
+    @Test(.timeLimit(.minutes(1))) func ghExitingWithoutReadingFailsTheRequest() async throws {
+        let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
+        defer { cleanUp(gh) }
+        // More input than a pipe holds.
+        let query = String(repeating: "#", count: 1 << 20)
+        await #expect(throws: GitHubError.requestFailed) { try await request(gh, timeout: 30, query: query) }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func theCheckedFileIsLaunchedRatherThanTheLink() async throws {
+        let gh = try fakeGH(#"printf 'HTTP/2.0 200 OK\r\n\r\n%s' "$0""#)
+        defer { cleanUp(gh) }
+        let link = gh.deletingLastPathComponent().appendingPathComponent("bin/gh")
+        try FileManager.default.createDirectory(at: link.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: gh)
+        let response = try await request(link, timeout: 30)
+        #expect(String(decoding: response.body, as: UTF8.self) == gh.resolvingSymlinksInPath().path)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func timedOutRequestLeavesNoChildAlive() async throws {
+        // The child ignores SIGTERM.
+        let gh = try fakeGH(#"(trap '' TERM; exec sleep 120) & echo $! > "$0.children"; sleep 120"#)
+        defer { cleanUp(gh) }
+        await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 5) }
+        let pids = children(of: gh)
+        #expect(!pids.isEmpty)
+        #expect(await eventually { pids.allSatisfy { kill($0, 0) == -1 } })
+    }
+
+    @Test(.timeLimit(.minutes(1))) func childLeftBehindIsLeftAloneWhenGHExits() async throws {
+        // The child holds gh's output open past the deadline.
+        let gh = try fakeGH(#"sleep 120 & echo $! > "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'"#)
+        defer { cleanUp(gh) }
+        let response = try await request(gh, timeout: 30)
+        #expect(response.body == Data(#"{"data":{}}"#.utf8))
+        let pids = children(of: gh)
+        #expect(!pids.isEmpty)
+        try await Task.sleep(for: .seconds(2))
+        #expect(pids.allSatisfy { kill($0, 0) == 0 }, "Nothing is signaled once gh has exited")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func outputHeldOutsideTheGroupStillReturnsTheResponse() async throws {
+        // gh answers and exits once its child has left the process group, still holding the output open.
+        let gh = try fakeGH(
+            #"""
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' \
+              "$0.children" &
+            while [ ! -s "$0.children" ]; do sleep 0.01; done
+            printf 'HTTP/2.0 200 OK\r\n\r\n{"data":{}}'
+            """#)
+        defer { cleanUp(gh) }
+        let response = try await request(gh, timeout: 30)
+        #expect(response.body == Data(#"{"data":{}}"#.utf8))
+        #expect(response.exitCode == 0)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func ordinaryRequestsLeaveGHsOtherChildrenAlone() async throws {
+        // Each child holds none of gh's pipes.
+        let gh = try fakeGH(
+            #"sleep 120 </dev/null >/dev/null 2>&1 & echo $! >> "$0.children"; printf 'HTTP/2.0 200 OK\r\n\r\n{}'"#)
+        defer { cleanUp(gh) }
+        for _ in 0..<20 { _ = try await request(gh, timeout: 30) }
+        try await Task.sleep(for: .milliseconds(300))
+        let pids = children(of: gh)
+        #expect(pids.count == 20)
+        #expect(pids.allSatisfy { kill($0, 0) == 0 }, "A request whose pipes closed never signals gh's group")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func cancelReturnsBeforeTheDeadline() async throws {
+        // gh keeps running with a child that has left the process group, holding the output open.
+        let gh = try fakeGH(
+            #"""
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' \
+              "$0.children" &
+            while [ ! -s "$0.children" ]; do sleep 0.01; done
+            sleep 120
+            """#)
+        defer { cleanUp(gh) }
+        let pending = Task { try await request(gh, timeout: 30) }
+        try #require(await eventually { !children(of: gh).isEmpty })
+        pending.cancel()
+        await #expect(throws: CancellationError.self) { try await pending.value }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func onlyGHsProcessGroupIsSignaled() async throws {
+        // gh joins this process's group, so no group has gh's process ID.
+        let gh = try fakeGH(
+            #"""
+            exec perl -e 'setpgrp(0, getpgrp(getppid())) or die;
+              open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' "$0.children"
+            """#)
+        defer { cleanUp(gh) }
+        let pending = Task { try await request(gh, timeout: 30) }
+        try #require(await eventually { !children(of: gh).isEmpty })
+        pending.cancel()
+        await #expect(throws: CancellationError.self) { try await pending.value }
+        try await Task.sleep(for: .seconds(1))
+        #expect(children(of: gh).allSatisfy { kill($0, 0) == 0 }, "gh's process ID alone is never signaled")
+    }
+
+    @Test(.timeLimit(.minutes(1))) func childrenInTheirOwnSessionPinNothing() async throws {
+        // Each launch waits with a child that has left gh's process group, holding the output open.
+        let gh = try fakeGH(
+            #"""
+            perl -MPOSIX -e 'POSIX::setsid(); open(my $f, ">", $ARGV[0]); print $f "$$\n"; close($f); sleep 120' \
+              "$0.$$" &
+            while [ ! -s "$0.$$" ]; do sleep 0.01; done
+            cat "$0.$$" >> "$0.children"
+            sleep 120
+            """#)
+        defer { cleanUp(gh) }
+        let requests = 10
+        let pipes = openPipes()
+        // Each request ends at its deadline, well before the children do.
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<requests {
+                group.addTask { await #expect(throws: GitHubError.timedOut) { try await request(gh, timeout: 10) } }
+            }
+        }
+        #expect(children(of: gh).count == requests)
+        // Each request read two pipes.
+        #expect(await eventually { openPipes() - pipes < requests }, "Every pipe is closed once its request ends")
+        let big = try fakeGH(
+            #"printf 'HTTP/2.0 200 OK\r\n\r\n{"data":"'; head -c 200000 /dev/zero | tr '\0' a; printf '"}'"#)
+        defer { cleanUp(big) }
+        let response = try await request(big, timeout: 30)
+        #expect(response.body.count == 200_000 + #"{"data":""}"#.utf8.count)
     }
 }
 

@@ -10,7 +10,7 @@ Keep separate setups as profiles, such as work and personal. Each has its own no
 
 GitHub is optional and stays off until you turn it on. Notes work without `gh`, an account, or a network connection. Accessories are optional too: the bundled `org.stow.sample` provider is disabled by default.
 
-Checking for updates is off until you turn it on in Settings → **Updates**. Stow then asks GitHub once a day whether a newer version is out, and the board links to its release page; nothing is downloaded. **Check for updates…** in the Stow menu asks once, any time. The request sends no account or cookies, and GitHub sees your IP address; see [privacy](docs/privacy.md#update-check).
+Checking for updates is off until you turn it on in Settings → **Updates**. Stow then asks GitHub once a day whether a newer version is out, and again within the hour after a check fails. The board links to its release page; nothing is downloaded. **Check for updates…** in the Stow menu asks once, any time. The request sends no account or cookies, and GitHub sees your IP address; see [privacy](docs/privacy.md#update-check).
 
 <img src="docs/images/board.png" width="360" alt="Stow board with pull requests and notes">
 

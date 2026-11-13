@@ -12,6 +12,8 @@ final class UpdateMonitor {
     static let github: Fetch = { try await ReleaseFeed.fetchReleases() }
 
     private(set) var settings = UpdateSettings()
+    /// Why the settings couldn't be saved; nil once a save works.
+    private(set) var problem: String?
     /// This copy's version.
     let running: ReleaseVersion?
     /// Says what Check for updates… found. Tests replace it.
@@ -62,7 +64,7 @@ final class UpdateMonitor {
         Task { try? await save() }
     }
 
-    /// While on, checks hourly whether a day has passed since the last check.
+    /// While on, checks hourly whether a day has passed since the last check that worked.
     private func reschedule() {
         schedule?.cancel()
         schedule = nil
@@ -99,9 +101,10 @@ final class UpdateMonitor {
         } catch {
             result = .failure(error as? UpdateCheckError ?? .unreachable)
         }
+        let recorded = settings
         let outcome = settings.record(result, running: running, at: started)
         // With the setting off, a check leaves nothing on disk.
-        if settings.checksForUpdates { try? await save() }
+        if settings.checksForUpdates, settings != recorded { try? await save() }
         return outcome
     }
 
@@ -110,7 +113,16 @@ final class UpdateMonitor {
         let previous = saving
         let task = Task {
             _ = await previous?.result
-            try await catalog.setUpdateSettings(settings)
+            do {
+                try await catalog.setUpdateSettings(settings)
+                problem = nil
+            } catch {
+                problem =
+                    error as? ProfileError == .unwritable
+                    ? "Stow couldn’t save its update settings. Check that the data folder can be written to and has space."
+                    : profileProblem(error, name: "Stow")
+                throw error
+            }
         }
         saving = task
         try await task.value
