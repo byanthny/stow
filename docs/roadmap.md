@@ -38,7 +38,7 @@ Work through this queue in order. These are future tasks, not authorization to p
 
 - [x] Choose one lightweight release tool: `scripts/release.sh` suggests the next version from conventional commits and prepares a release pull request against `main`. Release notes are written for each release; there is no changelog file.
 - [x] Keep the app version, build number, tag, and release notes consistent. [Maintaining](maintaining.md#releases) defines how `feat`, `fix`, and breaking changes bump the version while Stow is 0.x.
-- [ ] Run release packaging only for an approved version tag. The `release` workflow builds from a published release's tag. Still open: build the DMG in a job without write or attestation permissions, then attest and upload it from a second job that runs no repository code.
+- [x] Run release packaging only for an approved version tag. The `release` workflow builds the DMG from a published release's tag in a job that can only read the repository, then checks, attests, and uploads it from a second job that runs no repository code. It hasn't run on a release yet.
 - [x] Publish a universal build with a checksum and short installation notes: the DMG in section 5. `./scripts/package.sh` still makes a local ZIP for development.
 
 ## 5. Make installation deliberate
