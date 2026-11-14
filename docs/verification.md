@@ -29,7 +29,7 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 - Edit a managed Markdown file in another editor, including an atomic save; verify source reload, detected conflict copies, clean external deletion, and immediate quit. Export notes and a full backup; restore into disposable state and check the retained old folder, restored windows, pins, and appearance. Reopen external-editor files after restoration.
 - In a disposable state directory, test corrupt and unsupported state. Confirm writes stay blocked, explicit recovery creates a backup, and failed recovery preserves the original. Test an unwritable destination without changing normal user storage.
 - Check keyboard navigation, VoiceOver labels, text scaling, contrast, a 320-point board width, and a 260-point detached note width.
-- Verify appearance changes, theme import/export, opacity, Reduce transparency, and text-editing preservation using the [appearance checklist](appearance.md#manual-checks). Collapse and expand Needs you and Waiting, then relaunch to check persistence. In Settings → Board, reorder sections and change the cards shown before Show more. Collapse Notes, then create a note: Notes should expand again. Scroll a long board and confirm section titles stay pinned. Open and close several board notes, check the start-collapsed setting, and pop a note out from its row. Type in a board note, then switch to another app: it should shrink, and grow again with its cursor when you come back.
+- Verify appearance changes, theme import/export, opacity, Reduce transparency, and text-editing preservation using the [appearance checklist](appearance.md#manual-checks). Collapse and expand Needs you and Waiting, then relaunch to check persistence. Check that merged and closed pull requests sit in the folded Merged group under Waiting, that merged ones have a purple outline and approved ones a green one, and that Settings → Board → Keep merged and closed takes them off at the chosen time. In Settings → Board, reorder sections and change the cards shown before Show more. Collapse Notes, then create a note: Notes should expand again. Scroll a long board and confirm section titles stay pinned. Open and close several board notes, check the start-collapsed setting, and pop a note out from its row. Type in a board note, then switch to another app: it should shrink, and grow again with its cursor when you come back.
 - Profiles, with synthetic state and at least three profiles. Run each check in one profile and then another, and record what you see.
   - Several profiles on screen: boards and detached notes from different profiles stay separate, each shows its own name, color, and icon, and nothing from one profile appears in another.
   - Create: choose **New profile…** from the File menu, the Dock menu, the board's profile menu, and Settings → Profiles. The sheet asks for a name and a color and shows a message for an empty name or one another profile uses. The new profile opens empty, with GitHub off.
@@ -53,7 +53,28 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Evidence
 
-Current counts, at 0.3.0: `./scripts/test.sh` runs 383 tests. The package suite in `Tests/` has 204 XCTest and 47 Swift Testing cases, and the hosted app suite in `AppTests/` has 132 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+Current counts, at 0.3.1: `./scripts/test.sh` runs 445 tests. The package suite in `Tests/` has 227 XCTest and 70 Swift Testing cases, and the hosted app suite in `AppTests/` has 148 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Release 0.3.1 validation on 2026-11-12, macOS 26.5 (Apple silicon), Xcode 26.6, with the card outlines and Merged group, the GitHub request changes, and the split release workflow merged:
+
+- `./scripts/release.sh 0.3.1` ran `./scripts/test.sh`, which passed: 227 XCTest and 70 Swift Testing cases in the package, and 148 hosted cases. New coverage includes the approved and merged outlines, the Merged group, each keep time, one refresh result applied twice, a literal 0.3.0 `state.json`, the purple's contrast in every built-in theme, refusals and rate-limit headers, list page sizes, by-ID fetches only for cards the lists didn't return, and an activation right after a failed refresh. The fixes merged earlier in this release added restyling only the changed lines, link and click-away hit tests, and the `gh` process and state lock checks.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED.
+- The Debug smoke test, labeled 0.3.1 build 5, against a new synthetic folder exited 0 and wrote 14 checks, all true.
+- Not run yet: `./scripts/accessibility.sh`, the `acceptance` run on an Intel runner, the release workflow, whose first run is this release, keyboard navigation, VoiceOver, and the manual checks above. The Merged group and the purple outline haven't been checked by hand.
+
+GitHub request measurements on 2026-11-12, macOS 26.5, `gh` 2.103.3, against an account with 57 open authored pull requests, none with more than one review request, and no pins. Each row is one read-only `gh api graphql` query of the authored list with Stow's card fields, sent between another local client's bursts. Only numbers were kept: time, status, `rateLimit { cost nodeCount }`, the `X-RateLimit-*` headers, and `gh api rate_limit` read before and after.
+
+| List query (pull requests × review requests) | Time | `nodeCount` | `X-RateLimit-Used` vs `rate_limit` used |
+| --- | --- | --- | --- |
+| Before: 100 × 100 | 8.8 s, 7.1 s | 10,100 | 3,117 vs 3,117; 24 vs 2 |
+| 100 × 10 | refused twice in 0.3 s; then 502 after 10.9 s | — | 5,000 vs 3,117 on both refusals |
+| 50 × 10 | 8.2 s | 550 | 23 vs 1 |
+| After: 25 × 10 | 4.8 s, 3.6 s | 275 | 1 vs 1; 29 vs 2 |
+
+- Every query that answered cost 1. Time grows with the number of pull requests, not review requests: 50 or more take 7 to 11 seconds, near the point where GitHub returns an HTML 502 page instead, and 25 take about 4.
+- The header didn't follow the query's shape. Responses carried one of two counters with different reset times, and only one matched `rate_limit`. The two refusals were HTTP 200 with a `RATE_LIMIT` error and no data while `rate_limit` showed 1,883 left; the 502 and the refusals didn't move `rate_limit`.
+- Requests for a refresh where every card is listed: 5 before (the list, the search, and three by-ID batches for 57 known cards), 4 after (three list pages and the search). With 25 or fewer authored pull requests, 2.
+- The measurement sent 8 queries; the 5 that answered cost 5 points.
 
 Release 0.3.0 validation on 2026-11-05, macOS 26.5 (Apple silicon), Xcode 26.6, with live notes, the update check, and the audit fixes merged:
 

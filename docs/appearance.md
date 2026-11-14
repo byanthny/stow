@@ -42,7 +42,7 @@ note = #FFF9E8
 | `line-height` | 1–2 times the note font's line height |
 | `background-opacity` | 0.2–1, where 1 is solid |
 
-All numbers must be finite. Files are limited to 1 MB. A font missing on the current Mac falls back to the system font while retaining its saved name. Themes do not install fonts or load code, plugins, or remote resources. Exported configs contain appearance settings only, with no notes, pull requests, account information, or app paths.
+The purple outline on merged pull requests follows the color scheme and isn't a theme setting, so configs and exports stay readable by Stow 0.3.0. All numbers must be finite. Files are limited to 1 MB. A font missing on the current Mac falls back to the system font while retaining its saved name. Themes do not install fonts or load code, plugins, or remote resources. Exported configs contain appearance settings only, with no notes, pull requests, account information, or app paths.
 
 Invalid or unsupported input keeps the current appearance unchanged. **Reset** restores all defaults. Existing JSON themes remain importable; [graphite.json](themes/graphite.json) is retained as a legacy example. New sharing and exports use plaintext configs.
 

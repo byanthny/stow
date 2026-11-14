@@ -63,6 +63,17 @@ struct GitHubTests {
         object["data"] = .object(data)
         return .object(object)
     }
+    /// The fixture's pull request as `example/<repository>#<number>`, with `changes` applied.
+    private func pullRequest(_ repository: String, _ number: Int, _ changes: [String: GraphQLValue] = [:]) throws
+        -> GraphQLValue
+    {
+        var node = try fixture()["data"]["viewer"]["pullRequests"]["nodes"].array[0].object
+        node["id"] = .string("synthetic-\(repository)-\(number)")
+        node["number"] = .integer(number)
+        node["repository"] = .object(["name": .string(repository), "owner": .object(["login": .string("example")])])
+        node.merge(changes) { _, new in new }
+        return .object(node)
+    }
 
     @Test func explicitNullRollupAndReviewDecisionAreKnown() async throws {
         let transport = ScriptedTransport([
@@ -177,6 +188,50 @@ struct GitHubTests {
         #expect(await transport.count == 3)
     }
 
+    @Test func listsAskForSmallPagesAndPageReviewRequestsOnward() async throws {
+        let teams = (0..<10).map { index in
+            GraphQLValue.object([
+                "requestedReviewer": .object([
+                    "__typename": .string("Team"), "id": .string("team-\(index)"),
+                    "name": .string("Synthetic team \(index)"),
+                ])
+            ])
+        }
+        let requested = try pullRequest(
+            "requested", 5,
+            [
+                "author": .object(["login": .string("synthetic-author")]),
+                "reviewRequests": .object([
+                    "nodes": .array(teams),
+                    "pageInfo": .object(["hasNextPage": .bool(true), "endCursor": .string("review-page-2")]),
+                ]),
+            ])
+        let search = GraphQLValue.object([
+            "data": .object([
+                "search": .object([
+                    "issueCount": .integer(1), "nodes": .array([requested]),
+                    "pageInfo": .object(["hasNextPage": .bool(false), "endCursor": .null]),
+                ])
+            ])
+        ])
+        let page = json(
+            #"{"data":{"node":{"reviewRequests":{"nodes":[{"requestedReviewer":{"__typename":"User","id":"viewer-synthetic","login":"synthetic-viewer"}}],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}"#
+        )
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", try encoded(search)),
+            .init("StowReviewerPage", page, cursor: "review-page-2"),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [], previous: [])
+        #expect(result.isComplete)
+        let card = try #require(result.snapshots.first { $0.reference.repository == "requested" })
+        #expect(card.hasDirectReviewRequest == true)
+        #expect(card.readinessIsComplete)
+        let list = try #require(await transport.queries.first)
+        #expect(list.contains("pullRequests(first:25,"))
+        #expect(list.contains("reviewRequests(first:10)"))
+        #expect(await transport.count == 3)
+    }
+
     @Test func authoredAndSearchConnectionsPaginate() async throws {
         var root = try fixture().object
         var data = try fixture()["data"].object
@@ -216,6 +271,100 @@ struct GitHubTests {
         #expect(snapshot.isUnavailable && snapshot.isStale && !snapshot.readinessIsComplete)
     }
 
+    /// A `StowPinned` answer with these pull requests as `pr0`, `pr1`, and so on.
+    private func pinned(_ pullRequests: [GraphQLValue]) throws -> GraphQLResponse {
+        var data: [String: GraphQLValue] = [:]
+        for (index, node) in pullRequests.enumerated() { data["pr\(index)"] = .object(["pullRequest": node]) }
+        return try encoded(.object(["data": .object(data)]))
+    }
+
+    private func search(_ pullRequests: [GraphQLValue]) throws -> GraphQLResponse {
+        try encoded(
+            .object([
+                "data": .object([
+                    "search": .object([
+                        "issueCount": .integer(pullRequests.count), "nodes": .array(pullRequests),
+                        "pageInfo": .object(["hasNextPage": .bool(false), "endCursor": .null]),
+                    ])
+                ])
+            ]))
+    }
+
+    @Test func everyKnownCardInTheListsSendsTwoRequests() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let requested = PullRequestReference(owner: "example", repository: "requested", number: 5)
+        let previous = [
+            PullRequestSnapshot(reference: authored, title: "Synthetic fixture"),
+            PullRequestSnapshot(reference: requested, title: "Synthetic review request"),
+        ]
+        let reviewRequest = try pullRequest("requested", 5, ["author": .object(["login": .string("synthetic-author")])])
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", try search([reviewRequest])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [authored], previous: previous)
+        #expect(result.isComplete)
+        #expect(Set(result.snapshots.map(\.id)) == [authored.id, requested.id])
+        #expect(await transport.count == 2)
+    }
+
+    @Test func knownCardMissingFromTheListsIsFetchedAndCanComeBackMerged() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let finished = PullRequestReference(owner: "example", repository: "finished", number: 4)
+        let previous = [
+            PullRequestSnapshot(reference: authored, title: "Synthetic fixture"),
+            PullRequestSnapshot(reference: finished, title: "Synthetic finished card", state: "OPEN"),
+        ]
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
+            .init("StowPinned", try pinned([try pullRequest("finished", 4, ["state": .string("MERGED")])])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [], previous: previous)
+        #expect(result.isComplete)
+        let card = try #require(result.snapshots.first { $0.id == finished.id })
+        #expect(card.state == "MERGED")
+        #expect(card.terminalObservedAt != nil)
+        let byID = try #require(await transport.queries.last)
+        #expect(byID.contains(#"name:"finished""#))
+        #expect(!byID.contains(#"name:"fixture""#))
+        #expect(await transport.count == 3)
+    }
+
+    @Test func pinMissingFromTheListsIsFetched() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        let watched = PullRequestReference(owner: "example", repository: "watched", number: 9)
+        let other = try pullRequest("watched", 9, ["author": .object(["login": .string("synthetic-author")])])
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
+            .init("StowPinned", try pinned([other])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [authored, watched], previous: [])
+        #expect(result.isComplete)
+        #expect(Set(result.snapshots.map(\.id)) == [authored.id, watched.id])
+        let byID = try #require(await transport.queries.last)
+        #expect(byID.contains(#"name:"watched""#))
+        #expect(!byID.contains(#"name:"fixture""#))
+        #expect(await transport.count == 3)
+    }
+
+    @Test func pinFromAListPageWithErrorsIsFetchedByID() async throws {
+        let authored = PullRequestReference(owner: "example", repository: "fixture", number: 1)
+        var root = try fixture().object
+        root["errors"] = .array([
+            .object(["type": .string("FORBIDDEN"), "message": .string("Synthetic inaccessible field")])
+        ])
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(.object(root), exit: 1)), .init("StowReviewRequests", emptySearch),
+            .init("StowPinned", try pinned([try pullRequest("fixture", 1)])),
+        ])
+        let result = try await GHClient(transport: transport).refresh(pins: [authored], previous: [])
+        #expect(!result.isComplete)
+        #expect(result.snapshots.map(\.id) == [authored.id])
+        let byID = try #require(await transport.queries.last)
+        #expect(byID.contains("StowPinned"))
+        #expect(byID.contains(#"name:"fixture""#))
+        #expect(await transport.count == 3)
+    }
+
     @Test func http200RateErrorPreservesPartialDataAndPreventsManualBypass() async throws {
         var root = try fixture().object
         root["errors"] = .array([
@@ -236,6 +385,94 @@ struct GitHubTests {
             _ = try await client.details(for: .init(owner: "example", repository: "fixture", number: 1))
             Issue.record("Details bypassed backoff")
         } catch GitHubError.rateLimited {}
+        #expect(await transport.count == 1)
+    }
+
+    @Test func dataWithNoRequestsRemainingSetsNoBackoff() async throws {
+        let reset = String(Int(Date.now.timeIntervalSince1970) + 3_000)
+        let headers = ["X-RateLimit-Remaining": "0", "X-RateLimit-Used": "5000", "X-RateLimit-Reset": reset]
+        let transport = ScriptedTransport([
+            .init("StowViewer", try encoded(fixture(), headers: headers)), .init("StowReviewRequests", emptySearch),
+            .init("StowViewer", try encoded(fixture(), headers: headers)), .init("StowReviewRequests", emptySearch),
+        ])
+        let client = GHClient(transport: transport)
+        let first = try await client.refresh(pins: [], previous: [])
+        #expect(first.isComplete)
+        #expect(first.warning == nil)
+        let second = try await client.refresh(pins: [], previous: [])
+        #expect(second.isComplete)
+        #expect(await transport.count == 4)
+    }
+
+    @Test func forbiddenWithNoRequestsRemainingSetsNoBackoff() async throws {
+        let reset = String(Int(Date.now.timeIntervalSince1970) + 3_000)
+        let headers = ["X-RateLimit-Remaining": "0", "X-RateLimit-Reset": reset]
+        let transport = ScriptedTransport([
+            .init("StowViewer", json(#"{"message":"Synthetic forbidden"}"#, status: 403, headers: headers, exit: 1)),
+            .init("StowViewer", try encoded(fixture())), .init("StowReviewRequests", emptySearch),
+        ])
+        let client = GHClient(transport: transport)
+        await #expect(throws: GitHubError.requestFailed) { try await client.refresh(pins: [], previous: []) }
+        let next = try await client.refresh(pins: [], previous: [])
+        #expect(next.isComplete)
+        #expect(await transport.count == 3)
+    }
+
+    /// A response GitHub refuses, and how long its back-off lasts.
+    struct Refusal: Sendable, CustomTestStringConvertible {
+        var testDescription: String
+        var status: Int
+        var body: String
+        var remaining: String? = nil
+        var resetIn: TimeInterval? = nil
+        var retryAfter: String? = nil
+        var backoff: TimeInterval
+    }
+
+    static let refusals: [Refusal] = {
+        let secondary = #"{"message":"You have exceeded a secondary rate limit."}"#
+        return [
+            .init(
+                testDescription: "429 with none remaining", status: 429, body: "{}", remaining: "0", resetIn: 1_800,
+                backoff: 1_800),
+            .init(
+                testDescription: "429 with retry-after", status: 429, body: "{}", resetIn: 3_000, retryAfter: "300",
+                backoff: 300),
+            .init(
+                testDescription: "403 with retry-after", status: 403, body: #"{"message":"Synthetic forbidden"}"#,
+                retryAfter: "300", backoff: 300),
+            .init(
+                testDescription: "secondary limit with retry-after", status: 403, body: secondary, remaining: "4000",
+                resetIn: 3_000, retryAfter: "60", backoff: 60),
+            .init(
+                testDescription: "secondary limit without retry-after", status: 403, body: secondary, remaining: "4000",
+                resetIn: 3_000, backoff: 60),
+            .init(
+                testDescription: "rate-limit error with none remaining", status: 200,
+                body: #"{"data":null,"errors":[{"type":"RATE_LIMIT","message":"Synthetic limit"}]}"#, remaining: "0",
+                resetIn: 1_800, backoff: 1_800),
+        ]
+    }()
+
+    @Test(arguments: GitHubTests.refusals) func refusalBacksOffUntilGitHubsTime(_ refusal: Refusal) async throws {
+        var headers: [String: String] = [:]
+        if let remaining = refusal.remaining { headers["X-RateLimit-Remaining"] = remaining }
+        if let resetIn = refusal.resetIn {
+            headers["X-RateLimit-Reset"] = String(Int(Date.now.timeIntervalSince1970 + resetIn))
+        }
+        if let retryAfter = refusal.retryAfter { headers["Retry-After"] = retryAfter }
+        let transport = ScriptedTransport([
+            .init("StowViewer", json(refusal.body, status: refusal.status, headers: headers, exit: 1))
+        ])
+        let client = GHClient(transport: transport)
+        for _ in 0..<2 {
+            do {
+                _ = try await client.refresh(pins: [], previous: [])
+                Issue.record("The refusal set no backoff")
+            } catch GitHubError.rateLimited(let until) {
+                #expect(abs(until.timeIntervalSinceNow - refusal.backoff) < 5)
+            }
+        }
         #expect(await transport.count == 1)
     }
 

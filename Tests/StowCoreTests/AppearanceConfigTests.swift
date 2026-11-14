@@ -16,6 +16,17 @@ struct AppearanceConfigTests {
         #expect(try AppearanceSettings.decodeConfig(text) == expected)
     }
 
+    @Test func writtenConfigsHaveNoPurpleSoOlderVersionsReadThem() throws {
+        var lightStow = AppearanceSettings.default
+        lightStow.colorScheme = .light
+        for theme in [AppearanceSettings.default, .graphite, .paper, lightStow] {
+            let config = try theme.encodedConfig()
+            #expect(!config.contains("purple"), "\(config)")
+            #expect(try AppearanceSettings.decodeConfig(config) == theme)
+        }
+        #expect(throws: AppearanceConfigError.self) { try AppearanceSettings.decodeConfig("purple = #6E4FA3") }
+    }
+
     @Test func presetOrderDoesNotChangeTheResult() throws {
         let first = try AppearanceSettings.decodeConfig("preset = paper\nfont-size = 16\nbackground = #FFFFFF")
         let last = try AppearanceSettings.decodeConfig("background = #FFFFFF\nfont-size = 16\npreset = paper")

@@ -76,6 +76,9 @@ public struct AppearanceSettings: Codable, Equatable, Sendable {
 
     public static let `default` = AppearanceSettings()
 
+    /// The purple that outlines merged pull requests, from the color scheme. It is never saved or shared.
+    public var purple: String { colorScheme == .dark ? "#A98BD9" : "#6E4FA3" }
+
     public static var graphite: AppearanceSettings {
         var theme = AppearanceSettings()
         theme.name = "Graphite"

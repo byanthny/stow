@@ -10,7 +10,7 @@ struct BoardView: View {
     @Environment(\.windowChrome) private var chrome
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// Sections showing every card this session; the configured count applies again after relaunch.
-    @State private var expandedSections: Set<AttentionSection> = []
+    @State private var expandedSections: Set<String> = []
     /// The height of the board's scrolling area. The note being edited grows up to about this tall.
     @State private var visibleHeight: CGFloat = 0
 
@@ -160,7 +160,11 @@ struct BoardView: View {
     @ViewBuilder private func boardSection(_ section: BoardLayout.Section) -> some View {
         switch section {
         case .needsYou: if store.state.githubEnabled { prSection("Needs you", section: .needsYou) }
-        case .waiting: if store.state.githubEnabled { prSection("Waiting", section: .waiting) }
+        case .waiting:
+            if store.state.githubEnabled {
+                prSection("Waiting", section: .waiting)
+                mergedSection
+            }
         case .notes: notesSection
         }
     }
@@ -213,18 +217,32 @@ struct BoardView: View {
 
     private func prSection(_ title: String, section: AttentionSection) -> some View {
         let cards = store.cards(in: section)
-        let expanded = expandedSections.contains(section)
+        return cardSection(
+            title, cards: cards, id: section.rawValue, needsAttention: section == .needsYou && !cards.isEmpty,
+            emptyText: section == .needsYou ? "Nothing needs you right now." : "No pull requests waiting.")
+    }
+
+    /// Unpinned merged and closed cards, under Waiting and collapsed at first. It hides while there are none.
+    @ViewBuilder private var mergedSection: some View {
+        let cards = store.mergedCards
+        if !cards.isEmpty { cardSection("Merged", cards: cards, id: AppStore.mergedGroupID) }
+    }
+
+    private func cardSection(
+        _ title: String, cards: [PullRequestSnapshot], id: String, needsAttention: Bool = false,
+        emptyText: String? = nil
+    ) -> some View {
+        let expanded = expandedSections.contains(id)
         let pins = store.state.pins
         let listed = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: expanded)
         let limited = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: false).moreCount > 0
         return pinnedSection(
-            title, count: cards.count, id: section.rawValue,
+            title, count: cards.count, id: id,
             summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
-            needsAttention: section == .needsYou && !cards.isEmpty
+            needsAttention: needsAttention
         ) {
-            if cards.isEmpty {
-                Text(section == .needsYou ? "Nothing needs you right now." : "No pull requests waiting.")
-                    .font(theme.font(size: 11)).foregroundStyle(.stowMuted).padding(.vertical, 3)
+            if cards.isEmpty, let emptyText {
+                Text(emptyText).font(theme.font(size: 11)).foregroundStyle(.stowMuted).padding(.vertical, 3)
             }
             ForEach(listed.groups) { group in
                 if let owner = group.owner { OwnerSubheading(owner: owner, count: group.count) }
@@ -233,7 +251,7 @@ struct BoardView: View {
             if limited {
                 Button(expanded ? "Show fewer" : "Show \(listed.moreCount) more") {
                     withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.15)) {
-                        if expanded { expandedSections.remove(section) } else { expandedSections.insert(section) }
+                        if expanded { expandedSections.remove(id) } else { expandedSections.insert(id) }
                     }
                 }
                 .buttonStyle(.plain).font(theme.font(size: 10, weight: .medium)).foregroundStyle(.stowMuted)

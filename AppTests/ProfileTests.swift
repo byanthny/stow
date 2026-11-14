@@ -374,6 +374,76 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(b.githubMessage?.hasPrefix("GitHub requests are paused"), true)
     }
 
+    func testActivationRefreshesOnlyAMinuteAfterTheLastAttempt() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder) { $0.githubEnabled = true }
+        let client = CountingClient()
+        let store = AppStore(
+            stateURL: folder.appendingPathComponent("state.json"), githubClient: client, accessoryProviders: [])
+        await store.start()
+        defer { store.stop() }
+        let start = ContinuousClock.now
+        var elapsed = Duration.zero
+        store.now = { start + elapsed }
+        // The timer, a launch, or ⌘R.
+        await store.refresh()
+        elapsed = .seconds(59)
+        await store.refreshOnActivation()
+        var refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 1, "An activation within a minute of an attempt asks GitHub nothing")
+        elapsed = .seconds(61)
+        await store.refreshOnActivation()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 2, "An activation a minute after the last attempt refreshes")
+        // ⌘R refreshes whenever it's chosen, and counts as an attempt.
+        elapsed = .seconds(62)
+        await store.refresh()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 3)
+        elapsed = .seconds(100)
+        await store.refreshOnActivation()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 3)
+    }
+
+    func testActivationRefreshesRightAfterAFailedAttempt() async throws {
+        let folder = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try await seed(folder) { $0.githubEnabled = true }
+        let client = CountingClient()
+        let store = AppStore(
+            stateURL: folder.appendingPathComponent("state.json"), githubClient: client, accessoryProviders: [])
+        await store.start()
+        defer { store.stop() }
+        let start = ContinuousClock.now
+        var elapsed = Duration.zero
+        store.now = { start + elapsed }
+        await client.set(error: .requestFailed)
+        await store.refresh()
+        XCTAssertNotNil(store.githubMessage)
+        await client.set(error: nil)
+        elapsed = .seconds(10)
+        await store.refreshOnActivation()
+        var refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 2, "An activation right after a failed attempt tries again")
+        XCTAssertNil(store.githubMessage)
+        elapsed = .seconds(20)
+        await store.refreshOnActivation()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 2, "A successful attempt still holds activations off for a minute")
+        await client.set(error: .accountMismatch(actualLogin: "synthetic-other-viewer"))
+        elapsed = .seconds(30)
+        await store.refresh()
+        XCTAssertEqual(store.accountMismatch, "synthetic-other-viewer")
+        await client.set(error: nil)
+        elapsed = .seconds(40)
+        await store.refreshOnActivation()
+        refreshes = await client.refreshes
+        XCTAssertEqual(refreshes, 4, "An activation right after another account answered tries again")
+        XCTAssertNil(store.accountMismatch)
+    }
+
     func testHideOrdersOutEveryWindowAndPausesRefresh() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -3109,14 +3179,18 @@ private actor RecordingAccessoryProvider: AccessoryProvider {
     }
 }
 
-/// Counts refreshes and answers at once with no pull requests.
+/// Counts refreshes and answers at once with no pull requests, or with the error it was given.
 private actor CountingClient: GitHubClient {
     private(set) var refreshes = 0
+    private var error: GitHubError?
+
+    func set(error: GitHubError?) { self.error = error }
 
     func refresh(pins: [PullRequestReference], previous: [PullRequestSnapshot], expectedViewerLogin: String?)
         async throws -> GitHubRefreshResult
     {
         refreshes += 1
+        if let error { throw error }
         return .init(viewerLogin: "synthetic-viewer", snapshots: [])
     }
 

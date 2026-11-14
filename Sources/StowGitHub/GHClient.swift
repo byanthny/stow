@@ -323,23 +323,28 @@ public actor GHClient: GitHubClient {
             response.headers.map { ($0.key.lowercased(), $0.value) }, uniquingKeysWith: { _, last in last })
         let root = try? JSONDecoder().decode(GraphQLValue.self, from: response.body)
         let errors = root?["errors"].array ?? []
-        let rateError = errors.contains { e in
-            let type = e["type"].string ?? e["extensions"]["type"].string ?? e["extensions"]["code"].string ?? ""
-            let message = e["message"].string?.lowercased() ?? ""
-            return type.uppercased().contains("RATE") || message.contains("rate limit")
-                || message.contains("secondary rate")
-        }
+        let rateError =
+            errors.contains { e in
+                let type = e["type"].string ?? e["extensions"]["type"].string ?? e["extensions"]["code"].string ?? ""
+                let message = e["message"].string?.lowercased() ?? ""
+                return type.uppercased().contains("RATE") || message.contains("rate limit")
+                    || message.contains("secondary rate")
+            } || root?["message"].string?.lowercased().contains("rate limit") == true
+        // Only a refusal backs off, never a rate-limit header alone.
         let limited =
-            response.statusCode == 429 || rateError
-            || (response.statusCode == 403
-                && (headers["retry-after"] != nil || headers["x-ratelimit-remaining"] == "0"))
-        if limited || headers["x-ratelimit-remaining"] == "0" {
-            let reset = headers["x-ratelimit-reset"].flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+            response.statusCode == 429 || rateError || (response.statusCode == 403 && headers["retry-after"] != nil)
+        if limited {
             let after =
                 headers["retry-after"].flatMap(Double.init).map { Date.now.addingTimeInterval($0) }
                 ?? headers["retry-after"].flatMap(Self.httpDate)
-            let graphReset = root?["data"]["rateLimit"]["resetAt"].string.flatMap(Self.date)
-            retryAt = [reset, after, graphReset, Date.now.addingTimeInterval(limited ? 60 : 1)].compactMap { $0 }.max()
+            // The hourly reset applies only when no requests remain.
+            let exhausted =
+                headers["x-ratelimit-remaining"] == "0" || root?["data"]["rateLimit"]["remaining"].int == 0
+            let reset =
+                headers["x-ratelimit-reset"].flatMap(Double.init).map(Date.init(timeIntervalSince1970:))
+                ?? root?["data"]["rateLimit"]["resetAt"].string.flatMap(Self.date)
+            let minimum = Date.now.addingTimeInterval(60)
+            retryAt = max(after ?? (exhausted ? reset : nil) ?? minimum, minimum)
         }
         if response.statusCode == 401 { throw GitHubError.authenticationRequired }
         guard let root else {
@@ -362,8 +367,11 @@ public actor GHClient: GitHubClient {
 
     private static let pageInfo = "pageInfo { hasNextPage endCursor }"
     private static let recentCommits = "commits(last:3) { nodes { commit { messageHeadline committedDate } } }"
+    /// Authored pull requests per page.
+    private static let authoredPageSize = 25
+    /// Review requests per pull request in a list; `StowReviewerPage` fetches the rest.
     private static let reviewRequests =
-        "reviewRequests(first:100) { nodes { requestedReviewer { __typename ... on User { id login } ... on Team { id name } } } \(pageInfo) }"
+        "reviewRequests(first:10) { nodes { requestedReviewer { __typename ... on User { id login } ... on Team { id name } } } \(pageInfo) }"
     private static let fields = """
         id number title url state isDraft mergeable mergeStateStatus reviewDecision createdAt updatedAt
         author { login } repository { name owner { login } }
@@ -377,7 +385,7 @@ public actor GHClient: GitHubClient {
         let now = Date.now
         let first = try await request(
             """
-            query StowViewer { viewer { id login pullRequests(first:100, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
+            query StowViewer { viewer { id login pullRequests(first:\(Self.authoredPageSize), states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
             """)
         guard let login = first.data["viewer"]["login"].string, let viewerID = first.data["viewer"]["id"].string else {
             throw GitHubError.invalidResponse
@@ -410,7 +418,7 @@ public actor GHClient: GitHubClient {
                 }
                 let page = try await request(
                     """
-                    query StowAuthored($cursor:String!) { viewer { pullRequests(first:100, after:$cursor, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
+                    query StowAuthored($cursor:String!) { viewer { pullRequests(first:\(Self.authoredPageSize), after:$cursor, states:OPEN, orderBy:{field:UPDATED_AT,direction:DESC}) { nodes { \(Self.fields) } \(Self.pageInfo) } } }
                     """, ["cursor": .string(cursor)])
                 connection = page.data["viewer"]["pullRequests"]
                 complete = complete && !page.hasErrors && Self.validConnection(connection)
@@ -441,9 +449,11 @@ public actor GHClient: GitHubClient {
                 searchCursor = cursor
             } while true
 
+            // Pins and known cards the lists returned without errors need no request of their own.
+            let listed = Set(nodes.filter { $0.value.1 }.keys)
             let references = Dictionary(
                 (pins + previous.map(\.reference)).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }
-            ).values.sorted { $0.id < $1.id }
+            ).values.filter { !listed.contains($0.id) }.sorted { $0.id < $1.id }
             for start in stride(from: 0, to: references.count, by: 25) {
                 let batch = Array(references[start..<min(start + 25, references.count)])
                 var aliases: [String: PullRequestReference] = [:]

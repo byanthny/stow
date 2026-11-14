@@ -1,9 +1,10 @@
 name: release
 
 # When a release is published, builds the unsigned alpha DMG from its tag on GitHub's runners and attaches it with
-# its SHA-256 and a build provenance attestation, so a download can be traced to this workflow and commit. Run it
-# manually to build an existing release again. Builds stay unsigned until Developer ID notarization is set up, and
-# attestations need the repository to be public.
+# its SHA-256 and a build provenance attestation, so a download can be traced to this workflow and commit. The
+# `build` job runs the repository's scripts with read access only; `publish` holds the write and attestation
+# permissions and runs no repository code. Run it manually to build an existing release again. Builds stay unsigned
+# until Developer ID notarization is set up, and attestations need the repository to be public.
 on:
   release:
     types: [published]
@@ -20,17 +21,20 @@ concurrency:
   group: release-${{ github.event.release.tag_name || github.event.inputs.tag }}
   cancel-in-progress: false
 
+env:
+  STOW_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+
 jobs:
-  dmg:
+  build:
+    name: build DMG
     runs-on: macos-15
     timeout-minutes: 45
     permissions:
-      contents: write # attach the DMG to the release
-      id-token: write # sign the provenance attestation
-      attestations: write # store the attestation
+      contents: read
+    outputs:
+      dmg: ${{ steps.dmg.outputs.dmg }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      STOW_TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
     steps:
       - name: check the tag name
         run: |
@@ -45,6 +49,7 @@ jobs:
       - name: build the universal app
         run: ./scripts/package.sh
       - name: make the DMG
+        id: dmg
         run: |
           set -euo pipefail
           version=${STOW_TAG#v}
@@ -58,7 +63,38 @@ jobs:
           /usr/bin/hdiutil create -volname "Stow $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov "build/$dmg"
           /usr/bin/hdiutil verify "build/$dmg"
           (cd build && /usr/bin/shasum -a 256 "$dmg" > "$dmg.sha256" && /usr/bin/shasum -a 256 -c "$dmg.sha256")
-          printf 'STOW_DMG=build/%s\n' "$dmg" >> "$GITHUB_ENV"
+          printf 'dmg=%s\n' "$dmg" >> "$GITHUB_OUTPUT"
+      - name: keep the DMG for publishing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: stow-dmg
+          path: |
+            build/${{ steps.dmg.outputs.dmg }}
+            build/${{ steps.dmg.outputs.dmg }}.sha256
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    name: publish DMG
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write # attach the DMG to the release
+      id-token: write # sign the provenance attestation
+      attestations: write # store the attestation
+    env:
+      STOW_DMG: ${{ needs.build.outputs.dmg }}
+    steps:
+      - name: fetch the DMG
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: stow-dmg
+      - name: check the SHA-256
+        run: |
+          set -euo pipefail
+          [ "$STOW_DMG" = "Stow-${STOW_TAG#v}.dmg" ]
+          sha256sum --check --strict "$STOW_DMG.sha256"
       - name: attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:

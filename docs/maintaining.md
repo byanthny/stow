@@ -19,7 +19,7 @@ gh api -X PATCH "repos/$repo" -F delete_branch_on_merge=true
 
 If the `fork-pr-contributor-approval` call is rejected, set **Settings → Actions → General → Approval for running fork pull request workflows** to require approval for all outside contributors.
 
-Protect `main` with a ruleset: changes through pull requests with no required approvals, merge commits only, signed commits, no force-push or deletion, and the `checks` workflow's `secrets` and `build` jobs as required checks. Docs-only changes skip `build`, which still satisfies the rule. The `acceptance` workflow's jobs are named `acceptance-build` and `acceptance-smoke`, so a skipped acceptance run can't stand in for `build`. Merge commits keep each commit's own signature, and GitHub signs the merge commit.
+Protect `main` with a ruleset: changes through pull requests with no required approvals, merge commits only, signed commits, no force-push or deletion, and the `checks` workflow's `secrets` and `build` jobs as required checks. Docs-only changes skip `build`, which still satisfies the rule. The `acceptance` workflow's jobs are named `acceptance-build` and `acceptance-smoke`, so a skipped acceptance run can't stand in for `build`. The `release` workflow's jobs are named `build DMG` and `publish DMG`, so a release run can't stand in for it either. Merge commits keep each commit's own signature, and GitHub signs the merge commit.
 
 ```sh
 gh api -X POST "repos/$repo/rulesets" --input - <<'JSON'
@@ -78,7 +78,7 @@ gh repo edit "$repo" --homepage "$site"
 1. On a branch cut from an up-to-date `main`, run `./scripts/release.sh`. It suggests the next version from the conventional commits since the last `v*` tag. While Stow is 0.x, a `feat` commit or a breaking change bumps the minor number, and any other commit bumps the patch. To choose another version, pass it, as in `./scripts/release.sh 0.3.0`; it must be higher than the current one. The script sets `MARKETING_VERSION` and raises `CURRENT_PROJECT_VERSION` by one in `project.yml` and the Xcode project, runs `./scripts/test.sh`, and prints the commands for the next steps. It doesn't push, tag, or publish anything.
 2. Commit the change as `chore(release): X.Y.Z`, then open its pull request and merge it.
 3. Push a signed `vX.Y.Z` tag on the merge commit, then publish its release, marked as a pre-release while Stow is in alpha.
-4. Publishing starts the `release` workflow. It builds the unsigned DMG from the tag and attaches it with its SHA-256 and a build provenance attestation. To build an existing release again, run the workflow by hand with its tag.
+4. Publishing starts the `release` workflow. Its `build` job makes the unsigned DMG and its SHA-256 from the tag with read access only and passes them on as an artifact kept for one day. Its `publish` job runs no repository code: it checks the SHA-256, attests build provenance, and attaches both files to the release. A failed `publish` can be rerun within that day. To build an existing release again, run the workflow by hand with its tag.
 5. Once the release is published, update the version on the site, the hero's "Alpha · X.Y.Z" line in `site/index.html`, in its own pull request.
 
 Builds stay unsigned until Developer ID signing and notarization are in place; see the [roadmap](roadmap.md). Attestations need the repository to be public.
