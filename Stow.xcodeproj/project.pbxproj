@@ -40,6 +40,7 @@
 		B3229A89A09AD8625F8F4F74 /* StowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 09974DE403FDD0CD305FC757 /* StowCore */; };
 		C16E5DDD28C4A1722F6E5A38 /* StowExtensionSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 23FEB436DD4D679FCE9F5F06 /* StowExtensionSDK */; };
 		CAB304A94A725CD8285465DC /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 201C19CDEAD22A1FC05D10B0 /* Assets.xcassets */; };
+		D13871A136D87828151E3BAC /* TypingMeasureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C78D44C080B1CA781FDD8C7C /* TypingMeasureTests.swift */; };
 		D62D71EDC45E41812C9D74E0 /* ProfilesSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67424E6FD595173BC1EC7C20 /* ProfilesSettingsView.swift */; };
 		E2639633E61BC409B0873B48 /* LiveMarkdownIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */; };
 		E47FF48B8EBAE6F9F80398EC /* StowSampleExtension in Frameworks */ = {isa = PBXBuildFile; productRef = A264A05198370049BFD1BF4B /* StowSampleExtension */; };
@@ -100,6 +101,7 @@
 		C4D95B3214D2B63E6CADFAAA /* UpdateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateMonitor.swift; sourceTree = "<group>"; };
 		C5C90A0A75F673872DF82240 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		C77BAF160150D32A58024D83 /* BoardWindowLevelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWindowLevelTests.swift; sourceTree = "<group>"; };
+		C78D44C080B1CA781FDD8C7C /* TypingMeasureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingMeasureTests.swift; sourceTree = "<group>"; };
 		CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveMarkdownIntegrationTests.swift; sourceTree = "<group>"; };
 		D5C5900A823176127EE3AF4C /* StowUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StowUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5194C4D620BD83F79798BB8 /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
@@ -150,6 +152,7 @@
 				3727F1F8343238152D9DEA5F /* ProfileTests.swift */,
 				8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */,
 				2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */,
+				C78D44C080B1CA781FDD8C7C /* TypingMeasureTests.swift */,
 			);
 			path = AppTests;
 			sourceTree = "<group>";
@@ -348,6 +351,7 @@
 				00C57CAD4D19823917B62DFF /* ProfileTests.swift in Sources */,
 				F42711049E90261D511B21A1 /* SectionsAndAppearanceTests.swift in Sources */,
 				539FD22A5C14EAFD1E4E0D9D /* ThemeConfigIntegrationTests.swift in Sources */,
+				D13871A136D87828151E3BAC /* TypingMeasureTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
