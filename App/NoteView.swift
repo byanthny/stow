@@ -77,11 +77,11 @@ struct NoteView: View {
             }
 
             // This view redraws when the note's text changes, external edits included.
-            let markdown = note.markdown
+            let _ = note.markdown
             // Board notes grow to their whole text while edited; detached notes fill their window.
             NativeEditor(
                 text: Binding(
-                    get: { markdown },
+                    get: { note.markdown },
                     set: { store.editNote(note.id, markdown: $0) }), shouldFocus: store.focusNoteID == note.id,
                 focusRequestID: store.focusRequestID, appearance: theme.settings,
                 fitsText: detached ? nil : 104...(isEditing ? max(176, editorHeightLimit) : 176),
