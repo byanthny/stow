@@ -5,24 +5,56 @@ public enum AttentionSection: String, Codable, Equatable, Sendable {
     case waiting
 }
 
+/// Why a card sits where it does, in the words the card shows.
+public enum AttentionReason: String, CaseIterable, Sendable {
+    case readyToMerge = "Ready to merge"
+    case checksFailing = "Checks failing"
+    case resolveConflicts = "Resolve conflicts"
+    case changesRequested = "Changes requested"
+    case closed = "Closed"
+    case reviewRequested = "Review requested"
+    case reviewRequired = "Review required"
+    case waitingForReview = "Waiting for review"
+    case checksPending = "Checks pending"
+    case behindBaseBranch = "Behind base branch"
+    case draft = "Draft"
+    case watching = "Watching"
+    case merged = "Merged"
+    case unavailable = "Unavailable"
+    case readinessUnknown = "Readiness unknown"
+
+    /// How the status reads at a glance, close to GitHub's colors.
+    public var tone: AttentionTone {
+        switch self {
+        case .readyToMerge: .success
+        case .checksFailing, .resolveConflicts, .changesRequested, .closed: .failure
+        case .reviewRequested, .reviewRequired, .waitingForReview, .checksPending, .behindBaseBranch: .pending
+        case .draft, .watching, .merged, .unavailable, .readinessUnknown: .neutral
+        }
+    }
+
+    /// A status about the checks, which a card shows on its checks line.
+    public var isAboutChecks: Bool { self == .checksFailing || self == .checksPending }
+
+    /// A status about review, which a pending review only repeats.
+    public var isAboutReview: Bool {
+        switch self {
+        case .changesRequested, .reviewRequired, .reviewRequested, .waitingForReview: true
+        default: false
+        }
+    }
+}
+
 public struct AttentionClassification: Equatable, Sendable {
     public var section: AttentionSection
-    public var reason: String
-    public init(section: AttentionSection, reason: String) {
+    public var reason: AttentionReason
+    public init(section: AttentionSection, reason: AttentionReason) {
         self.section = section
         self.reason = reason
     }
 
     /// How the status reads at a glance, close to GitHub's colors.
-    public var tone: AttentionTone {
-        switch reason {
-        case "Ready to merge": .success
-        case "Checks failing", "Resolve conflicts", "Changes requested", "Closed": .failure
-        case "Review requested", "Review required", "Waiting for review", "Checks pending", "Behind base branch":
-            .pending
-        default: .neutral  // Draft, Watching, Merged, Unavailable, Readiness unknown.
-        }
-    }
+    public var tone: AttentionTone { reason.tone }
 }
 
 /// A status color: green success, red failure, amber pending, and muted for everything else.
@@ -80,17 +112,16 @@ extension PullRequestSnapshot {
             }
         }
         var status = CardStatus(headline: nil, tone: .neutral, notes: [], checks: checksStatus)
-        if reason == "Checks failing" || reason == "Checks pending" {
+        if reason.isAboutChecks {
             status.headline = review?.text
             status.tone = review?.tone ?? .neutral
         } else {
-            status.headline = reason
+            status.headline = reason.rawValue
             status.tone = classification.tone
-            let aboutReview = ["Changes requested", "Review required", "Review requested", "Waiting for review"]
-            let repeats = review?.text == reason || (aboutReview.contains(reason) && review?.text == "Review pending")
+            let repeats = review?.text == reason.rawValue || (reason.isAboutReview && review?.text == "Review pending")
             if let review, !repeats { status.notes.append(review.text) }
         }
-        if mergeStateStatus == "BEHIND", reason != "Behind base branch" { status.notes.append("Behind base") }
+        if mergeStateStatus == "BEHIND", reason != .behindBaseBranch { status.notes.append("Behind base") }
         return status
     }
 }
@@ -107,32 +138,32 @@ public func checkTone(_ state: String) -> AttentionTone {
 
 /// Classifies only observed facts. Unknown or incomplete readiness never means ready.
 public func classify(_ snapshot: PullRequestSnapshot, isPinned: Bool = false) -> AttentionClassification {
-    func waiting(_ reason: String) -> AttentionClassification { .init(section: .waiting, reason: reason) }
-    func needs(_ reason: String) -> AttentionClassification { .init(section: .needsYou, reason: reason) }
-    if snapshot.state == "CLOSED" { return waiting("Closed") }
-    if snapshot.state == "MERGED" { return waiting("Merged") }
-    if snapshot.isViewerAuthor == true, snapshot.isDraft == true { return waiting("Draft") }
-    if snapshot.isUnavailable { return waiting("Unavailable") }
-    guard snapshot.state == "OPEN" else { return waiting("Readiness unknown") }
+    func waiting(_ reason: AttentionReason) -> AttentionClassification { .init(section: .waiting, reason: reason) }
+    func needs(_ reason: AttentionReason) -> AttentionClassification { .init(section: .needsYou, reason: reason) }
+    if snapshot.state == "CLOSED" { return waiting(.closed) }
+    if snapshot.state == "MERGED" { return waiting(.merged) }
+    if snapshot.isViewerAuthor == true, snapshot.isDraft == true { return waiting(.draft) }
+    if snapshot.isUnavailable { return waiting(.unavailable) }
+    guard snapshot.state == "OPEN" else { return waiting(.readinessUnknown) }
     guard snapshot.isViewerAuthor == true else {
-        if snapshot.hasDirectReviewRequest == true { return needs("Review requested") }
-        return waiting(isPinned ? "Watching" : "Waiting for review")
+        if snapshot.hasDirectReviewRequest == true { return needs(.reviewRequested) }
+        return waiting(isPinned ? .watching : .waitingForReview)
     }
     if snapshot.mergeable == "CONFLICTING" || snapshot.mergeStateStatus == "DIRTY" {
-        return needs("Resolve conflicts")
+        return needs(.resolveConflicts)
     }
-    if snapshot.reviewDecision == "CHANGES_REQUESTED" { return needs("Changes requested") }
-    if snapshot.checksState == "FAILURE" || snapshot.checksState == "ERROR" { return needs("Checks failing") }
+    if snapshot.reviewDecision == "CHANGES_REQUESTED" { return needs(.changesRequested) }
+    if snapshot.checksState == "FAILURE" || snapshot.checksState == "ERROR" { return needs(.checksFailing) }
     if !snapshot.isStale, !snapshot.isUnavailable, snapshot.isDraft == false, snapshot.readinessIsComplete,
         snapshot.mergeable == "MERGEABLE", snapshot.mergeStateStatus == "CLEAN",
         snapshot.checksKnown, snapshot.checksState == nil || snapshot.checksState == "SUCCESS",
         snapshot.reviewDecision == nil || snapshot.reviewDecision == "APPROVED"
     {
-        return needs("Ready to merge")
+        return needs(.readyToMerge)
     }
     // Being behind the base branch matters only once nothing else is pending.
-    if snapshot.checksState == "PENDING" || snapshot.checksState == "EXPECTED" { return waiting("Checks pending") }
-    if snapshot.reviewDecision == "REVIEW_REQUIRED" { return waiting("Review required") }
-    if snapshot.mergeStateStatus == "BEHIND" { return waiting("Behind base branch") }
-    return waiting("Readiness unknown")
+    if snapshot.checksState == "PENDING" || snapshot.checksState == "EXPECTED" { return waiting(.checksPending) }
+    if snapshot.reviewDecision == "REVIEW_REQUIRED" { return waiting(.reviewRequired) }
+    if snapshot.mergeStateStatus == "BEHIND" { return waiting(.behindBaseBranch) }
+    return waiting(.readinessUnknown)
 }
