@@ -21,7 +21,7 @@ struct DataTransferView: View {
             HStack {
                 Button("Import Markdown…") { importMarkdown() }.accessibilityIdentifier("data.importMarkdown")
                 Button("Export all notes…") { exportMarkdown() }.accessibilityIdentifier("data.exportMarkdown")
-                    .disabled(store.state.notes.isEmpty)
+                    .disabled(store.notes.isEmpty)
             }
             Text("Import adds notes. Export creates Markdown copies in a new folder, leaving your live files in place.")
                 .font(theme.font(size: 10)).foregroundStyle(.stowMuted)

@@ -64,7 +64,7 @@ extension AppStore {
                 // A store stopped between writes leaves the rest to its final save.
                 guard !isStopped else { return false }
                 let revision = changeRevision
-                let snapshot = state
+                let snapshot = self.snapshot()
                 let deletions = deletedNoteIDs
                 do {
                     let result = try await repository.saveMerging(snapshot, deletedNoteIDs: deletions)
@@ -88,12 +88,12 @@ extension AppStore {
         var previous: [UUID: Note] = [:]
         for note in snapshot.notes { previous[note.id] = note }
         for id in result.externallyDeletedIDs {
-            guard let index = state.notes.firstIndex(where: { $0.id == id }), let original = previous[id] else {
+            guard let index = notes.firstIndex(where: { $0.id == id }), let original = previous[id] else {
                 continue
             }
-            if state.notes[index].markdown == original.markdown {
-                state.notes.remove(at: index)
-                state.extensionInstances.removeAll { $0.noteID == id }
+            if notes[index].markdown == original.markdown {
+                notes.remove(at: index)
+                base.extensionInstances.removeAll { $0.noteID == id }
                 onDelete?(id)
                 changeRevision &+= 1
             } else {
@@ -101,23 +101,23 @@ extension AppStore {
             }
         }
         for incoming in result.state.notes {
-            if let index = state.notes.firstIndex(where: { $0.id == incoming.id }) {
+            if let note = note(incoming.id) {
                 guard let original = previous[incoming.id] else { continue }
-                if state.notes[index].markdown == original.markdown {
+                if note.markdown == original.markdown {
                     if incoming.markdown != original.markdown {
-                        state.notes[index].markdown = incoming.markdown
-                        state.notes[index].updatedAt = incoming.updatedAt
+                        note.markdown = incoming.markdown
+                        note.updatedAt = incoming.updatedAt
                     }
-                } else if incoming.markdown != original.markdown, incoming.markdown != state.notes[index].markdown {
+                } else if incoming.markdown != original.markdown, incoming.markdown != note.markdown {
                     let preserved = Note(markdown: incoming.markdown, pullRequest: incoming.pullRequest)
-                    state.notes.append(preserved)
+                    notes.append(NoteModel(preserved))
                     conflictNoteIDs.insert(preserved.id)
                     changeRevision &+= 1
                     noteFileMessage =
                         "An external edit conflicted with unsaved text. Both versions have been kept as notes."
                 }
             } else if previous[incoming.id] == nil, !deletedNoteIDs.contains(incoming.id) {
-                state.notes.append(incoming)
+                notes.append(NoteModel(incoming))
             }
         }
         conflictNoteIDs.formUnion(result.conflictNoteIDs)
@@ -131,7 +131,7 @@ extension AppStore {
     func terminationSave() -> Task<Bool, Never> {
         isTerminating = true
         saveTask?.cancel()
-        let snapshot = state
+        let snapshot = self.snapshot()
         let deletions = deletedNoteIDs
         let writer = repository
         let reopening = reopenTask
@@ -176,7 +176,7 @@ extension AppStore {
         if let reopenTask { await reopenTask.value }
         guard isStopped, isLoaded, !storageNeedsRecovery, !isRestoringBackup else { return false }
         do {
-            try await repository.saveAndClose(state, deletedNoteIDs: deletedNoteIDs)
+            try await repository.saveAndClose(snapshot(), deletedNoteIDs: deletedNoteIDs)
             return true
         } catch { return false }
     }
@@ -186,7 +186,7 @@ extension AppStore {
         guard !isRestoringBackup, await flush(), !isRestoringBackup else {
             throw DataTransferFileError.cannotSynchronize
         }
-        return state
+        return snapshot()
     }
 
     /// Backs up unreadable saved data and starts fresh. A closing profile waits for it to finish.
@@ -247,9 +247,9 @@ extension AppStore {
                 at: folder, withIntermediateDirectories: true,
                 attributes: [.posixPermissions: 0o700])
             let backup = folder.appendingPathComponent("pre-restore-\(UUID().uuidString).stowbackup")
-            try DataTransferFiles.writePrivateAtomically(StowBackup.encode(state), to: backup)
+            try DataTransferFiles.writePrivateAtomically(StowBackup.encode(snapshot()), to: backup)
             // A received backup never chooses this Mac's GitHub CLI or turns GitHub access on.
-            var restored = replacement.keepingMachineLocalSettings(from: state)
+            var restored = replacement.keepingMachineLocalSettings(from: base)
             for index in restored.pullRequests.indices {
                 restored.pullRequests[index].markStale()
                 restored.pullRequests[index].readinessIsComplete = false
@@ -261,7 +261,7 @@ extension AppStore {
             accessoryRuns.removeAll()
             accessoryTokens.removeAll()
             accessoryResults.removeAll()
-            state = result.state
+            adopt(result.state)
             memoryOnlyPullRequests = []
             deletedNoteIDs.removeAll()
             conflictNoteIDs.removeAll()
@@ -270,7 +270,7 @@ extension AppStore {
             saveError = nil
             changeRevision &+= 1
             persistedRevision = changeRevision
-            theme.apply(state.appearance)
+            theme.apply(base.appearance)
             await watchNotesFolder()
             onRestoreWindows?()
             return true

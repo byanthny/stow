@@ -32,13 +32,13 @@ struct OwnerControl: View {
             PullDownMenu.Item(
                 title: "\(summary.owner) (\(summary.cardCount))", state: summary.isSelected ? .on : .off
             ) { [store] in
-                store.setOwnerSelection(store.state.ownerSelection.toggling(summary.owner))
+                store.setOwnerSelection(store.base.ownerSelection.toggling(summary.owner))
             }
         }
         let sections: [[PullDownMenu.Item]] = [
             [
                 PullDownMenu.Item(
-                    title: "All owners", state: store.state.ownerSelection.isAll ? .on : .off
+                    title: "All owners", state: store.base.ownerSelection.isAll ? .on : .off
                 ) { [store] in
                     store.setOwnerSelection(OwnerSelection())
                 }
@@ -47,7 +47,7 @@ struct OwnerControl: View {
             [
                 PullDownMenu.Item(title: "Add owner…") { [store] in
                     guard let login = AddOwnerPrompt.run(appearance: appearance) else { return }
-                    store.setOwnerSelection(store.state.ownerSelection.adding(login))
+                    store.setOwnerSelection(store.base.ownerSelection.adding(login))
                 }
             ],
         ]

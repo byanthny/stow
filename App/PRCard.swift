@@ -1,13 +1,17 @@
 import StowCore
 import SwiftUI
 
+/// One pull request. Its body reads only the values it is given and its linked notes, never the store.
 struct PRCard: View {
     let store: AppStore
     @Environment(\.stowTheme) private var theme
     let pr: PullRequestSnapshot
-    private var pinned: Bool { store.state.pins.contains(pr.reference) }
-    private var classification: AttentionClassification { classify(pr, isPinned: pinned) }
-    private var expanded: Bool { store.expandedPRs.contains(pr.id) }
+    let isPinned: Bool
+    let isExpanded: Bool
+    let isLoading: Bool
+    /// The notes linked to this pull request, listed while the card is expanded.
+    let notes: [NoteModel]
+    private var classification: AttentionClassification { classify(pr, isPinned: isPinned) }
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 7) {
@@ -32,7 +36,7 @@ struct PRCard: View {
                 }.buttonStyle(.plain).help("Open pull request")
                 // The card's actions sit beside its expand button, one click away.
                 CardIconButton(
-                    symbol: pinned ? "pin.fill" : "pin", label: pinned ? "Unpin pull request" : "Pin pull request",
+                    symbol: isPinned ? "pin.fill" : "pin", label: isPinned ? "Unpin pull request" : "Pin pull request",
                     identifier: "card.pin", scale: .small
                 ) { store.togglePin(pr.reference) }
                 CardIconButton(symbol: "square.and.pencil", label: "Add personal note", identifier: "card.addNote") {
@@ -44,10 +48,10 @@ struct PRCard: View {
                 Button {
                     store.toggleDetails(pr.reference)
                 } label: {
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(theme.font(size: 9, weight: .medium))
-                        .frame(width: 18, height: 22)
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(theme.font(size: 9, weight: .medium)).frame(width: 18, height: 22)
                 }.buttonStyle(.plain).foregroundStyle(.stowMuted).accessibilityLabel(
-                    expanded ? "Collapse pull request" : "Expand pull request")
+                    isExpanded ? "Collapse pull request" : "Expand pull request")
             }
             // The state on one line and the checks, always, on the next.
             let status = pr.cardStatus(under: classification)
@@ -69,7 +73,7 @@ struct PRCard: View {
                 if let tone = status.checks.tone { checksIcon(tone) }
                 Text(status.checks.label)
             }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1)
-            if expanded { details }
+            if isExpanded { details }
         }.padding(12).background(.stowSurface, in: RoundedRectangle(cornerRadius: 9))
             .overlay {
                 if pr.isApproved {
@@ -81,7 +85,7 @@ struct PRCard: View {
                 }
             }
             .contextMenu {
-                Button(pinned ? "Unpin" : "Pin") { store.togglePin(pr.reference) }
+                Button(isPinned ? "Unpin" : "Pin") { store.togglePin(pr.reference) }
                 Button("Add personal note") { store.addNote(reference: pr.reference) }
                 Button("Dismiss") { store.dismiss(pr.reference) }
             }
@@ -110,7 +114,7 @@ struct PRCard: View {
 
     @ViewBuilder private var details: some View {
         Divider().overlay(.white.opacity(0.03)).padding(.vertical, 2)
-        if store.loadingDetails.contains(pr.id) { ProgressView().controlSize(.small) }
+        if isLoading { ProgressView().controlSize(.small) }
         if let details = pr.details {
             ForEach(Array(details.checks.enumerated()), id: \.offset) { _, check in
                 HStack(spacing: 6) {
@@ -150,7 +154,7 @@ struct PRCard: View {
             if !details.isComplete {
                 Text("Some details are unavailable.").font(theme.font(size: 9)).foregroundStyle(.stowAmber)
             }
-        } else if !store.loadingDetails.contains(pr.id) {
+        } else if !isLoading {
             Text("Details are unavailable offline.").font(theme.font(size: 10)).foregroundStyle(.stowMuted)
         }
         // Ages line up on the right, like the commit times above them.
@@ -158,7 +162,7 @@ struct PRCard: View {
             if let created = pr.createdAt { Text("Opened \(created.shortAge())") }
             Text("State observed \(pr.observedStateSince.shortAge())")
         }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).frame(maxWidth: .infinity, alignment: .trailing)
-        ForEach(store.state.notes.filter { $0.pullRequest?.id == pr.id }) { note in
+        ForEach(notes) { note in
             Button {
                 if note.isDetached {
                     store.detachNote(note.id)

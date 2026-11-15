@@ -96,7 +96,14 @@ public func showsOwnerControl(
 
 /// Standalone notes always show. Linked notes hide only when the setting is on and their owner is not selected.
 public func isNoteShown(_ note: Note, selection: OwnerSelection, hidesLinkedNotes: Bool) -> Bool {
-    guard hidesLinkedNotes, let reference = note.pullRequest else { return true }
+    isNoteShown(linkedTo: note.pullRequest, selection: selection, hidesLinkedNotes: hidesLinkedNotes)
+}
+
+/// Whether a note with this link shows, by the same rule as `isNoteShown(_:selection:hidesLinkedNotes:)`.
+public func isNoteShown(linkedTo reference: PullRequestReference?, selection: OwnerSelection, hidesLinkedNotes: Bool)
+    -> Bool
+{
+    guard hidesLinkedNotes, let reference else { return true }
     return selection.isAll || selection.contains(reference.owner)
 }
 

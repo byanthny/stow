@@ -13,17 +13,17 @@ final class BoardWindowLevelTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        XCTAssertTrue(app.store.state.boardAlwaysOnTop)
+        XCTAssertTrue(app.store.base.boardAlwaysOnTop)
         XCTAssertEqual(app.board.level, .floating)
-        let floatingNote = try XCTUnwrap(app.store.state.notes.first { $0.isAlwaysOnTop })
-        let normalNote = try XCTUnwrap(app.store.state.notes.first { !$0.isAlwaysOnTop })
+        let floatingNote = try XCTUnwrap(app.store.snapshot().notes.first { $0.isAlwaysOnTop })
+        let normalNote = try XCTUnwrap(app.store.snapshot().notes.first { !$0.isAlwaysOnTop })
         let floatingWindow = try XCTUnwrap(app.noteWindows[floatingNote.id])
         let normalWindow = try XCTUnwrap(app.noteWindows[normalNote.id])
         XCTAssertEqual(floatingWindow.level, .floating)
         XCTAssertEqual(normalWindow.level, .normal)
 
         app.store.toggleBoardAlwaysOnTop()
-        XCTAssertFalse(app.store.state.boardAlwaysOnTop)
+        XCTAssertFalse(app.store.base.boardAlwaysOnTop)
         XCTAssertEqual(app.board.level, .normal)
         XCTAssertEqual(floatingWindow.level, .floating)
         XCTAssertEqual(normalWindow.level, .normal)
@@ -32,10 +32,10 @@ final class BoardWindowLevelTests: XCTestCase {
 
         app.store.toggleAlwaysOnTop(normalNote.id)
         XCTAssertEqual(normalWindow.level, .floating)
-        XCTAssertFalse(app.store.state.boardAlwaysOnTop)
+        XCTAssertFalse(app.store.base.boardAlwaysOnTop)
         XCTAssertEqual(app.board.level, .normal)
         app.store.toggleBoardAlwaysOnTop()
-        XCTAssertTrue(app.store.state.boardAlwaysOnTop)
+        XCTAssertTrue(app.store.base.boardAlwaysOnTop)
         XCTAssertEqual(app.board.level, .floating)
         XCTAssertEqual(floatingWindow.level, .floating)
         XCTAssertEqual(normalWindow.level, .floating)
@@ -55,7 +55,7 @@ final class BoardWindowLevelTests: XCTestCase {
 
         let restored = try await prepare(directory)
         defer { dispose(restored) }
-        XCTAssertFalse(restored.store.state.boardAlwaysOnTop)
+        XCTAssertFalse(restored.store.base.boardAlwaysOnTop)
         XCTAssertEqual(restored.board.level, .normal)
         for note in persisted.notes {
             let panel = try XCTUnwrap(restored.noteWindows[note.id])
@@ -63,7 +63,7 @@ final class BoardWindowLevelTests: XCTestCase {
             XCTAssertEqual(restored.store.note(note.id)?.markdown, note.markdown)
         }
         restored.store.toggleBoardAlwaysOnTop()
-        XCTAssertTrue(restored.store.state.boardAlwaysOnTop)
+        XCTAssertTrue(restored.store.base.boardAlwaysOnTop)
         XCTAssertEqual(restored.board.level, .floating)
         for note in persisted.notes {
             XCTAssertEqual(restored.noteWindows[note.id]?.level, note.isAlwaysOnTop ? .floating : .normal)

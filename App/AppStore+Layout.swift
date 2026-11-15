@@ -4,7 +4,7 @@ extension AppStore {
     @discardableResult
     func applyAppearance(_ settings: AppearanceSettings) -> Bool {
         guard let valid = try? settings.validated() else { return false }
-        state.appearance = valid
+        base.appearance = valid
         theme.apply(valid)
         onAppearanceChange?()
         changed()
@@ -12,7 +12,7 @@ extension AppStore {
     }
 
     func toggleBoardAlwaysOnTop() {
-        state.boardAlwaysOnTop.toggle()
+        base.boardAlwaysOnTop.toggle()
         onBoardLevelChange?()
         changed()
     }
@@ -22,74 +22,74 @@ extension AppStore {
             mergedGroupIsExpanded.toggle()
             return
         }
-        if state.collapsedSections.contains(section) {
-            state.collapsedSections.removeAll { $0 == section }
+        if base.collapsedSections.contains(section) {
+            base.collapsedSections.removeAll { $0 == section }
         } else {
-            state.collapsedSections.append(section)
+            base.collapsedSections.append(section)
         }
         changed()
     }
 
     func sectionIsCollapsed(_ section: String) -> Bool {
-        section == Self.mergedGroupID ? !mergedGroupIsExpanded : state.collapsedSections.contains(section)
+        section == Self.mergedGroupID ? !mergedGroupIsExpanded : base.collapsedSections.contains(section)
     }
 
     func moveBoardSection(_ section: BoardLayout.Section, by offset: Int) {
-        state.boardLayout.move(section, by: offset)
+        base.boardLayout.move(section, by: offset)
         changed()
     }
 
     func setVisiblePullRequests(_ count: Int) {
         guard BoardLayout.visiblePullRequestRange.contains(count) else { return }
-        state.boardLayout.visiblePullRequests = count
+        base.boardLayout.visiblePullRequests = count
         changed()
     }
 
     func resetBoardLayout() {
-        state.boardLayout = BoardLayout()
-        state.collapsedSections.removeAll { $0 == BoardLayout.Section.notes.rawValue }
+        base.boardLayout = BoardLayout()
+        base.collapsedSections.removeAll { $0 == BoardLayout.Section.notes.rawValue }
         changed()
     }
 
     func setShowsBoardTitle(_ shown: Bool) {
-        state.boardLayout.showsTitle = shown
+        base.boardLayout.showsTitle = shown
         changed()
     }
 
     func setGroupByOwner(_ grouped: Bool) {
-        state.boardLayout.groupByOwner = grouped
+        base.boardLayout.groupByOwner = grouped
         changed()
     }
 
     func setOwnerOrder(_ order: BoardLayout.OwnerOrder) {
-        state.boardLayout.ownerOrder = order
+        base.boardLayout.ownerOrder = order
         changed()
     }
 
     func setAlwaysShowOwnerControl(_ shown: Bool) {
-        state.boardLayout.alwaysShowOwnerControl = shown
+        base.boardLayout.alwaysShowOwnerControl = shown
         changed()
     }
 
     func setHidesNotesForHiddenOwners(_ hides: Bool) {
-        state.boardLayout.hidesNotesForHiddenOwners = hides
+        base.boardLayout.hidesNotesForHiddenOwners = hides
         changed()
     }
 
     /// Settings → Board → Keep always-on-top notes visible when hiding, read when this profile hides.
     func setHideKeepsAlwaysOnTopNotes(_ keeps: Bool) {
-        state.hideKeepsAlwaysOnTopNotes = keeps
+        base.hideKeepsAlwaysOnTopNotes = keeps
         changed()
     }
 
     /// Settings → Profiles → Hide when switching away, read from this profile when a switch leaves it.
     func setHidesWhenSwitchingAway(_ hides: Bool) {
-        state.hidesWhenSwitchingAway = hides
+        base.hidesWhenSwitchingAway = hides
         changed()
     }
 
     func setNotesStartCollapsed(_ collapsed: Bool) {
-        state.boardLayout.notesStartCollapsed = collapsed
+        base.boardLayout.notesStartCollapsed = collapsed
         changed()
     }
 }
