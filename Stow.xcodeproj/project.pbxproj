@@ -23,6 +23,7 @@
 		4BC2F3540AB6C7EB457A3A08 /* StowUpdates in Frameworks */ = {isa = PBXBuildFile; productRef = 11D8A87DC5DCAA452F294CA1 /* StowUpdates */; };
 		4F2CB3CEB19D67B2697FB4BB /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6648BF0294A445DFDF63BC88 /* SettingsView.swift */; };
 		523E84CD5DDE69790C2198C4 /* DataTransferView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0D09AC5E5723C5281D40CA /* DataTransferView.swift */; };
+		524A1707F5035BCB458F7392 /* NoteModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0C039A0AF72A7E830EC99C /* NoteModelTests.swift */; };
 		539FD22A5C14EAFD1E4E0D9D /* ThemeConfigIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */; };
 		56BE1A684F9D58C9329C1B1C /* DemoContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B984318AC22D6CC4F5676B9 /* DemoContent.swift */; };
 		56C55A5ECD2DA09E60C8EB60 /* StowGitHub in Frameworks */ = {isa = PBXBuildFile; productRef = 2E2DDEEF4A72C935B2EE1927 /* StowGitHub */; };
@@ -42,6 +43,7 @@
 		9A2B8071D36912169269309B /* AppStore+GitHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35CA220B5CE278E5DCF974CE /* AppStore+GitHub.swift */; };
 		9B5BE5C4DFE593CC1D6922E3 /* AppStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5C90A0A75F673872DF82240 /* AppStore.swift */; };
 		A1078DAD5CB22BA84D0CF57C /* NativeEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65FE07DEE8B707F6F7A3E21A /* NativeEditor.swift */; };
+		A26B59802AB68655EDFFD42D /* NoteScript.json in Resources */ = {isa = PBXBuildFile; fileRef = B6A958FF8EF352111DCD69A2 /* NoteScript.json */; };
 		AE5BB45ED8A1EEACE3C3EB29 /* UpdateMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D95B3214D2B63E6CADFAAA /* UpdateMonitor.swift */; };
 		B3229A89A09AD8625F8F4F74 /* StowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 09974DE403FDD0CD305FC757 /* StowCore */; };
 		C16E5DDD28C4A1722F6E5A38 /* StowExtensionSDK in Frameworks */ = {isa = PBXBuildFile; productRef = 23FEB436DD4D679FCE9F5F06 /* StowExtensionSDK */; };
@@ -105,6 +107,7 @@
 		AECB74C1C9BC1BF25BA11AB3 /* StowAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StowAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF5ED088B70B60243755E42B /* NoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteView.swift; sourceTree = "<group>"; };
 		B0F40371A05002BD9C2656E9 /* AppIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntegrationTests.swift; sourceTree = "<group>"; };
+		B6A958FF8EF352111DCD69A2 /* NoteScript.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = NoteScript.json; sourceTree = "<group>"; };
 		B7483C4EC90997FBA51745AD /* AppStore+Notes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppStore+Notes.swift"; sourceTree = "<group>"; };
 		B81E0113F9DC9DAA89FFFBD3 /* DataTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataTransferTests.swift; sourceTree = "<group>"; };
 		BC0D09AC5E5723C5281D40CA /* DataTransferView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataTransferView.swift; sourceTree = "<group>"; };
@@ -112,6 +115,7 @@
 		C5C90A0A75F673872DF82240 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		C77BAF160150D32A58024D83 /* BoardWindowLevelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWindowLevelTests.swift; sourceTree = "<group>"; };
 		C78D44C080B1CA781FDD8C7C /* TypingMeasureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingMeasureTests.swift; sourceTree = "<group>"; };
+		CC0C039A0AF72A7E830EC99C /* NoteModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoteModelTests.swift; sourceTree = "<group>"; };
 		CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveMarkdownIntegrationTests.swift; sourceTree = "<group>"; };
 		D5C5900A823176127EE3AF4C /* StowUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = StowUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E19C0434F4080ADE99F6FE9D /* AppStore+Layout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppStore+Layout.swift"; sourceTree = "<group>"; };
@@ -160,11 +164,13 @@
 				C77BAF160150D32A58024D83 /* BoardWindowLevelTests.swift */,
 				B81E0113F9DC9DAA89FFFBD3 /* DataTransferTests.swift */,
 				CEA0615677A6BACFDC2010C4 /* LiveMarkdownIntegrationTests.swift */,
+				CC0C039A0AF72A7E830EC99C /* NoteModelTests.swift */,
 				9A46EDD7D27ADE7A28DF88B0 /* OwnerViewTests.swift */,
 				3727F1F8343238152D9DEA5F /* ProfileTests.swift */,
 				8DCA4758F822CE8D5E294D8F /* SectionsAndAppearanceTests.swift */,
 				2987CC2973BE7AB0CBDF1A72 /* ThemeConfigIntegrationTests.swift */,
 				C78D44C080B1CA781FDD8C7C /* TypingMeasureTests.swift */,
+				625365A0953286F64DBC58BF /* Fixtures */,
 			);
 			path = AppTests;
 			sourceTree = "<group>";
@@ -226,6 +232,14 @@
 			);
 			sourceTree = "<group>";
 		};
+		625365A0953286F64DBC58BF /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				B6A958FF8EF352111DCD69A2 /* NoteScript.json */,
+			);
+			path = Fixtures;
+			sourceTree = "<group>";
+		};
 		89F05853221C0E9C42E24EB4 /* UITests */ = {
 			isa = PBXGroup;
 			children = (
@@ -267,6 +281,7 @@
 			buildConfigurationList = 207CC53BE8CC6571C6B5B959 /* Build configuration list for PBXNativeTarget "StowAppTests" */;
 			buildPhases = (
 				51D92672463AF40894F0BA48 /* Sources */,
+				394E389230673DD3DDB3419B /* Resources */,
 			);
 			buildRules = (
 			);
@@ -352,6 +367,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		394E389230673DD3DDB3419B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A26B59802AB68655EDFFD42D /* NoteScript.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -365,6 +388,7 @@
 				EFBABA910E1A5CFE63E7DB87 /* BoardWindowLevelTests.swift in Sources */,
 				8716FF98EFD918D92EA6872C /* DataTransferTests.swift in Sources */,
 				E2639633E61BC409B0873B48 /* LiveMarkdownIntegrationTests.swift in Sources */,
+				524A1707F5035BCB458F7392 /* NoteModelTests.swift in Sources */,
 				672FD01238B147FAE3D08C77 /* OwnerViewTests.swift in Sources */,
 				00C57CAD4D19823917B62DFF /* ProfileTests.swift in Sources */,
 				F42711049E90261D511B21A1 /* SectionsAndAppearanceTests.swift in Sources */,

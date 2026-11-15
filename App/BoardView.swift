@@ -197,7 +197,7 @@ struct BoardView: View {
     }
 
     /// The Notes section listing the notes the board shows now.
-    private var notesSection: some View { notesSection(listing: store.visibleNotes) }
+    var notesSection: some View { notesSection(listing: store.visibleNotes) }
 
     private func notesSection(listing notes: [NoteModel]) -> some View {
         let heading = NotesHeading(store: store)
