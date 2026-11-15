@@ -166,10 +166,45 @@ final class AttentionTests: XCTestCase {
             pullRequest.checksKnown = known
             XCTAssertEqual(pullRequest.checksStatus, ChecksStatus(label: label, tone: tone), state ?? "none")
         }
-        XCTAssertEqual(checkTone("SUCCESS"), .success)
-        XCTAssertEqual(checkTone("TIMED_OUT"), .failure)
-        XCTAssertEqual(checkTone("IN_PROGRESS"), .pending)
-        XCTAssertEqual(checkTone("SKIPPED"), .neutral)
+    }
+
+    func testEveryGitHubCheckStateHasOneOutcome() {
+        typealias Group = (
+            states: [String], outcome: CheckOutcome, tone: AttentionTone, symbol: String, attention: Bool
+        )
+        let groups: [Group] = [
+            (["SUCCESS"], .success, .success, "checkmark.circle", false),
+            (
+                ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"], .failure,
+                .failure, "xmark.circle", true
+            ),
+            (
+                ["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"], .pending, .pending, "clock",
+                true
+            ),
+            (["NEUTRAL", "SKIPPED"], .neutral, .neutral, "minus.circle", false),
+            (["UNKNOWN", "future-state"], .unknown, .neutral, "questionmark.circle", true),
+        ]
+        for group in groups {
+            for state in group.states {
+                let outcome = CheckSummary(name: "Synthetic", state: state).outcome
+                XCTAssertEqual(outcome, group.outcome, state)
+                XCTAssertEqual(outcome.tone, group.tone, state)
+                XCTAssertEqual(outcome.symbol, group.symbol, state)
+                XCTAssertEqual(outcome.isPassing, group.outcome == .success, state)
+                XCTAssertEqual(outcome.mayNeedAttention, group.attention, state)
+            }
+        }
+    }
+
+    func testSkippedAndNeutralChecksAreMutedNotPassed() {
+        for state in ["NEUTRAL", "SKIPPED"] {
+            let outcome = CheckOutcome(githubState: state)
+            XCTAssertEqual(outcome.symbol, "minus.circle", state)
+            XCTAssertNotEqual(outcome.symbol, CheckOutcome(githubState: "SUCCESS").symbol, state)
+            XCTAssertFalse(outcome.isPassing, state)
+            XCTAssertEqual(outcome.tone, .neutral, state)
+        }
     }
 
     func testCardsKeepChecksBelowAndNeverRepeatTheState() {

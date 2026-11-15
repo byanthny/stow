@@ -126,14 +126,48 @@ extension PullRequestSnapshot {
     }
 }
 
-/// One check's tone from its GitHub state: skipped and neutral checks stay muted.
-public func checkTone(_ state: String) -> AttentionTone {
-    switch state {
-    case "SUCCESS": .success
-    case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE": .failure
-    case "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED": .pending
-    default: .neutral
+/// One check's outcome from its GitHub state. Skipped and neutral checks are muted, not passed.
+public enum CheckOutcome: Equatable, Sendable {
+    case success, failure, pending, neutral, unknown
+
+    public init(githubState state: String) {
+        switch state {
+        case "SUCCESS": self = .success
+        case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE": self = .failure
+        case "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED": self = .pending
+        case "NEUTRAL", "SKIPPED": self = .neutral
+        default: self = .unknown
+        }
     }
+
+    public var tone: AttentionTone {
+        switch self {
+        case .success: .success
+        case .failure: .failure
+        case .pending: .pending
+        case .neutral, .unknown: .neutral
+        }
+    }
+
+    /// The SF Symbol name shown beside the check.
+    public var symbol: String {
+        switch self {
+        case .success: "checkmark.circle"
+        case .failure: "xmark.circle"
+        case .pending: "clock"
+        case .neutral: "minus.circle"
+        case .unknown: "questionmark.circle"
+        }
+    }
+
+    public var isPassing: Bool { self == .success }
+
+    /// Failing, running, or unknown checks, which are kept first when a long list is cut.
+    public var mayNeedAttention: Bool { self == .failure || self == .pending || self == .unknown }
+}
+
+extension CheckSummary {
+    public var outcome: CheckOutcome { CheckOutcome(githubState: state) }
 }
 
 /// Classifies only observed facts. Unknown or incomplete readiness never means ready.

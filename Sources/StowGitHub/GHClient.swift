@@ -157,9 +157,8 @@ extension GHClient {
         // Cached details are saved with every index write, so keep them bounded.
         if checks.count > Self.maxDetailItems {
             // Keep checks that may need attention when the list must be cut.
-            let passing: Set = ["SUCCESS", "NEUTRAL", "SKIPPED"]
             checks = Array(
-                (checks.filter { !passing.contains($0.state) } + checks.filter { passing.contains($0.state) })
+                (checks.filter { $0.outcome.mayNeedAttention } + checks.filter { !$0.outcome.mayNeedAttention })
                     .prefix(Self.maxDetailItems))
             complete = false
         }
