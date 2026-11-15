@@ -24,7 +24,7 @@ extension AppStore {
                     noteID: noteID, isEnabled: true))
         }
         changed()
-        Task { await refreshAccessories() }
+        runOwned { await $0.refreshAccessories() }
     }
 
     func refreshAccessories() async {

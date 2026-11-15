@@ -41,11 +41,11 @@ final class AppStore {
     var isPaused = false {
         didSet {
             guard oldValue, !isPaused else { return }
-            Task {
-                await refresh()
+            runOwned { store in
+                await store.refresh()
                 // A profile closed while GitHub answered starts no accessories.
-                guard !isStopped else { return }
-                await refreshAccessories()
+                guard !store.isStopped else { return }
+                await store.refreshAccessories()
             }
         }
     }
@@ -84,6 +84,8 @@ final class AppStore {
     @ObservationIgnored var terminationTask: Task<Bool, Never>?
     /// Reopens the repository after a quit the person cancelled. Writes wait for it.
     @ObservationIgnored var reopenTask: Task<Void, Never>?
+    /// Refreshes and accessory runs the store started itself; `stop()` cancels them.
+    @ObservationIgnored private(set) var ownedTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var notesPresenter: NotesFolderPresenter?
     @ObservationIgnored var notesWatcher: NotesFolderWatcher?
     @ObservationIgnored var changeRevision: UInt64 = 0
@@ -174,6 +176,16 @@ final class AppStore {
         }
     }
 
+    /// Runs `work` in a task `stop()` cancels, holding the store only while it runs.
+    func runOwned(_ work: @escaping @MainActor (AppStore) async -> Void) {
+        let id = UUID()
+        ownedTasks[id] = Task { [weak self] in
+            guard let self else { return }
+            await work(self)
+            ownedTasks[id] = nil
+        }
+    }
+
     func cancelDetails() {
         for task in detailTasks.values { task.cancel() }
         detailTasks.removeAll()
@@ -198,6 +210,8 @@ final class AppStore {
         refreshTimer?.cancel()
         accessoryTask?.cancel()
         saveTask?.cancel()
+        for task in ownedTasks.values { task.cancel() }
+        ownedTasks.removeAll()
         if let coordinator { Task { await coordinator.cancel() } }
     }
 

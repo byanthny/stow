@@ -39,14 +39,14 @@ extension AppStore {
         githubMessage = nil
         configureGitHub()
         changed()
-        if enabled { Task { await refresh() } }
+        if enabled { runOwned { await $0.refresh() } }
     }
 
     func setExecutablePath(_ path: String?) {
         state.ghExecutablePath = path
         configureGitHub()
         changed()
-        Task { await refresh() }
+        runOwned { await $0.refresh() }
     }
 
     func refresh() async {
@@ -268,7 +268,7 @@ extension AppStore {
         state.ownerSelection = selection
         reapplyKeptOwners()
         changed()
-        if state.keepsOnlySelectedOwners { Task { await refresh() } }
+        if state.keepsOnlySelectedOwners { runOwned { await $0.refresh() } }
     }
 
     /// Settings → Board → Keep only selected owners on disk. Turning it on takes other owners' cards out of the
@@ -310,7 +310,7 @@ extension AppStore {
             state.pullRequests.append(.init(reference: reference, title: reference.displayName, isStale: true))
         }
         changed()
-        Task { await refresh() }
+        runOwned { await $0.refresh() }
     }
 
     func togglePin(_ reference: PullRequestReference) {
