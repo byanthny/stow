@@ -210,35 +210,6 @@ struct AppearanceView: View {
     }
 }
 
-/// One size-limited import path for pasted configs and local files, including legacy JSON.
-enum ThemeConfigTransfer {
-    static let maximumBytes = 1_048_576
-
-    static func decode(_ data: Data) throws -> AppearanceSettings {
-        guard data.count <= maximumBytes else {
-            throw AppearanceError.invalidValue("config size (maximum 1 MB)")
-        }
-        guard let source = String(data: data, encoding: .utf8) else {
-            throw AppearanceError.invalidValue("text encoding; use UTF-8")
-        }
-        if source.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
-            return try AppearanceSettings.decodeTheme(data)
-        }
-        return try AppearanceSettings.decodeConfig(source)
-    }
-
-    static func read(_ url: URL) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        // Read at most one byte beyond the limit, even if a file grows after the panel opens.
-        let data = try handle.read(upToCount: maximumBytes + 1) ?? Data()
-        guard data.count <= maximumBytes else {
-            throw AppearanceError.invalidValue("file size (maximum 1 MB)")
-        }
-        return data
-    }
-}
-
 @MainActor @Observable
 final class ThemeConfigDraft {
     var source = ""

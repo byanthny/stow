@@ -68,20 +68,6 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         XCTAssertEqual(store.state.notes, notes)
     }
 
-    func testLocalImportBoundsAndEncodingMatchPastedConfigValidation() throws {
-        let directory = try makeDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let url = directory.appendingPathComponent("synthetic-theme.conf")
-        let config = try AppearanceSettings.graphite.encodedConfig()
-        try Data(config.utf8).write(to: url)
-        XCTAssertEqual(try ThemeConfigTransfer.decode(ThemeConfigTransfer.read(url)), .graphite)
-        XCTAssertThrowsError(try ThemeConfigTransfer.decode(Data([0xFF, 0xFE, 0xFF])))
-        let oversized = Data(repeating: 0x20, count: ThemeConfigTransfer.maximumBytes + 1)
-        XCTAssertThrowsError(try ThemeConfigTransfer.decode(oversized))
-        try oversized.write(to: url)
-        XCTAssertThrowsError(try ThemeConfigTransfer.read(url))
-    }
-
     private func makeDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             "StowThemeConfigTests-\(UUID().uuidString)", isDirectory: true)

@@ -150,6 +150,41 @@ struct AppearanceConfigTests {
         }
     }
 
+    @Test func localImportBoundsAndEncodingMatchPastedConfigValidation() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "StowThemeConfigTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("synthetic-theme.conf")
+        let config = try AppearanceSettings.graphite.encodedConfig()
+        try Data(config.utf8).write(to: url)
+        #expect(try ThemeConfigTransfer.decode(ThemeConfigTransfer.read(url)) == .graphite)
+        #expect(throws: AppearanceError.invalidValue("text encoding; use UTF-8")) {
+            try ThemeConfigTransfer.decode(Data([0xFF, 0xFE, 0xFF]))
+        }
+        let oversized = Data(repeating: 0x20, count: ThemeConfigTransfer.maximumBytes + 1)
+        #expect(throws: AppearanceError.invalidValue("config size (maximum 1 MB)")) {
+            try ThemeConfigTransfer.decode(oversized)
+        }
+        try oversized.write(to: url)
+        #expect(throws: AppearanceError.invalidValue("file size (maximum 1 MB)")) { try ThemeConfigTransfer.read(url) }
+        try oversized.dropLast().write(to: url)
+        #expect(try ThemeConfigTransfer.read(url).count == ThemeConfigTransfer.maximumBytes)
+    }
+
+    @Test func transferDecodesConfigsAndLegacyJSONThemes() throws {
+        var custom = AppearanceSettings.paper
+        custom.name = "Synthetic message theme"
+        custom.editorFontSize = 18
+        custom.colors.text = "#E1E2E3"
+        #expect(try ThemeConfigTransfer.decode(Data(custom.encodedConfig().utf8)) == custom)
+        let legacy = Data(" \n\t".utf8) + (try custom.encodedTheme())
+        #expect(try ThemeConfigTransfer.decode(legacy) == custom)
+        #expect(throws: AppearanceConfigError.self) {
+            try ThemeConfigTransfer.decode(Data("unknown-setting = should fail".utf8))
+        }
+    }
+
     @Test func invalidCanonicalSettingsCannotExport() {
         var settings = AppearanceSettings()
         settings.schemaVersion = 2
