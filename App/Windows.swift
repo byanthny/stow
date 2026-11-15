@@ -122,11 +122,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     hasIsolatedState = true
                     stateURL = proposed
                     demo = arguments.contains("--stow-demo")
+                    if let load = arguments.firstIndex(of: "--stow-demo-load") {
+                        let counts = arguments.dropFirst(load + 1).first?.split(separator: ",").compactMap { Int($0) }
+                        if let counts, counts.count == 2, counts.allSatisfy({ $0 >= 0 }) {
+                            DemoContent.load = (counts[0], counts[1])
+                            demo = true
+                        } else {
+                            hasIsolatedState = false
+                        }
+                    }
                 }
             }
             let smoke = arguments.contains("--stow-smoke-test")
-            if (arguments.contains("--stow-testing-state") || smoke || arguments.contains("--stow-demo"))
-                && !hasIsolatedState
+            if (arguments.contains("--stow-testing-state") || smoke || arguments.contains("--stow-demo")
+                || arguments.contains("--stow-demo-load")) && !hasIsolatedState
             {
                 NSApp.terminate(nil)
                 return

@@ -25,6 +25,8 @@ In Xcode, choose **Product → Scheme → Edit Scheme…**, then **Run → Argum
 --stow-demo
 ```
 
+`--stow-demo-load <cards>,<notes>` (for example `30,20`) replaces `--stow-demo` and fills a new folder with that many synthetic cards and notes, for measuring.
+
 From Terminal, build the Debug app and open a new copy with the same arguments:
 
 ```sh

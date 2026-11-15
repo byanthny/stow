@@ -7,12 +7,15 @@ Record the toolchain, macOS version, commands, and observed result for each vali
 ```sh
 ./scripts/test.sh
 ./scripts/accessibility.sh
+./scripts/measure.sh
 ./scripts/build.sh Debug
 ./scripts/build.sh Release
 ./scripts/package.sh
 ```
 
 The package suite covers classification, paste parsing, persistence and recovery, cache reconciliation, mocked GitHub pagination and partial responses, refresh coordination, and the accessory contract and cancellation. The test script also runs hosted app tests through the Stow scheme with local ad-hoc signing. The app detects the test host before normal startup so these tests cannot load the normal state folder. Builds check compilation of the native app. Packaging verifies the ad-hoc signature and both executable architectures, strips build-machine debug paths before signing, then emits a ZIP checksum. None of these checks establishes a real-account GitHub flow or complete UI acceptance.
+
+`scripts/measure.sh` builds the Debug app with `-O`, opens it in front on a new synthetic folder with `--stow-demo-load 30,20`, waits 60 seconds idle, then samples `top`, `footprint`, and `scripts/usage.swift` (`proc_pid_rusage` CPU, wakeups, and footprint) over 50 seconds and prints the figures. It then runs the hosted typing tests in `AppTests/TypingMeasureTests.swift` the same way, with `STOW_MEASURE=1` so they are skipped in other runs, and prints each average. `--skip-tests` leaves the tests out. It reads no credentials and runs no `gh`.
 
 `scripts/accessibility.sh` runs Xcode's accessibility audit (`performAccessibilityAudit()`) through the `StowUITests` scheme. It launches the Debug app with `--stow-testing-state <temporary folder> --stow-demo` and audits the board with one pull request and one note open, a detached note, and Settings. The audit checks contrast, element descriptions, hit regions, clipped text, traits, press actions, and parent/child structure. A hosted test can't do this, because SwiftUI builds its accessibility tree only for a connected assistive app. UI automation needs Automation Mode, which macOS may ask an administrator to approve, and the test moves the pointer while it runs. Two elements outside Stow's views are exempt: the virtual Touch Bar that UI testing adds, and a group that macOS 26 nests inside the titlebar zoom button. Contrast is measured from screen pixels. On a 1x display, such as a non-Retina external monitor, small anti-aliased text measures lower and passes or fails with its letters, so contrast issues are logged there without failing; Retina runs enforce them. Run it on a Mac before a release and after UI changes. The audit can't judge reading order, label wording, or keyboard flow, so the manual keyboard and VoiceOver checks still apply.
 
@@ -54,6 +57,24 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 ## Evidence
 
 Current counts, at 0.3.1: `./scripts/test.sh` runs 445 tests. The package suite in `Tests/` has 227 XCTest and 70 Swift Testing cases, and the hosted app suite in `AppTests/` has 148 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Resource baseline at 0.3.1 on 2026-11-14, macOS 26.5, Apple silicon (M3), Xcode 26.6, from `./scripts/measure.sh` twice in a row:
+
+- Load: 30 pull request cards, 20 notes with one of 46 KB, 5 note windows open, GitHub off, the board in front.
+- Method: the Debug app built with `-O` (optimized, still file by file and testable) was opened with `open`, ran 60 seconds idle, then `top -l 6 -s 10` and `scripts/usage.swift` sampled it over the same 50 seconds, and `footprint` read it once after. `top` reports CPU for each interval after the first sample, so the first is dropped. Its idle wakeups are a running total, checked against `ri_pkg_idle_wkups` from `proc_pid_rusage`. Package idle wakeups count only while the whole chip is idle, so they read 0 on a busy Mac whatever Stow does; interrupt wakeups are the figure to compare. Typing is 50 characters inserted at the end of a note's editor. After each key the test lets queued main-thread work run, runs a run-loop pass, then lays out and draws every open window. One warm-up run is dropped and 3 timed runs are averaged, in the hosted `TypingMeasureTests`, which run only with `STOW_MEASURE=1`. The last case types into a short note with the 30-card, 20-note load hosted, the board and the 5 note windows laid out.
+- Two other runs of the same script, made while a backup was running on the Mac, read 2 to 6 times slower for typing and were discarded; the table holds two runs that matched an earlier quiet one.
+
+| | CPU, `top` mean / max | CPU, `proc_pid_rusage` | Interrupt wakeups | Package idle wakeups | Phys footprint (`footprint`) |
+| --- | --- | --- | --- | --- | --- |
+| Run 1 | 0.04% / 0.20% | 0.0442% (22.1 ms) | 0.08/s | 0.00/s | 39.9 MB |
+| Run 2 | 0.04% / 0.20% | 0.0504% (25.2 ms) | 0.08/s | 0.00/s | 40.0 MB |
+
+| Typing 50 characters | 4 KB note | 46 KB note | 100 KB note | Short note, board and 5 note windows open |
+| --- | --- | --- | --- | --- |
+| Run 1 | 0.142 s | 0.688 s | 1.388 s | 0.375 s |
+| Run 2 | 0.140 s | 0.688 s | 1.380 s | 0.354 s |
+
+- The app is idle: about 25 ms of CPU and 0.08 interrupt wakeups per second over 50 seconds. Typing cost grows with the length of the note being edited: about 5 times the 4 KB time at 46 KB, and 10 times at 100 KB. Typing in a short note while the board and note windows are open costs 0.35 to 0.38 s for 50 keys, about 2.5 times the 4 KB note alone: the board and the other note windows do work on every key.
 
 Release 0.3.1 validation on 2026-11-12, macOS 26.5 (Apple silicon), Xcode 26.6, with the card outlines and Merged group, the GitHub request changes, and the split release workflow merged:
 
