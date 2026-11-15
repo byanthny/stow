@@ -123,6 +123,67 @@ final class AppStoreCancellationTests: XCTestCase {
             relaunched.expandedNoteIDs.count, relaunched.state.notes.count, "Expanded start opens every note")
     }
 
+    func testReleasedStoreEndsItsBackgroundLoops() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store: AppStore? = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
+        store?.backgroundInterval = .milliseconds(20)
+        await store?.start()
+        let loops = try [XCTUnwrap(store?.refreshTimer), XCTUnwrap(store?.accessoryTask)]
+        defer { for loop in loops { loop.cancel() } }
+        let presenter = try XCTUnwrap(store?.notesPresenter)
+        defer { NSFileCoordinator.removeFilePresenter(presenter) }
+        weak var released: AppStore?
+        released = store
+        store = nil
+        XCTAssertNil(released, "Only the caller holds the store")
+
+        let ended = Counter()
+        for loop in loops {
+            Task {
+                await loop.value
+                ended.count += 1
+            }
+        }
+        let allEnded = await waitUntil { ended.count == loops.count }
+        XCTAssertTrue(allEnded, "A store released without stop() leaves no loop waking")
+    }
+
+    func testStopCancelsKickedRefreshesSoNoRequestStartsAfterward() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var initial = AppState()
+        initial.githubEnabled = true
+        try await StateRepository(url: stateURL(directory)).save(initial)
+        let client = HeldRefreshClient()
+        let store = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
+        await store.start()
+        defer { store.stop() }
+        let attempts = Counter()
+        store.now = {
+            attempts.count += 1
+            return .now
+        }
+
+        store.pin(PullRequestReference(owner: "example", repository: "synthetic", number: 1))
+        let started = await waitUntil { await client.calls == 1 }
+        XCTAssertTrue(started)
+        // Different pins join the refresh in flight and ask for another one after it.
+        store.pin(PullRequestReference(owner: "example", repository: "synthetic", number: 2))
+        let joined = await waitUntil { attempts.count == 2 }
+        XCTAssertTrue(joined)
+        let kicked = Array(store.ownedTasks.values)
+        XCTAssertEqual(kicked.count, 2)
+
+        store.stop()
+        XCTAssertTrue(store.ownedTasks.isEmpty)
+        XCTAssertTrue(kicked.allSatisfy(\.isCancelled))
+        await client.release()
+        for task in kicked { await task.value }
+        let restarted = await waitUntil { await client.calls > 1 }
+        XCTAssertFalse(restarted, "No GitHub request starts after stop()")
+    }
+
     func testDisablingQueuedAccessoryPreventsItsProviderFromStarting() async throws {
         try await checkQueuedAccessoryRemoval(deleteOwner: false)
     }
@@ -197,6 +258,10 @@ final class AppStoreCancellationTests: XCTestCase {
     }
 }
 
+@MainActor private final class Counter {
+    var count = 0
+}
+
 private actor CancelledDetailClient: GitHubClient {
     enum Outcome: Sendable { case success, failure }
     let outcome: Outcome
@@ -221,6 +286,31 @@ private actor CancelledDetailClient: GitHubClient {
         case .success: return .init(latestComment: "Synthetic late comment must never be applied")
         case .failure: throw GitHubError.requestFailed
         }
+    }
+}
+
+/// Holds the first refresh until released, ignoring cancellation as a request already sent can.
+private actor HeldRefreshClient: GitHubClient {
+    private(set) var calls = 0
+    private var isReleased = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    func release() {
+        isReleased = true
+        for continuation in held { continuation.resume() }
+        held.removeAll()
+    }
+
+    func refresh(pins: [PullRequestReference], previous: [PullRequestSnapshot], expectedViewerLogin: String?)
+        async throws -> GitHubRefreshResult
+    {
+        calls += 1
+        if !isReleased { await withCheckedContinuation { held.append($0) } }
+        return .init(viewerLogin: "synthetic-viewer", snapshots: [])
+    }
+
+    func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
+        throw GitHubError.requestFailed
     }
 }
 

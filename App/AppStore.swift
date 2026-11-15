@@ -41,11 +41,11 @@ final class AppStore {
     var isPaused = false {
         didSet {
             guard oldValue, !isPaused else { return }
-            Task {
-                await refresh()
+            runOwned { store in
+                await store.refresh()
                 // A profile closed while GitHub answered starts no accessories.
-                guard !isStopped else { return }
-                await refreshAccessories()
+                guard !store.isStopped else { return }
+                await store.refreshAccessories()
             }
         }
     }
@@ -84,18 +84,22 @@ final class AppStore {
     @ObservationIgnored var terminationTask: Task<Bool, Never>?
     /// Reopens the repository after a quit the person cancelled. Writes wait for it.
     @ObservationIgnored var reopenTask: Task<Void, Never>?
+    /// Refreshes and accessory runs the store started itself; `stop()` cancels them.
+    @ObservationIgnored private(set) var ownedTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored var notesPresenter: NotesFolderPresenter?
     @ObservationIgnored var notesWatcher: NotesFolderWatcher?
     @ObservationIgnored var changeRevision: UInt64 = 0
     @ObservationIgnored var persistedRevision: UInt64 = 0
     @ObservationIgnored var deletedNoteIDs: Set<UUID> = []
     @ObservationIgnored private(set) var isStopped = false
-    @ObservationIgnored private var refreshTimer: Task<Void, Never>?
+    @ObservationIgnored private(set) var refreshTimer: Task<Void, Never>?
     /// When a refresh last asked GitHub.
     @ObservationIgnored var lastRefreshAttempt: ContinuousClock.Instant?
     /// The time activation refreshes compare with the last attempt; tests replace it.
     @ObservationIgnored var now: () -> ContinuousClock.Instant = { .now }
-    @ObservationIgnored private var accessoryTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var accessoryTask: Task<Void, Never>?
+    /// How often the refresh and accessory loops wake; tests shorten it.
+    @ObservationIgnored var backgroundInterval: Duration = .seconds(120)
     @ObservationIgnored var sessionGeneration = 0
 
     /// Without a data folder, the profile's own folder stands in for it.
@@ -153,18 +157,32 @@ final class AppStore {
         configureGitHub()
         // A store stopped while it loaded starts no timers.
         guard !isStopped else { return }
-        refreshTimer = Task { [weak self] in
+        refreshTimer = repeating(every: backgroundInterval, immediately: false) { await $0.refresh() }
+        accessoryTask = repeating(every: backgroundInterval, immediately: true) { await $0.refreshAccessories() }
+    }
+
+    /// Runs `work` every `interval` until cancelled or the store is gone, holding the store only while it runs.
+    private func repeating(
+        every interval: Duration, immediately: Bool, _ work: @escaping @MainActor (AppStore) async -> Void
+    ) -> Task<Void, Never> {
+        Task { [weak self] in
+            var waits = !immediately
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(120))
-                guard !Task.isCancelled else { return }
-                await self?.refresh()
+                if waits { try? await Task.sleep(for: interval) }
+                waits = true
+                guard !Task.isCancelled, let self else { return }
+                await work(self)
             }
         }
-        accessoryTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refreshAccessories()
-                try? await Task.sleep(for: .seconds(120))
-            }
+    }
+
+    /// Runs `work` in a task `stop()` cancels, holding the store only while it runs.
+    func runOwned(_ work: @escaping @MainActor (AppStore) async -> Void) {
+        let id = UUID()
+        ownedTasks[id] = Task { [weak self] in
+            guard let self else { return }
+            await work(self)
+            ownedTasks[id] = nil
         }
     }
 
@@ -192,6 +210,8 @@ final class AppStore {
         refreshTimer?.cancel()
         accessoryTask?.cancel()
         saveTask?.cancel()
+        for task in ownedTasks.values { task.cancel() }
+        ownedTasks.removeAll()
         if let coordinator { Task { await coordinator.cancel() } }
     }
 
