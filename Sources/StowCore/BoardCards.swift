@@ -26,3 +26,36 @@ extension BoardLayout {
         return (shown, cards.count - shown.count)
     }
 }
+
+/// A pull-request section's cards as the board lists them: under owner subheadings when Settings → Board groups by
+/// owner, and only as many as show before Show more, which still counts cards per section.
+public struct SectionCards: Sendable {
+    public struct Group: Identifiable, Sendable {
+        /// The subheading, or nil while the board does not group by owner.
+        public let owner: String?
+        /// The owner's cards in the section, counting those after Show more.
+        public let count: Int
+        /// The cards that show, in the section's order.
+        public let cards: [PullRequestSnapshot]
+        public var id: String { owner?.lowercased() ?? "" }
+    }
+
+    /// Groups with at least one card showing; an owner whose cards all come after Show more waits for it.
+    public let groups: [Group]
+    /// The cards after Show more.
+    public let moreCount: Int
+
+    /// Pinned cards always show and count toward the section's limit.
+    public init(_ cards: [PullRequestSnapshot], layout: BoardLayout, pins: [PullRequestReference], expanded: Bool) {
+        let owners: [(owner: String?, cards: [PullRequestSnapshot])] =
+            layout.groupByOwner
+            ? groupedByOwner(cards, order: layout.ownerOrder).map { ($0.owner, $0.cards) } : [(nil, cards)]
+        let visible = layout.visibleCards(owners.flatMap { $0.cards }, pins: pins, expanded: expanded)
+        let shownIDs = Set(visible.shown.map(\.id))
+        moreCount = visible.hidden
+        groups = owners.compactMap { owner, ownerCards in
+            let shown = ownerCards.filter { shownIDs.contains($0.id) }
+            return shown.isEmpty ? nil : Group(owner: owner, count: ownerCards.count, cards: shown)
+        }
+    }
+}

@@ -107,4 +107,26 @@ final class OwnerTests: XCTestCase {
         XCTAssertTrue(isNoteShown(standalone, selection: selection, hidesLinkedNotes: true))
         XCTAssertTrue(isNoteShown(linkedOut, selection: OwnerSelection(), hidesLinkedNotes: true))
     }
+
+    func testAddOwnerTakesOnlyGitHubLoginsAndSelectionHelpersKeepSpelling() {
+        let invalid = ["", "-acme", "acme-", "a--b", "a_b", "acme labs", "ácme", String(repeating: "a", count: 40)]
+        for login in invalid { XCTAssertNotNil(OwnerSelection.problem(with: login), login) }
+        for login in ["a", "acme-labs", "Acme2", String(repeating: "a", count: 39)] {
+            XCTAssertNil(OwnerSelection.problem(with: login), login)
+        }
+        XCTAssertEqual(OwnerSelection.problem(with: ""), "Enter the owner’s GitHub login.")
+        XCTAssertEqual(
+            OwnerSelection.problem(with: "a_b"), "A GitHub login uses only letters from A to Z, numbers, and hyphens.")
+        XCTAssertEqual(
+            OwnerSelection.problem(with: String(repeating: "a", count: 40)), "A GitHub login has at most 39 characters."
+        )
+        XCTAssertEqual(
+            OwnerSelection.problem(with: "a--b"),
+            "A GitHub login can’t start or end with a hyphen or have two hyphens in a row.")
+
+        XCTAssertEqual(OwnerSelection(["acme"]).adding("Beta").owners, ["acme", "Beta"])
+        XCTAssertEqual(OwnerSelection(["acme"]).adding("ACME").owners, ["acme"])
+        XCTAssertEqual(OwnerSelection(["acme", "beta"]).toggling("ACME").owners, ["beta"])
+        XCTAssertTrue(OwnerSelection(["acme"]).toggling("acme").isAll, "Taking out the last owner selects All owners")
+    }
 }
