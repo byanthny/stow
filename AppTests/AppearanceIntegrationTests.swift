@@ -623,6 +623,16 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertTrue(titles.contains("Enable sample accessory"))
     }
 
+    func testReduceTransparencyFollowsTheSystemBeforeThePostReturns() {
+        let system = SystemReduceTransparency()
+        let theme = ThemeController(readsReduceTransparency: { system.isOn })
+        XCTAssertFalse(theme.reduceTransparency)
+        system.isOn = true
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        XCTAssertTrue(theme.reduceTransparency)
+    }
+
     func testThemesDoNotBleedBetweenStores() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -640,6 +650,10 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertEqual(b.theme.snapshot.colorScheme, .light)
         XCTAssertNotEqual(a.theme.snapshot, b.theme.snapshot)
     }
+}
+
+@MainActor private final class SystemReduceTransparency {
+    var isOn = false
 }
 
 /// A board-style note: room above it, and a binding, so typing grows it inside a scrolling board.

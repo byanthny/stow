@@ -73,15 +73,24 @@ extension ShapeStyle where Self == StowColor {
 /// One per store: windows of different stores never share a theme.
 @MainActor @Observable final class ThemeController {
     private(set) var settings = AppearanceSettings.default
-    private(set) var reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+    private(set) var reduceTransparency: Bool
+    @ObservationIgnored private let readsReduceTransparency: @MainActor () -> Bool
     @ObservationIgnored nonisolated(unsafe) private var accessibilityObserver: NSObjectProtocol?
 
-    init() {
+    /// `readsReduceTransparency` reads the system setting; tests replace it.
+    init(
+        readsReduceTransparency: @escaping @MainActor () -> Bool = {
+            NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        }
+    ) {
+        self.readsReduceTransparency = readsReduceTransparency
+        reduceTransparency = readsReduceTransparency()
         accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.reduceTransparency = self.readsReduceTransparency()
             }
         }
     }
