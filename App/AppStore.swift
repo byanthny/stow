@@ -134,7 +134,7 @@ final class AppStore {
         // Whatever its saved state says, a profile not seen before must not turn GitHub or accessories on here.
         if isArrival { state = state.preparedForArrival() }
         for index in state.pullRequests.indices {
-            state.pullRequests[index].isStale = true
+            state.pullRequests[index].markStale()
             state.pullRequests[index].readinessIsComplete = false
         }
         // Demo content sets which of its cards are fresh.

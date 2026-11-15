@@ -131,14 +131,6 @@ final class AppStoreCancellationTests: XCTestCase {
         try await checkQueuedAccessoryRemoval(deleteOwner: true)
     }
 
-    func testCheckSymbolsDistinguishPendingUnknownFailureAndSuccess() {
-        XCTAssertEqual(checkSymbol("PENDING"), "clock")
-        XCTAssertEqual(checkSymbol("IN_PROGRESS"), "clock")
-        XCTAssertEqual(checkSymbol("future-state"), "questionmark.circle")
-        XCTAssertEqual(checkSymbol("SUCCESS"), "checkmark.circle")
-        XCTAssertEqual(checkSymbol("FAILURE"), "xmark.circle")
-    }
-
     private func checkQueuedAccessoryRemoval(deleteOwner: Bool) async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

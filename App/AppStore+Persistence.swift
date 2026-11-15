@@ -251,7 +251,7 @@ extension AppStore {
             // A received backup never chooses this Mac's GitHub CLI or turns GitHub access on.
             var restored = replacement.keepingMachineLocalSettings(from: state)
             for index in restored.pullRequests.indices {
-                restored.pullRequests[index].isStale = true
+                restored.pullRequests[index].markStale()
                 restored.pullRequests[index].readinessIsComplete = false
             }
             let result = try await repository.restore(restored)

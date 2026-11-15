@@ -114,7 +114,7 @@ struct PRCard: View {
         if let details = pr.details {
             ForEach(Array(details.checks.enumerated()), id: \.offset) { _, check in
                 HStack(spacing: 6) {
-                    Image(systemName: checkSymbol(check.state)).foregroundStyle(toneColor(checkTone(check.state)))
+                    Image(systemName: check.outcome.symbol).foregroundStyle(toneColor(check.outcome.tone))
                     if let url = check.url {
                         Button(check.name) { AppStore.openLink(url) }.buttonStyle(.plain).underline()
                     } else {
@@ -193,15 +193,6 @@ private func checksSymbol(_ tone: AttentionTone) -> String {
     case .success: "checkmark.circle.fill"
     case .failure: "xmark.circle.fill"
     case .pending, .neutral: "circle.fill"
-    }
-}
-
-func checkSymbol(_ state: String) -> String {
-    switch state {
-    case "SUCCESS", "NEUTRAL", "SKIPPED": "checkmark.circle"
-    case "FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE": "xmark.circle"
-    case "PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED": "clock"
-    default: "questionmark.circle"
     }
 }
 

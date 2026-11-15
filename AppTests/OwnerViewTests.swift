@@ -85,7 +85,7 @@ final class OwnerViewTests: XCTestCase {
         await store.refresh()
         let sections: [AttentionSection] = [.needsYou, .waiting]
         var everything: [AttentionSection: [PullRequestSnapshot]] = [:]
-        var reasons: [String: String] = [:]
+        var reasons: [String: AttentionReason] = [:]
         for section in sections {
             everything[section] = store.cards(in: section)
             for card in store.cards(in: section) {
@@ -100,8 +100,8 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(
             Set(reasons.values),
             [
-                "Ready to merge", "Changes requested", "Checks failing", "Draft", "Review requested",
-                "Waiting for review", "Watching", "Merged",
+                .readyToMerge, .changesRequested, .checksFailing, .draft, .reviewRequested, .waitingForReview,
+                .watching, .merged,
             ])
         let cached = store.state.pullRequests
 
@@ -272,7 +272,7 @@ final class OwnerViewTests: XCTestCase {
         await store.refresh()
         XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinnedMerged.id, open.id], "Pinned cards stay in Waiting")
         XCTAssertEqual(store.mergedCards.map(\.id), [merged.id, closed.id])
-        XCTAssertEqual(store.mergedCards.map { classify($0).reason }, ["Merged", "Closed"])
+        XCTAssertEqual(store.mergedCards.map { classify($0).reason }, [.merged, .closed])
         XCTAssertTrue(store.cards(in: .needsYou).isEmpty)
 
         // Collapsed at first, and only in memory: the saved collapsed sections never name the group.

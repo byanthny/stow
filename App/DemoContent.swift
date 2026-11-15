@@ -94,7 +94,7 @@ enum DemoContent {
         ]
         // Cards show as cached until a refresh, except one fresh approved card that shows the green outline.
         for index in state.pullRequests.indices where state.pullRequests[index].reference != second {
-            state.pullRequests[index].isStale = true
+            state.pullRequests[index].markStale()
             state.pullRequests[index].readinessIsComplete = false
         }
         state.notes = [

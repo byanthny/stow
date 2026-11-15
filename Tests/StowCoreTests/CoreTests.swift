@@ -14,19 +14,19 @@ final class AttentionTests: XCTestCase {
 
     func testOwnAttentionPriorityAndDraftTerminalOverrides() {
         var snapshot = ready()
-        XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: "Ready to merge"))
+        XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: .readyToMerge))
         snapshot.checksState = "ERROR"
-        XCTAssertEqual(classify(snapshot).reason, "Checks failing")
+        XCTAssertEqual(classify(snapshot).reason, .checksFailing)
         snapshot.reviewDecision = "CHANGES_REQUESTED"
-        XCTAssertEqual(classify(snapshot).reason, "Changes requested")
+        XCTAssertEqual(classify(snapshot).reason, .changesRequested)
         snapshot.mergeStateStatus = "DIRTY"
-        XCTAssertEqual(classify(snapshot).reason, "Resolve conflicts")
+        XCTAssertEqual(classify(snapshot).reason, .resolveConflicts)
         snapshot.isDraft = true
-        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Draft"))
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: .draft))
         snapshot.state = "MERGED"
-        XCTAssertEqual(classify(snapshot).reason, "Merged")
+        XCTAssertEqual(classify(snapshot).reason, .merged)
         snapshot.state = "CLOSED"
-        XCTAssertEqual(classify(snapshot).reason, "Closed")
+        XCTAssertEqual(classify(snapshot).reason, .closed)
     }
 
     func testApprovedNeedsAnOpenFreshApproval() {
@@ -77,16 +77,36 @@ final class AttentionTests: XCTestCase {
         snapshot.isStale = true
         XCTAssertEqual(classify(snapshot).section, .waiting)
         snapshot.checksState = "FAILURE"
-        XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: "Checks failing"))
+        XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: .checksFailing))
         snapshot.mergeable = "CONFLICTING"
-        XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: "Resolve conflicts"))
+        XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: .resolveConflicts))
+    }
+
+    func testSnapshotMarkedStaleNeverClassifiesAsReady() {
+        XCTAssertEqual(classify(ready()).reason, .readyToMerge)
+        let checks: [String?] = [nil, "SUCCESS", "PENDING", "EXPECTED", "FAILURE", "ERROR", "FUTURE"]
+        let reviews: [String?] = [nil, "APPROVED", "REVIEW_REQUIRED", "CHANGES_REQUESTED", "FUTURE"]
+        for checksState in checks {
+            for reviewDecision in reviews {
+                var snapshot = ready()
+                snapshot.checksState = checksState
+                snapshot.reviewDecision = reviewDecision
+                snapshot.markStale()
+                let label = "\(checksState ?? "no checks"), \(reviewDecision ?? "no review")"
+                XCTAssertTrue(snapshot.isStale, label)
+                XCTAssertFalse(snapshot.isApproved, label)
+                for isPinned in [false, true] {
+                    XCTAssertNotEqual(classify(snapshot, isPinned: isPinned).reason, .readyToMerge, label)
+                }
+            }
+        }
     }
 
     func testKnownEmptyChecksAndReviewsPermitReadiness() {
         var snapshot = ready()
         snapshot.checksState = nil
         snapshot.reviewDecision = nil
-        XCTAssertEqual(classify(snapshot).reason, "Ready to merge")
+        XCTAssertEqual(classify(snapshot).reason, .readyToMerge)
         snapshot.checksKnown = false
         XCTAssertEqual(classify(snapshot).section, .waiting)
         snapshot.checksKnown = true
@@ -117,32 +137,32 @@ final class AttentionTests: XCTestCase {
             snapshot.checksState = "FAILURE"
             snapshot.reviewDecision = "CHANGES_REQUESTED"
             XCTAssertEqual(classify(snapshot).section, .waiting)
-            XCTAssertEqual(classify(snapshot, isPinned: true).reason, "Watching")
+            XCTAssertEqual(classify(snapshot, isPinned: true).reason, .watching)
             snapshot.hasDirectReviewRequest = nil
             XCTAssertEqual(classify(snapshot).section, .waiting)
             snapshot.hasDirectReviewRequest = true
-            XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: "Review requested"))
+            XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: .reviewRequested))
         }
     }
 
     func testBehindIsInformationalAndConflictCanUseEitherField() {
         var snapshot = ready()
         snapshot.mergeStateStatus = "BEHIND"
-        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Behind base branch"))
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: .behindBaseBranch))
         snapshot.mergeable = "CONFLICTING"
-        XCTAssertEqual(classify(snapshot).reason, "Resolve conflicts")
+        XCTAssertEqual(classify(snapshot).reason, .resolveConflicts)
         snapshot.mergeable = "MERGEABLE"
         snapshot.checksState = "FAILURE"
-        XCTAssertEqual(classify(snapshot).reason, "Checks failing")
+        XCTAssertEqual(classify(snapshot).reason, .checksFailing)
     }
 
     func testReviewAndChecksOutrankBeingBehind() {
         var snapshot = ready()
         snapshot.mergeStateStatus = "BEHIND"
         snapshot.reviewDecision = "REVIEW_REQUIRED"
-        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Review required"))
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: .reviewRequired))
         snapshot.checksState = "PENDING"
-        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: "Checks pending"))
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: .checksPending))
     }
 
     func testPullRequestLinksStayOnGitHub() {
@@ -166,10 +186,66 @@ final class AttentionTests: XCTestCase {
             pullRequest.checksKnown = known
             XCTAssertEqual(pullRequest.checksStatus, ChecksStatus(label: label, tone: tone), state ?? "none")
         }
-        XCTAssertEqual(checkTone("SUCCESS"), .success)
-        XCTAssertEqual(checkTone("TIMED_OUT"), .failure)
-        XCTAssertEqual(checkTone("IN_PROGRESS"), .pending)
-        XCTAssertEqual(checkTone("SKIPPED"), .neutral)
+    }
+
+    func testEveryGitHubCheckStateHasOneOutcome() {
+        typealias Group = (
+            states: [String], outcome: CheckOutcome, tone: AttentionTone, symbol: String, attention: Bool
+        )
+        let groups: [Group] = [
+            (["SUCCESS"], .success, .success, "checkmark.circle", false),
+            (
+                ["FAILURE", "ERROR", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"], .failure,
+                .failure, "xmark.circle", true
+            ),
+            (
+                ["PENDING", "EXPECTED", "QUEUED", "IN_PROGRESS", "WAITING", "REQUESTED"], .pending, .pending, "clock",
+                true
+            ),
+            (["NEUTRAL", "SKIPPED"], .neutral, .neutral, "minus.circle", false),
+            (["UNKNOWN", "future-state"], .unknown, .neutral, "questionmark.circle", true),
+        ]
+        for group in groups {
+            for state in group.states {
+                let outcome = CheckSummary(name: "Synthetic", state: state).outcome
+                XCTAssertEqual(outcome, group.outcome, state)
+                XCTAssertEqual(outcome.tone, group.tone, state)
+                XCTAssertEqual(outcome.symbol, group.symbol, state)
+                XCTAssertEqual(outcome.isPassing, group.outcome == .success, state)
+                XCTAssertEqual(outcome.mayNeedAttention, group.attention, state)
+            }
+        }
+    }
+
+    func testSkippedAndNeutralChecksAreMutedNotPassed() {
+        for state in ["NEUTRAL", "SKIPPED"] {
+            let outcome = CheckOutcome(githubState: state)
+            XCTAssertEqual(outcome.symbol, "minus.circle", state)
+            XCTAssertNotEqual(outcome.symbol, CheckOutcome(githubState: "SUCCESS").symbol, state)
+            XCTAssertFalse(outcome.isPassing, state)
+            XCTAssertEqual(outcome.tone, .neutral, state)
+        }
+    }
+
+    func testReviewDecisionsReadOnlyKnownValues() {
+        let known: [(String, ReviewDecision)] = [
+            ("APPROVED", .approved), ("CHANGES_REQUESTED", .changesRequested), ("REVIEW_REQUIRED", .reviewRequired),
+        ]
+        var snapshot = ready()
+        for (value, decision) in known {
+            XCTAssertEqual(ReviewDecision(githubValue: value), decision, value)
+            snapshot.reviewDecision = value
+            XCTAssertEqual(snapshot.review, decision, value)
+        }
+        snapshot.reviewDecision = nil
+        XCTAssertNil(snapshot.review)
+
+        // An unknown decision is no decision to the type, but still a pending review on the card and never ready.
+        snapshot.reviewDecision = "FUTURE"
+        XCTAssertNil(snapshot.review)
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: .readinessUnknown))
+        XCTAssertEqual(snapshot.cardStatus(under: classify(snapshot)).notes, ["Review pending"])
+        XCTAssertFalse(snapshot.isApproved)
     }
 
     func testCardsKeepChecksBelowAndNeverRepeatTheState() {
@@ -225,16 +301,32 @@ final class AttentionTests: XCTestCase {
             behind.cardStatus(under: classify(behind)).notes.contains("Behind base"), "It's already the headline")
     }
 
-    func testStatusTonesFollowGitHubColors() {
-        let tones: [(String, AttentionTone)] = [
-            ("Ready to merge", .success), ("Checks failing", .failure), ("Resolve conflicts", .failure),
-            ("Changes requested", .failure), ("Closed", .failure), ("Review requested", .pending),
-            ("Review required", .pending), ("Waiting for review", .pending), ("Checks pending", .pending),
-            ("Behind base branch", .pending), ("Draft", .neutral), ("Watching", .neutral), ("Merged", .neutral),
-            ("Unavailable", .neutral), ("Readiness unknown", .neutral),
+    func testEveryReasonKeepsItsTextToneAndTopic() {
+        let expected: [(reason: AttentionReason, text: String, tone: AttentionTone, checks: Bool, review: Bool)] = [
+            (.readyToMerge, "Ready to merge", .success, false, false),
+            (.checksFailing, "Checks failing", .failure, true, false),
+            (.resolveConflicts, "Resolve conflicts", .failure, false, false),
+            (.changesRequested, "Changes requested", .failure, false, true),
+            (.closed, "Closed", .failure, false, false),
+            (.reviewRequested, "Review requested", .pending, false, true),
+            (.reviewRequired, "Review required", .pending, false, true),
+            (.waitingForReview, "Waiting for review", .pending, false, true),
+            (.checksPending, "Checks pending", .pending, true, false),
+            (.behindBaseBranch, "Behind base branch", .pending, false, false),
+            (.draft, "Draft", .neutral, false, false),
+            (.watching, "Watching", .neutral, false, false),
+            (.merged, "Merged", .neutral, false, false),
+            (.unavailable, "Unavailable", .neutral, false, false),
+            (.readinessUnknown, "Readiness unknown", .neutral, false, false),
         ]
-        for (reason, tone) in tones {
-            XCTAssertEqual(AttentionClassification(section: .waiting, reason: reason).tone, tone, reason)
+        XCTAssertEqual(expected.map(\.reason), AttentionReason.allCases)
+        for reason in AttentionReason.allCases {
+            guard let row = expected.first(where: { $0.reason == reason }) else { continue }
+            XCTAssertEqual(reason.rawValue, row.text)
+            XCTAssertEqual(reason.tone, row.tone, row.text)
+            XCTAssertEqual(reason.isAboutChecks, row.checks, row.text)
+            XCTAssertEqual(reason.isAboutReview, row.review, row.text)
+            XCTAssertEqual(AttentionClassification(section: .waiting, reason: reason).tone, row.tone, row.text)
         }
         XCTAssertEqual(classify(ready()).tone, .success)
         var draft = ready()
