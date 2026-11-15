@@ -135,6 +135,66 @@ final class NoteModelTests: XCTestCase {
         XCTAssertFalse(noteViews.isRaised, "A GitHub refresh redrew a note")
     }
 
+    func testAgesMoveWithOneClockThatRunsOnlyWhileOneShows() async throws {
+        let clock = MinuteClock(interval: .milliseconds(40))
+        let store = AppStore(
+            stateURL: try makeDirectory().appendingPathComponent("state.json"), accessoryProviders: [], clock: clock)
+        let reference = PullRequestReference(owner: "example", repository: "synthetic", number: 7)
+        let card = PullRequestSnapshot(
+            reference: reference, title: "Synthetic card", updatedAt: .now.addingTimeInterval(-600))
+        store.base.githubEnabled = true
+        store.base.pullRequests = [card]
+        store.base.lastRefreshAt = .now.addingTimeInterval(-120)
+        let first = try model(store, store.addNote("# First"))
+        let second = try model(store, store.addNote("# Second"))
+        store.expandedNoteIDs = []
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 380, height: 700), styleMask: [.titled], backing: .buffered,
+            defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let board = BoardView(store: store, profile: ProfileHandle(id: UUID()), showSettings: {})
+        let host = NSHostingView(rootView: board.themed(by: store.theme))
+        window.contentView = host
+        window.orderFront(nil)
+        await settle(host)
+        XCTAssertEqual(clock.viewers, 4, "Two folded notes, a card, and the last refresh show ages")
+
+        let views = Flag()
+        withObservationTracking {
+            _ = board.body
+            _ = board.notesSection
+            _ = CollapsedNoteRow(store: store, note: first).body
+            _ = PRCard(store: store, pr: card, isPinned: false, isExpanded: false, isLoading: false, notes: []).body
+        } onChange: {
+            views.raise()
+        }
+        let ages = Flag()
+        withObservationTracking { _ = MinuteAge(clock: clock) { Text($0, style: .time) }.body } onChange: {
+            ages.raise()
+        }
+        let start = clock.now
+        let ticked = await waitUntil { clock.now > start }
+        XCTAssertTrue(ticked, "The clock moved on")
+        XCTAssertTrue(ages.isRaised, "A tick redraws the ages")
+        XCTAssertFalse(views.isRaised, "A tick redrew the board, a note row, or a card")
+
+        store.toggleNoteExpanded(first.id)
+        store.toggleNoteExpanded(second.id)
+        store.base.githubEnabled = false
+        await settle(host)
+        XCTAssertEqual(clock.viewers, 0)
+        let stopped = clock.now
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(clock.now, stopped, "No age shows, yet the clock still runs")
+        var shown: Date?
+        _ = MinuteAge(clock: clock) { date in
+            shown = date
+            return Text(date, style: .time)
+        }.body
+        XCTAssertGreaterThan(try XCTUnwrap(shown), stopped, "A newly shown age counts from the last tick")
+    }
+
     func testTheBoardFollowsNotesBeingDetachedFoldedAddedAndDeleted() async throws {
         let url = try makeDirectory().appendingPathComponent("state.json")
         var initial = AppState()

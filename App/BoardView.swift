@@ -97,9 +97,7 @@ struct BoardView: View {
                 if !store.base.githubEnabled {
                     Text("Notes only")
                 } else if let refreshed = store.base.lastRefreshAt {
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        Text("Updated \(refreshed.shortAge(relativeTo: context.date))")
-                    }
+                    MinuteAge(clock: store.clock) { now in Text("Updated \(refreshed.shortAge(relativeTo: now))") }
                 } else {
                     Text("Notes are saved on this Mac")
                 }
