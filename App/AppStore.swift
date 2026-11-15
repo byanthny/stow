@@ -90,12 +90,14 @@ final class AppStore {
     @ObservationIgnored var persistedRevision: UInt64 = 0
     @ObservationIgnored var deletedNoteIDs: Set<UUID> = []
     @ObservationIgnored private(set) var isStopped = false
-    @ObservationIgnored private var refreshTimer: Task<Void, Never>?
+    @ObservationIgnored private(set) var refreshTimer: Task<Void, Never>?
     /// When a refresh last asked GitHub.
     @ObservationIgnored var lastRefreshAttempt: ContinuousClock.Instant?
     /// The time activation refreshes compare with the last attempt; tests replace it.
     @ObservationIgnored var now: () -> ContinuousClock.Instant = { .now }
-    @ObservationIgnored private var accessoryTask: Task<Void, Never>?
+    @ObservationIgnored private(set) var accessoryTask: Task<Void, Never>?
+    /// How often the refresh and accessory loops wake; tests shorten it.
+    @ObservationIgnored var backgroundInterval: Duration = .seconds(120)
     @ObservationIgnored var sessionGeneration = 0
 
     /// Without a data folder, the profile's own folder stands in for it.
@@ -153,17 +155,21 @@ final class AppStore {
         configureGitHub()
         // A store stopped while it loaded starts no timers.
         guard !isStopped else { return }
-        refreshTimer = Task { [weak self] in
+        refreshTimer = repeating(every: backgroundInterval, immediately: false) { await $0.refresh() }
+        accessoryTask = repeating(every: backgroundInterval, immediately: true) { await $0.refreshAccessories() }
+    }
+
+    /// Runs `work` every `interval` until cancelled or the store is gone, holding the store only while it runs.
+    private func repeating(
+        every interval: Duration, immediately: Bool, _ work: @escaping @MainActor (AppStore) async -> Void
+    ) -> Task<Void, Never> {
+        Task { [weak self] in
+            var waits = !immediately
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(120))
-                guard !Task.isCancelled else { return }
-                await self?.refresh()
-            }
-        }
-        accessoryTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refreshAccessories()
-                try? await Task.sleep(for: .seconds(120))
+                if waits { try? await Task.sleep(for: interval) }
+                waits = true
+                guard !Task.isCancelled, let self else { return }
+                await work(self)
             }
         }
     }

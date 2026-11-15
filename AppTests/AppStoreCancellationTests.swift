@@ -123,6 +123,32 @@ final class AppStoreCancellationTests: XCTestCase {
             relaunched.expandedNoteIDs.count, relaunched.state.notes.count, "Expanded start opens every note")
     }
 
+    func testReleasedStoreEndsItsBackgroundLoops() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store: AppStore? = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
+        store?.backgroundInterval = .milliseconds(20)
+        await store?.start()
+        let loops = try [XCTUnwrap(store?.refreshTimer), XCTUnwrap(store?.accessoryTask)]
+        defer { for loop in loops { loop.cancel() } }
+        let presenter = try XCTUnwrap(store?.notesPresenter)
+        defer { NSFileCoordinator.removeFilePresenter(presenter) }
+        weak var released: AppStore?
+        released = store
+        store = nil
+        XCTAssertNil(released, "Only the caller holds the store")
+
+        let ended = EndedLoops()
+        for loop in loops {
+            Task {
+                await loop.value
+                ended.count += 1
+            }
+        }
+        let allEnded = await waitUntil { ended.count == loops.count }
+        XCTAssertTrue(allEnded, "A store released without stop() leaves no loop waking")
+    }
+
     func testDisablingQueuedAccessoryPreventsItsProviderFromStarting() async throws {
         try await checkQueuedAccessoryRemoval(deleteOwner: false)
     }
@@ -195,6 +221,10 @@ final class AppStoreCancellationTests: XCTestCase {
         }
         return await predicate()
     }
+}
+
+@MainActor private final class EndedLoops {
+    var count = 0
 }
 
 private actor CancelledDetailClient: GitHubClient {
