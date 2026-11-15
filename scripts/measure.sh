@@ -63,11 +63,12 @@ printf 'launched pid %s with 30 cards and 20 notes; idle for 60 seconds\n' "$pid
 sleep 60
 kill -0 "$pid"
 
+# Samples three minutes, which hold three of the once-a-minute age updates.
 # top -l prints the first sample without an interval, so its CPU is dropped. IDLEW is a running total for the
-# process, so the rate is its growth from the first sample to the last over the five 10-second intervals.
-swift scripts/usage.swift "$pid" 50 >"$output/usage.txt" &
+# process, so the rate is its growth from the first sample to the last over the eighteen 10-second intervals.
+swift scripts/usage.swift "$pid" 180 >"$output/usage.txt" &
 usage_job=$!
-samples=$(top -l 6 -s 10 -pid "$pid" -stats cpu,idlew,mem | awk '$1 ~ /^[0-9.]+$/ && NF == 3')
+samples=$(top -l 19 -s 10 -pid "$pid" -stats cpu,idlew,mem | awk '$1 ~ /^[0-9.]+$/ && NF == 3')
 footprint_line=$(footprint "$pid" | awk '/Footprint:/ { sub(/.*Footprint: /, ""); sub(/ \(.*/, ""); print; exit }')
 wait "$usage_job"
 kill "$pid"
@@ -76,10 +77,10 @@ pid=''
 printf '%s\n' "$samples" | awk -v footprint="$footprint_line" '
     { count++; cpu[count] = $1; idle[count] = $2 + 0; mem = $3; sub(/[+-]$/, "", mem) }
     END {
-        if (count != 6) { printf "expected 6 top samples, got %d\n", count > "/dev/stderr"; exit 1 }
+        if (count != 19) { printf "expected 19 top samples, got %d\n", count > "/dev/stderr"; exit 1 }
         for (i = 2; i <= count; i++) { sum += cpu[i]; if (cpu[i] > max) max = cpu[i] }
-        printf "cpu: mean %.2f%% max %.2f%% over 5 samples\n", sum / 5, max
-        printf "idle wakeups: %.2f/s (%d in 50 s)\n", (idle[count] - idle[1]) / 50, idle[count] - idle[1]
+        printf "cpu: mean %.2f%% max %.2f%% over 18 samples\n", sum / 18, max
+        printf "idle wakeups: %.2f/s (%d in 180 s)\n", (idle[count] - idle[1]) / 180, idle[count] - idle[1]
         printf "memory (top, last sample): %s\n", mem
         printf "phys footprint: %s\n", footprint
     }'
