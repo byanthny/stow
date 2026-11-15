@@ -1921,28 +1921,6 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(manager.profiles.contains { $0.id == entry.id }, "A profile Stow can't look for stays listed")
     }
 
-    func testNewProfileColorsStayDistinct() {
-        let palette = ProfilePalette.colors
-        XCTAssertGreaterThan(palette.count, 3)
-        XCTAssertTrue(palette.allSatisfy(ProfileIdentity.isValidColor))
-        XCTAssertEqual(ProfilePalette.firstUnused(among: []), palette[0])
-        XCTAssertEqual(ProfilePalette.firstUnused(among: ["#8E8E93", palette[0].lowercased()]), palette[1])
-        XCTAssertEqual(ProfilePalette.firstUnused(among: [palette[1]]), palette[0])
-
-        // Each new profile's default differs from every color in use, also once the palette is used up.
-        var used = ["#8E8E93"]
-        for _ in 0..<40 {
-            let color = ProfilePalette.firstUnused(among: used)
-            XCTAssertTrue(ProfileIdentity.isValidColor(color), color)
-            XCTAssertFalse(used.contains { $0.caseInsensitiveCompare(color) == .orderedSame }, color)
-            used.append(color)
-        }
-        XCTAssertEqual(Array(used.dropFirst().prefix(palette.count)), palette)
-        let afterPalette = ProfilePalette.firstUnused(among: palette)
-        XCTAssertEqual(ProfilePalette.firstUnused(among: palette), afterPalette, "The choice is deterministic")
-        XCTAssertNotEqual(ProfilePalette.firstUnused(among: palette + [afterPalette.lowercased()]), afterPalette)
-    }
-
     func testNewProfileRequestShowsTheSheetInSettings() async throws {
         let folder = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: folder) }

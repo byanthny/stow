@@ -147,9 +147,8 @@ struct AppearanceView: View {
                 set: { color in
                     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
                     var updated = store.state.appearance
-                    updated.colors[keyPath: keyPath] = String(
-                        format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
-                        Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()))
+                    updated.colors[keyPath: keyPath] =
+                        RGBColor(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent).hex
                     updated.name = "Custom"
                     store.applyAppearance(updated)
                 }), supportsOpacity: false)
@@ -208,35 +207,6 @@ struct AppearanceView: View {
         } catch {
             importError = "The config could not be copied. \(error.localizedDescription)"
         }
-    }
-}
-
-/// One size-limited import path for pasted configs and local files, including legacy JSON.
-enum ThemeConfigTransfer {
-    static let maximumBytes = 1_048_576
-
-    static func decode(_ data: Data) throws -> AppearanceSettings {
-        guard data.count <= maximumBytes else {
-            throw AppearanceError.invalidValue("config size (maximum 1 MB)")
-        }
-        guard let source = String(data: data, encoding: .utf8) else {
-            throw AppearanceError.invalidValue("text encoding; use UTF-8")
-        }
-        if source.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
-            return try AppearanceSettings.decodeTheme(data)
-        }
-        return try AppearanceSettings.decodeConfig(source)
-    }
-
-    static func read(_ url: URL) throws -> Data {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
-        // Read at most one byte beyond the limit, even if a file grows after the panel opens.
-        let data = try handle.read(upToCount: maximumBytes + 1) ?? Data()
-        guard data.count <= maximumBytes else {
-            throw AppearanceError.invalidValue("file size (maximum 1 MB)")
-        }
-        return data
     }
 }
 

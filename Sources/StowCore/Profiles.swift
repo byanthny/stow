@@ -192,6 +192,29 @@ public struct ProfileIdentity: Codable, Equatable, Sendable {
     }
 }
 
+/// The colors new profiles start with, so each starts distinct. Any color can be chosen afterwards.
+public enum ProfilePalette {
+    public static let colors = ["#0A84FF", "#30D158", "#FF9F0A", "#BF5AF2", "#FF375F", "#64D2FF", "#FFD60A", "#AC8E68"]
+
+    /// The first color that no profile uses, ignoring case: the palette in order, then further hues spread around
+    /// the color wheel, so a new profile's default always differs from the colors in use.
+    public static func firstUnused(among used: [String]) -> String {
+        let taken = Set(used.map { $0.uppercased() })
+        if let color = colors.first(where: { !taken.contains($0) }) { return color }
+        // Hues 137 degrees apart reach every whole degree in 360 steps; each later round is paler or darker.
+        for step in 0..<(360 * 9) {
+            let round = step / 360
+            let color = RGBColor(
+                hue: Double(step * 137 % 360) / 360, saturation: 0.7 - 0.15 * Double(round % 3),
+                brightness: 0.9 - 0.15 * Double(round / 3)
+            ).hex
+            if !taken.contains(color) { return color }
+        }
+        // Only with thousands of profiles: the first color of all that no profile uses.
+        return (0..<0x100_0000).lazy.map { String(format: "#%06X", $0) }.first { !taken.contains($0) } ?? colors[0]
+    }
+}
+
 /// Which profiles exist and are open, stored beside the profile folders as `profiles.json`.
 public struct ProfileIndex: Codable, Equatable, Sendable {
     public struct OpenProfile: Codable, Equatable, Sendable {

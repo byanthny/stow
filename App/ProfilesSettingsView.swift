@@ -425,48 +425,6 @@ struct ProfileIconView: View {
     }
 }
 
-/// The colors new profiles start with, so each starts distinct. Any color can be chosen afterwards.
-enum ProfilePalette {
-    static let colors = ["#0A84FF", "#30D158", "#FF9F0A", "#BF5AF2", "#FF375F", "#64D2FF", "#FFD60A", "#AC8E68"]
-
-    /// The first color that no profile uses, ignoring case: the palette in order, then further hues spread around
-    /// the color wheel, so a new profile's default always differs from the colors in use.
-    static func firstUnused(among used: [String]) -> String {
-        let taken = Set(used.map { $0.uppercased() })
-        if let color = colors.first(where: { !taken.contains($0) }) { return color }
-        // Hues 137 degrees apart reach every whole degree in 360 steps; each later round is paler or darker.
-        for step in 0..<(360 * 9) {
-            let round = step / 360
-            let color = hex(
-                hue: Double(step * 137 % 360) / 360, saturation: 0.7 - 0.15 * Double(round % 3),
-                brightness: 0.9 - 0.15 * Double(round / 3))
-            if !taken.contains(color) { return color }
-        }
-        // Only with thousands of profiles: the first color of all that no profile uses.
-        return (0..<0x100_0000).lazy.map { String(format: "#%06X", $0) }.first { !taken.contains($0) } ?? colors[0]
-    }
-
-    /// `#RRGGBB` for a hue, saturation, and brightness, each from 0 to 1.
-    private static func hex(hue: Double, saturation: Double, brightness: Double) -> String {
-        let sector = hue * 6
-        let fraction = sector - sector.rounded(.down)
-        let low = brightness * (1 - saturation)
-        let falling = brightness * (1 - saturation * fraction)
-        let rising = brightness * (1 - saturation * (1 - fraction))
-        let (red, green, blue) =
-            switch Int(sector) % 6 {
-            case 0: (brightness, rising, low)
-            case 1: (falling, brightness, low)
-            case 2: (low, brightness, rising)
-            case 3: (low, falling, brightness)
-            case 4: (rising, low, brightness)
-            default: (brightness, low, falling)
-            }
-        let bytes = [red, green, blue].map { Int(($0 * 255).rounded()) }
-        return String(format: "#%02X%02X%02X", bytes[0], bytes[1], bytes[2])
-    }
-}
-
 extension ProfileIcon {
     /// The icon when this Mac can show it: nil for a symbol that macOS does not have, such as one from a newer
     /// release on a profile copied from another Mac.
@@ -490,10 +448,7 @@ extension Color {
     /// The color as `#RRGGBB` in sRGB, the form profile identities keep.
     var stowHex: String {
         let color = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(srgbRed: 0.5, green: 0.5, blue: 0.5, alpha: 1)
-        let bytes = [color.redComponent, color.greenComponent, color.blueComponent].map {
-            Int((min(max($0, 0), 1) * 255).rounded())
-        }
-        return String(format: "#%02X%02X%02X", bytes[0], bytes[1], bytes[2])
+        return RGBColor(red: color.redComponent, green: color.greenComponent, blue: color.blueComponent).hex
     }
 }
 

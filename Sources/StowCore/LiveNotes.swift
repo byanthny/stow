@@ -18,26 +18,11 @@ enum LiveNoteIO {
     static let maximumIndexBytes = 64 * 1024 * 1024
 
     static func exists(_ url: URL) throws -> Bool {
-        var info = stat()
-        let result = url.path.withCString { Darwin.lstat($0, &info) }
-        if result == 0 { return true }
-        if errno == ENOENT || errno == ENOTDIR { return false }
-        throw StateError.unreadable
+        do { return try PrivateFile.exists(url) } catch { throw stateError(error) }
     }
 
     static func ensureDirectory(_ url: URL) throws {
-        if try exists(url) {
-            var info = stat()
-            guard url.path.withCString({ Darwin.lstat($0, &info) }) == 0,
-                (info.st_mode & S_IFMT) == S_IFDIR
-            else { throw StateError.unreadable }
-        } else {
-            do {
-                try FileManager.default.createDirectory(
-                    at: url, withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700])
-            } catch { throw StateError.unwritable }
-        }
+        do { try PrivateFile.ensureFolder(url) } catch { throw stateError(error) }
     }
 
     static func read(_ url: URL, maximumBytes: Int) throws -> Data? {
@@ -55,26 +40,16 @@ enum LiveNoteIO {
     }
 
     private static func readUncoordinated(_ url: URL, maximumBytes: Int) throws -> Data? {
-        let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK) }
-        if descriptor < 0 {
-            if errno == ENOENT { return nil }
-            throw StateError.unreadable
+        do { return try PrivateFile.read(url, maximumBytes: maximumBytes) } catch { throw stateError(error) }
+    }
+
+    /// The state error for a private file failure: an oversize file is corrupt.
+    private static func stateError(_ error: any Error) -> StateError {
+        switch error as? PrivateFileError {
+        case .tooLarge?: .corrupt
+        case .unwritable?: .unwritable
+        case .exists?, .unreadable?, nil: .unreadable
         }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        defer { try? handle.close() }
-        var info = stat()
-        guard Darwin.fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else {
-            throw StateError.unreadable
-        }
-        guard info.st_size <= maximumBytes else { throw StateError.corrupt }
-        var data = Data()
-        do {
-            while let chunk = try handle.read(upToCount: min(65_536, maximumBytes + 1 - data.count)), !chunk.isEmpty {
-                data.append(chunk)
-                guard data.count <= maximumBytes else { throw StateError.corrupt }
-            }
-        } catch let error as StateError { throw error } catch { throw StateError.unreadable }
-        return data
     }
 
     static func source(_ data: Data) throws -> String {
@@ -132,28 +107,7 @@ enum LiveNoteIO {
             else { throw StateError.unreadable }
             guard replace else { throw StateError.unwritable }
         }
-        let temporary = url.deletingLastPathComponent().appendingPathComponent(".stow-\(UUID().uuidString).tmp")
-        let descriptor = temporary.path.withCString {
-            Darwin.open($0, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, mode_t(0o600))
-        }
-        guard descriptor >= 0 else { throw StateError.unwritable }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        defer {
-            try? handle.close()
-            try? FileManager.default.removeItem(at: temporary)
-        }
-        guard Darwin.fchmod(descriptor, mode_t(0o600)) == 0 else { throw StateError.unwritable }
-        do {
-            try handle.write(contentsOf: data)
-            try handle.synchronize()
-            try handle.close()
-        } catch { throw StateError.unwritable }
-        let status = temporary.path.withCString { source in
-            url.path.withCString { destination in
-                replace ? Darwin.rename(source, destination) : Darwin.link(source, destination)
-            }
-        }
-        guard status == 0 else { throw StateError.unwritable }
+        do { try PrivateFile.writeAtomically(data, to: url, replacing: replace) } catch { throw StateError.unwritable }
     }
 
     static func remove(_ url: URL) throws {
