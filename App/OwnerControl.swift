@@ -135,18 +135,6 @@ final class OwnerMenuButtonView: NSPopUpButton {
 /// Add owner…: asks for the GitHub login of an owner, such as one with no cards yet, and says why a login can't be
 /// used.
 enum AddOwnerPrompt {
-    /// Why `login` can't be an owner, or nil when it is a GitHub login.
-    static func problem(with login: String) -> String? {
-        if OwnerSelection.isValidLogin(login) { return nil }
-        if login.isEmpty { return "Enter the owner’s GitHub login." }
-        let usesAllowedCharacters = login.unicodeScalars.allSatisfy {
-            $0 == "-" || ($0.isASCII && CharacterSet.alphanumerics.contains($0))
-        }
-        if !usesAllowedCharacters { return "A GitHub login uses only letters from A to Z, numbers, and hyphens." }
-        if login.count > 39 { return "A GitHub login has at most 39 characters." }
-        return "A GitHub login can’t start or end with a hyphen or have two hyphens in a row."
-    }
-
     /// Asks until the person enters a GitHub login or cancels. A login that can't be used asks again, saying why
     /// and keeping what was typed. Returns nil when cancelled.
     @MainActor static func run(appearance: NSAppearance?) -> String? {
@@ -168,20 +156,8 @@ enum AddOwnerPrompt {
             alert.window.appearance = appearance
             guard alert.runModal() == .alertFirstButtonReturn else { return nil }
             login = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-            problem = Self.problem(with: login)
+            problem = OwnerSelection.problem(with: login)
             if problem == nil { return login }
         }
-    }
-}
-
-extension OwnerSelection {
-    /// The selection with `owner` added. An owner already selected, ignoring case, keeps its spelling.
-    func adding(_ owner: String) -> OwnerSelection { OwnerSelection(owners + [owner]) }
-
-    /// The selection with `owner` added, or taken out when it is selected. Taking out the last owner selects All
-    /// owners.
-    func toggling(_ owner: String) -> OwnerSelection {
-        guard contains(owner) else { return adding(owner) }
-        return OwnerSelection(owners.filter { $0.caseInsensitiveCompare(owner) != .orderedSame })
     }
 }

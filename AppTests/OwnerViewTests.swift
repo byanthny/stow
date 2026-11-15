@@ -406,27 +406,7 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(waiting.map(\.reference.number), [5, 1, 2, 3, 4], "A pinned card moves to the top")
     }
 
-    func testAddOwnerTakesOnlyGitHubLoginsAndRefreshesWhenKeepingOnlySelectedOwners() async throws {
-        let invalid = ["", "-acme", "acme-", "a--b", "a_b", "acme labs", "ácme", String(repeating: "a", count: 40)]
-        for login in invalid { XCTAssertNotNil(AddOwnerPrompt.problem(with: login), login) }
-        for login in ["a", "acme-labs", "Acme2", String(repeating: "a", count: 39)] {
-            XCTAssertNil(AddOwnerPrompt.problem(with: login), login)
-        }
-        XCTAssertEqual(AddOwnerPrompt.problem(with: ""), "Enter the owner’s GitHub login.")
-        XCTAssertEqual(
-            AddOwnerPrompt.problem(with: "a_b"), "A GitHub login uses only letters from A to Z, numbers, and hyphens.")
-        XCTAssertEqual(
-            AddOwnerPrompt.problem(with: String(repeating: "a", count: 40)), "A GitHub login has at most 39 characters."
-        )
-        XCTAssertEqual(
-            AddOwnerPrompt.problem(with: "a--b"),
-            "A GitHub login can’t start or end with a hyphen or have two hyphens in a row.")
-
-        XCTAssertEqual(OwnerSelection(["acme"]).adding("Beta").owners, ["acme", "Beta"])
-        XCTAssertEqual(OwnerSelection(["acme"]).adding("ACME").owners, ["acme"])
-        XCTAssertEqual(OwnerSelection(["acme", "beta"]).toggling("ACME").owners, ["beta"])
-        XCTAssertTrue(OwnerSelection(["acme"]).toggling("acme").isAll, "Taking out the last owner selects All owners")
-
+    func testAddingAnOwnerRefreshesWhenKeepingOnlySelectedOwners() async throws {
         // An owner added before it has cards lists with a count of zero. Keeping only selected owners on disk,
         // adding one refreshes at once so its cards arrive.
         let acme = card("acme", "app", 1, "Synthetic acme card")
