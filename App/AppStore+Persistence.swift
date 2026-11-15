@@ -71,7 +71,7 @@ extension AppStore {
                     mergeLiveResult(result, snapshot: snapshot)
                     deletedNoteIDs.subtract(deletions)
                     persistedRevision = revision
-                    saveError = nil
+                    if saveError != nil { saveError = nil }
                 } catch {
                     saveError =
                         "Changes are in memory. Saving failed; check the notes folder, available space, and file permissions."
@@ -120,8 +120,8 @@ extension AppStore {
                 notes.append(NoteModel(incoming))
             }
         }
-        conflictNoteIDs.formUnion(result.conflictNoteIDs)
         if !result.conflictNoteIDs.isEmpty {
+            conflictNoteIDs.formUnion(result.conflictNoteIDs)
             noteFileMessage = "An external edit conflicted with unsaved text. Both versions have been kept as notes."
         }
     }

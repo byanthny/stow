@@ -135,6 +135,40 @@ final class NoteModelTests: XCTestCase {
         XCTAssertFalse(noteViews.isRaised, "A GitHub refresh redrew a note")
     }
 
+    func testAnUnchangedSaveOrAccessoryRunNotifiesNoView() async throws {
+        let url = try makeDirectory().appendingPathComponent("state.json")
+        var initial = AppState()
+        initial.githubEnabled = false
+        initial.notes = [Note(markdown: "# Saved")]
+        initial.extensionInstances = [
+            .init(moduleID: "org.stow.sample", slot: .boardAccessory, noteID: nil, isEnabled: true)
+        ]
+        try await StateRepository(url: url).save(initial)
+        let store = AppStore(stateURL: url)
+        await store.start()
+        defer { store.stop() }
+        let ran = await waitUntil { !store.accessoryResults.isEmpty }
+        XCTAssertTrue(ran, "The accessory ran")
+        let first = await store.flush()
+        XCTAssertTrue(first)
+
+        let flag = Flag()
+        withObservationTracking {
+            _ = store.base
+            _ = store.notes.map(\.value)
+            _ = store.saveError
+            _ = store.conflictNoteIDs
+            _ = store.noteFileMessage
+            _ = store.accessoryResults
+        } onChange: {
+            flag.raise()
+        }
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
+        await store.refreshAccessories()
+        XCTAssertFalse(flag.isRaised, "A save or accessory run that changed nothing notified a view")
+    }
+
     func testAgesMoveWithOneClockThatRunsOnlyWhileOneShows() async throws {
         let clock = MinuteClock(interval: .milliseconds(40))
         let store = AppStore(
