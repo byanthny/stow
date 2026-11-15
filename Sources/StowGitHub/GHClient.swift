@@ -494,7 +494,7 @@ public actor GHClient: GitHubClient {
                 guard let ref = refsByID[id] else { continue }
                 var snapshot = oldByID[id] ?? PullRequestSnapshot(reference: ref, title: ref.displayName)
                 snapshot.isUnavailable = true
-                snapshot.isStale = true
+                snapshot.markStale()
                 snapshot.readinessIsComplete = false
                 snapshot.fetchedAt = now
                 snapshots.append(snapshot)
@@ -543,7 +543,7 @@ public actor GHClient: GitHubClient {
         if !complete {
             let present = Set(snapshots.map(\.id))
             for var old in previous where !present.contains(old.id) {
-                old.isStale = true
+                old.markStale()
                 old.readinessIsComplete = false
                 snapshots.append(old)
             }

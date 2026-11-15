@@ -184,6 +184,9 @@ public struct PullRequestSnapshot: Codable, Equatable, Sendable, Identifiable {
         self.isStale = isStale
         self.details = details
     }
+
+    /// Marks the card as not refreshed, so it shows what GitHub said last time and can't be ready.
+    public mutating func markStale() { isStale = true }
 }
 
 public struct ExtensionInstanceState: Codable, Equatable, Sendable, Identifiable {

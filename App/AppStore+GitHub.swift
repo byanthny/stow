@@ -110,7 +110,7 @@ extension AppStore {
     private func markCardsStale() {
         func markStale(_ cards: inout [PullRequestSnapshot]) {
             for index in cards.indices {
-                cards[index].isStale = true
+                cards[index].markStale()
                 cards[index].readinessIsComplete = false
             }
         }

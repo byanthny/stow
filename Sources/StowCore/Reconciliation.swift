@@ -52,7 +52,7 @@ public func reconcileSnapshots(
             if old == nil, fresh.isTerminal, !pinnedIDs.contains(id) { return nil }
             if fresh.isUnavailable, var preserved = old {
                 preserved.isUnavailable = true
-                preserved.isStale = true
+                preserved.markStale()
                 preserved.fetchedAt = fresh.fetchedAt
                 result = preserved
             } else {
@@ -61,7 +61,7 @@ public func reconcileSnapshots(
                 if result.details == nil { result.details = old?.details }
             }
         } else if var preserved = old {
-            preserved.isStale = true
+            preserved.markStale()
             result = preserved
         } else {
             return nil

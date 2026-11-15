@@ -82,6 +82,26 @@ final class AttentionTests: XCTestCase {
         XCTAssertEqual(classify(snapshot), .init(section: .needsYou, reason: .resolveConflicts))
     }
 
+    func testSnapshotMarkedStaleNeverClassifiesAsReady() {
+        XCTAssertEqual(classify(ready()).reason, .readyToMerge)
+        let checks: [String?] = [nil, "SUCCESS", "PENDING", "EXPECTED", "FAILURE", "ERROR", "FUTURE"]
+        let reviews: [String?] = [nil, "APPROVED", "REVIEW_REQUIRED", "CHANGES_REQUESTED", "FUTURE"]
+        for checksState in checks {
+            for reviewDecision in reviews {
+                var snapshot = ready()
+                snapshot.checksState = checksState
+                snapshot.reviewDecision = reviewDecision
+                snapshot.markStale()
+                let label = "\(checksState ?? "no checks"), \(reviewDecision ?? "no review")"
+                XCTAssertTrue(snapshot.isStale, label)
+                XCTAssertFalse(snapshot.isApproved, label)
+                for isPinned in [false, true] {
+                    XCTAssertNotEqual(classify(snapshot, isPinned: isPinned).reason, .readyToMerge, label)
+                }
+            }
+        }
+    }
+
     func testKnownEmptyChecksAndReviewsPermitReadiness() {
         var snapshot = ready()
         snapshot.checksState = nil
