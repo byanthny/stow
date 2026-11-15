@@ -5,9 +5,21 @@ public enum RepositoryColor {
     /// Hues from cyan to pink, clear of the red, amber, and green that statuses use.
     static let hues: [Double] = [190, 212, 236, 262, 290, 318]
 
+    struct Key: Hashable {
+        var repository: String
+        var surface: String
+    }
+
+    /// Colors already chosen, by repository and surface.
+    static let chosen = BoundedCache<Key, String>(limit: 256)
+
     /// A `#RRGGBB` color for the reference's repository that reads at 4.5:1 or better on `surface`.
     public static func hex(for reference: PullRequestReference, onSurface surface: String) -> String {
-        let name = "\(reference.owner)/\(reference.repository)".lowercased()
+        let key = Key(repository: "\(reference.owner)/\(reference.repository)".lowercased(), surface: surface)
+        return chosen.withValue(for: key, make: { hex(forRepository: key.repository, onSurface: surface) }) { $0 }
+    }
+
+    private static func hex(forRepository name: String, onSurface surface: String) -> String {
         let hue = hues[Int(name.stableHash % UInt64(hues.count))]
         let background = RGBColor(hex: surface) ?? RGBColor(hue: 0, saturation: 0, lightness: 0.1)
         // Below this luminance, white contrasts more than black.

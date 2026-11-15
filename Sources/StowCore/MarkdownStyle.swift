@@ -108,14 +108,30 @@ public enum MarkdownStyle {
         return text.lineRange(for: changed)
     }
 
-    /// A note's title: its first line with text outside fenced code, without heading marks.
+    /// A note's title: its first line with text outside fenced code, without heading marks, read up to that line.
     public static func title(in source: String) -> String? {
-        let text = source as NSString
-        let blocks = MarkdownCode.spans(in: source).filter { $0.kind == .block }.map(\.range)
-        guard let line = titleLine(in: text, outside: blocks) else { return nil }
-        let title = text.substring(with: line).trimmingCharacters(in: .whitespaces).drop { $0 == "#" }
-            .trimmingCharacters(in: .whitespaces)
+        let units = source.utf16
+        var fences = MarkdownCode.Fences()
+        var line: String?
+        MarkdownCode.forEachLine(in: units) { range, _ in
+            guard fences.read(units[range]) == .outside, let content = String(units[range]) else { return true }
+            line = firstTextLine(in: content as NSString)
+            return line == nil
+        }
+        guard let line else { return nil }
+        let title = line.trimmingCharacters(in: .whitespaces).drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
         return title.isEmpty ? nil : title
+    }
+
+    /// The first line of `text`, as `NSString` breaks lines, with more than whitespace.
+    private static func firstTextLine(in text: NSString) -> String? {
+        var found: String?
+        text.enumerateSubstrings(in: NSRange(location: 0, length: text.length), options: .byLines) { line, _, _, stop in
+            guard let line, !line.isEmpty, !line.allSatisfy(\.isWhitespace) else { return }
+            found = line
+            stop.pointee = true
+        }
+        return found
     }
 
     /// The first line with text outside fenced code blocks.

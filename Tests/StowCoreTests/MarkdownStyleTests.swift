@@ -27,6 +27,46 @@ final class MarkdownStyleTests: XCTestCase {
         XCTAssertEqual(Note(markdown: "```\ncode\n```\nPlan").title, "Plan")
     }
 
+    func testTheTitleMatchesTheFullScanWhereverItStops() {
+        // The title the whole note's spans give, read the same way.
+        func fullScanTitle(_ source: String) -> String? {
+            guard let span = MarkdownStyle.spans(in: source).first(where: { $0.kind == .title }) else { return nil }
+            let title = (source as NSString).substring(with: span.range).trimmingCharacters(in: .whitespaces)
+                .drop { $0 == "#" }.trimmingCharacters(in: .whitespaces)
+            return title.isEmpty ? nil : title
+        }
+        let cases = [
+            "", "Plain", "  # Heading  \nbody", "\n\n\t \nAfter blanks", "```\ncode\n```\nAfter",
+            "~~~\n```\n~~~~\nAfter", "```\nunclosed\nnever a title", "``` a`b\nNot a fence above",
+            "    ```\nIndented four", "   ```\nx\n   ```\nThree", "```\r\ncode\r\n```\r\nCRLF title", "\r\rCarriage",
+            "\u{2028}Line separator", "  \u{2028}  \u{A0}\nAfter space", "```\u{2028}x\n```\nInside a fence line",
+            "#", "## \nNext", "\u{85}Next line", "Café 🐈\nmore", "```\n```",
+        ]
+        for source in cases {
+            XCTAssertEqual(MarkdownStyle.title(in: source), fullScanTitle(source), source.debugDescription)
+        }
+
+        var random = SplitMix(seed: 11)
+        let pieces = [
+            "```", "~~~", "````", "``` a`b", "~~~ info", "   ```", "    ```", "\n", "\r\n", "\r", "\u{2028}",
+            "\u{85}", " ", "\t", "\u{A0}", "#", "## ", "`", "x", "Title", "é", "🐈",
+        ]
+        for _ in 0..<5_000 {
+            let source = (0..<Int.random(in: 0...12, using: &random)).map { _ in
+                pieces.randomElement(using: &random)!
+            }.joined()
+            XCTAssertEqual(MarkdownStyle.title(in: source), fullScanTitle(source), source.debugDescription)
+        }
+    }
+
+    func testLongNotesKeepTheirTitles() {
+        let body = String(repeating: "Synthetic line with `code` and **bold** text.\n", count: 20_000)
+        XCTAssertEqual(MarkdownStyle.title(in: "# Long note\n" + body), "Long note")
+        let fenced = "```\n" + body + "```\nAfter a long block\n" + body
+        XCTAssertEqual(MarkdownStyle.title(in: fenced), "After a long block")
+        XCTAssertNil(MarkdownStyle.title(in: "```\n" + body))
+    }
+
     func testHeadingsQuotesAndListMarkers() {
         let source = "# Title\n## Sub\n> quoted\n- one\n12. two\n#nospace"
         XCTAssertEqual(styled(source, .heading(level: 1)), ["# Title"])
