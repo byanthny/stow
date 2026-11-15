@@ -266,23 +266,23 @@ final class ProfileManager {
 
     /// The board header's profile menu for a profile: the other profiles to switch to, Hide and Close, then New
     /// profile… and Profile settings…. With one profile, only the last two.
-    func profileMenu(for id: UUID) -> [[ProfileMenuItem]] {
-        var sections: [[ProfileMenuItem]] = []
+    func profileMenu(for id: UUID) -> [[PullDownMenu.Item]] {
+        var sections: [[PullDownMenu.Item]] = []
         if profiles.count > 1 {
             sections.append(
                 profiles.filter { $0.id != id }.map { entry in
-                    ProfileMenuItem(title: entry.name, state: menuState(of: entry.id)) { [weak self] in
+                    PullDownMenu.Item(title: entry.name, state: menuState(of: entry.id)) { [weak self] in
                         Task { await self?.switchTo(entry.id, from: id) }
                     }
                 })
             sections.append([
-                ProfileMenuItem(title: "Hide profile") { [weak self] in self?.hide(id) },
-                ProfileMenuItem(title: "Close profile") { [weak self] in Task { _ = await self?.close(id) } },
+                PullDownMenu.Item(title: "Hide profile") { [weak self] in self?.hide(id) },
+                PullDownMenu.Item(title: "Close profile") { [weak self] in Task { _ = await self?.close(id) } },
             ])
         }
         sections.append([
-            ProfileMenuItem(title: "New profile…") { [weak self] in self?.requestNewProfile(from: id) },
-            ProfileMenuItem(title: "Profile settings…") { [weak self] in self?.sessions[id]?.showSettings() },
+            PullDownMenu.Item(title: "New profile…") { [weak self] in self?.requestNewProfile(from: id) },
+            PullDownMenu.Item(title: "Profile settings…") { [weak self] in self?.sessions[id]?.showSettings() },
         ])
         return sections
     }
@@ -635,13 +635,6 @@ struct ProfileHandle {
     var entry: ProfileEntry? { manager?.profiles.first { $0.id == id } }
     /// Colors and names show once a second profile exists, or always when the user turns that on.
     var showsIdentity: Bool { manager?.showsProfileNames ?? false }
-}
-
-/// An item in a board's profile menu.
-struct ProfileMenuItem {
-    let title: String
-    var state: NSControl.StateValue = .off
-    let action: @MainActor () -> Void
 }
 
 /// An alert a profile change can need. Its text and buttons are here; `show` runs it.

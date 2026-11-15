@@ -2992,14 +2992,19 @@ final class ProfileTests: XCTestCase {
     /// The board header's profile menu button, once SwiftUI has laid out the board.
     private func switcher(
         in session: ProfileSession, file: StaticString = #filePath, line: UInt = #line
-    ) async throws -> ProfileSwitcherButton {
-        var found: ProfileSwitcherButton?
+    ) async throws -> PullDownButton {
+        var found: PullDownButton?
         _ = await waitUntil {
             session.board.contentView?.layoutSubtreeIfNeeded()
-            found = self.subviews(of: ProfileSwitcherButton.self, in: session.board.contentView).first
+            found = self.pullDowns(in: session.board.contentView, identifier: "board.profileMenu").first
             return found != nil
         }
         return try XCTUnwrap(found, "The board header has no profile menu button", file: file, line: line)
+    }
+
+    /// The board's pull-down buttons with the accessibility identifier.
+    private func pullDowns(in root: NSView?, identifier: String) -> [PullDownButton] {
+        subviews(of: PullDownButton.self, in: root).filter { $0.accessibilityIdentifier() == identifier }
     }
 
     private func subviews<View: NSView>(of type: View.Type, in root: NSView?) -> [View] {
