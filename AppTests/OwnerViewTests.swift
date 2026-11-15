@@ -336,7 +336,7 @@ final class OwnerViewTests: XCTestCase {
         let laidOut = await layOut(session)
         XCTAssertTrue(laidOut)
         XCTAssertFalse(store.showsOwnerControl)
-        XCTAssertTrue(subviews(of: OwnerMenuButtonView.self, in: session.board.contentView).isEmpty)
+        XCTAssertTrue(pullDowns(in: session.board.contentView, identifier: "board.ownerMenu").isEmpty)
 
         await client.answer(with: [acme, beta])
         await store.refresh()
@@ -468,11 +468,10 @@ final class OwnerViewTests: XCTestCase {
         let client = OwnerClient(cards: cards)
         let manager = ProfileManager(
             dataFolder: folder, isDemo: false, githubOverride: { _ in client }, accessoryProviders: [])
-        manager.confirmClosingWithoutSaving = { entry in
-            XCTFail("Unexpected question about closing \(entry.name) without saving")
+        manager.alert = { alert in
+            XCTFail("Unexpected alert \(alert)")
             return false
         }
-        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
         let started = await manager.start()
         XCTAssertTrue(started)
         addTeardownBlock { @MainActor in
@@ -500,21 +499,26 @@ final class OwnerViewTests: XCTestCase {
     private func layOut(_ session: ProfileSession) async -> Bool {
         await waitUntil {
             session.board.contentView?.layoutSubtreeIfNeeded()
-            return !self.subviews(of: ProfileSwitcherButton.self, in: session.board.contentView).isEmpty
+            return !self.pullDowns(in: session.board.contentView, identifier: "board.profileMenu").isEmpty
         }
     }
 
     /// The board header's owner menu button, once SwiftUI has laid it out.
     private func ownerButton(
         in session: ProfileSession, file: StaticString = #filePath, line: UInt = #line
-    ) async throws -> OwnerMenuButtonView {
-        var found: OwnerMenuButtonView?
+    ) async throws -> PullDownButton {
+        var found: PullDownButton?
         _ = await waitUntil {
             session.board.contentView?.layoutSubtreeIfNeeded()
-            found = self.subviews(of: OwnerMenuButtonView.self, in: session.board.contentView).first
+            found = self.pullDowns(in: session.board.contentView, identifier: "board.ownerMenu").first
             return found != nil
         }
         return try XCTUnwrap(found, "The board header has no owner menu button", file: file, line: line)
+    }
+
+    /// The board's pull-down buttons with the accessibility identifier.
+    private func pullDowns(in root: NSView?, identifier: String) -> [PullDownButton] {
+        subviews(of: PullDownButton.self, in: root).filter { $0.accessibilityIdentifier() == identifier }
     }
 
     private func subviews<View: NSView>(of type: View.Type, in root: NSView?) -> [View] {

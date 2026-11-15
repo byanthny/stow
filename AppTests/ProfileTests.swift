@@ -761,7 +761,7 @@ final class ProfileTests: XCTestCase {
         try await seed(folder)
         let questions = Recorder(answers: [false, true])
         let manager = makeManager(folder)
-        manager.confirmClosingWithoutSaving = { entry in questions.answer(entry) }
+        manager.alert = { questions.answer($0) }
         defer { stop(manager) }
         let started = await manager.start()
         XCTAssertTrue(started)
@@ -775,7 +775,7 @@ final class ProfileTests: XCTestCase {
 
         let keptOpen = await manager.close(id)
         XCTAssertFalse(keptOpen)
-        XCTAssertEqual(questions.names, ["Stow"])
+        XCTAssertEqual(questions.names, ["closeWithoutSaving Stow"])
         XCTAssertTrue(manager.sessions[id] === session)
         XCTAssertTrue(session.board.isVisible)
         XCTAssertTrue(isHeld(StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))))
@@ -783,7 +783,7 @@ final class ProfileTests: XCTestCase {
 
         let closed = await manager.close(id)
         XCTAssertTrue(closed)
-        XCTAssertEqual(questions.names, ["Stow", "Stow"])
+        XCTAssertEqual(questions.names, ["closeWithoutSaving Stow", "closeWithoutSaving Stow"])
         XCTAssertNil(manager.sessions[id])
         XCTAssertFalse(session.board?.isVisible == true)
         guard case .acquired(let lock) = StateLock.acquire(forStateAt: folder.appendingPathComponent("state.json"))
@@ -864,7 +864,7 @@ final class ProfileTests: XCTestCase {
         try damaged.write(to: stateURL)
         let manager = makeManager(folder, githubOverride: { _ in CountingClient() })
         // The damaged state cannot be saved, so a close that runs before the recovery finishes asks first.
-        manager.confirmClosingWithoutSaving = { _ in true }
+        manager.alert = { _ in true }
         defer { stop(manager) }
         let started = await manager.start()
         XCTAssertTrue(started)
@@ -1098,7 +1098,7 @@ final class ProfileTests: XCTestCase {
         let workEntry = try await addProfile("Work", in: folder)
         let reports = Recorder()
         let manager = makeManager(folder)
-        manager.reportOpenElsewhere = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
         let started = await manager.start()
         XCTAssertTrue(started)
@@ -1112,10 +1112,10 @@ final class ProfileTests: XCTestCase {
         let opened = await manager.open(workEntry.id)
         XCTAssertFalse(opened)
         XCTAssertNil(manager.sessions[workEntry.id])
-        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertEqual(reports.names, ["openElsewhere Work"])
         await manager.switchTo(workEntry.id)
         XCTAssertNil(manager.sessions[workEntry.id])
-        XCTAssertEqual(reports.names, ["Work", "Work"])
+        XCTAssertEqual(reports.names, ["openElsewhere Work", "openElsewhere Work"])
         // A switch that cannot open its target leaves the profile it started from as it was.
         XCTAssertFalse(main.isHidden)
         XCTAssertTrue(main.board.isVisible)
@@ -1148,7 +1148,7 @@ final class ProfileTests: XCTestCase {
         let workEntry = try await addProfile("Work", in: folder)
         let reports = Recorder()
         let manager = makeManager(folder)
-        manager.reportLockFailed = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
         let started = await manager.start()
         XCTAssertTrue(started)
@@ -1160,7 +1160,7 @@ final class ProfileTests: XCTestCase {
         let opened = await manager.open(workEntry.id)
         XCTAssertFalse(opened)
         XCTAssertNil(manager.sessions[workEntry.id])
-        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertEqual(reports.names, ["lockFailed Work"])
         do {
             try await manager.rename(workEntry.id, to: "Renamed")
             XCTFail("A profile whose lock fails must not be written")
@@ -1190,13 +1190,13 @@ final class ProfileTests: XCTestCase {
         let before = try tree(folder)
         let reports = Recorder()
         let blocked = makeManager(folder)
-        blocked.reportLockFailed = { reports.names.append($0.name) }
+        blocked.alert = { reports.answer($0) }
         defer { stop(blocked) }
 
         let blockedStart = await blocked.start()
         XCTAssertFalse(blockedStart)
         XCTAssertTrue(blocked.sessions.isEmpty)
-        XCTAssertEqual(reports.names.sorted(), ["Stow", "Work"])
+        XCTAssertEqual(reports.names.sorted(), ["lockFailed Stow", "lockFailed Work"])
         XCTAssertTrue(blocked.startReportedLockFailure, "A launch that opened nothing quits without handing over")
         XCTAssertEqual(try tree(folder), before)
 
@@ -1204,12 +1204,12 @@ final class ProfileTests: XCTestCase {
         try FileManager.default.removeItem(at: workLock)
         reports.names = []
         let manager = makeManager(folder)
-        manager.reportLockFailed = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
         let started = await manager.start()
         XCTAssertTrue(started)
         XCTAssertEqual(Set(manager.sessions.keys), [workEntry.id])
-        XCTAssertEqual(reports.names, ["Stow"])
+        XCTAssertEqual(reports.names, ["lockFailed Stow"])
         XCTAssertFalse(manager.startReportedLockFailure)
     }
 
@@ -1223,13 +1223,13 @@ final class ProfileTests: XCTestCase {
         let before = try tree(folder)
         let reports = Recorder()
         let manager = makeManager(folder)
-        manager.reportLockFailed = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
 
         let started = await manager.start()
         XCTAssertFalse(started)
         XCTAssertTrue(manager.sessions.isEmpty)
-        XCTAssertEqual(reports.names, ["Stow"])
+        XCTAssertEqual(reports.names, ["lockFailed Stow"])
         XCTAssertTrue(manager.startReportedLockFailure, "Nothing is open elsewhere, so the launch doesn't hand over")
         XCTAssertEqual(try tree(folder), before)
     }
@@ -1250,13 +1250,13 @@ final class ProfileTests: XCTestCase {
             at: workEntry.folder.appendingPathComponent(StateLock.filename), withIntermediateDirectories: false)
         let reports = Recorder()
         let manager = makeManager(folder)
-        manager.reportLockFailed = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
 
         let started = await manager.start()
         XCTAssertFalse(started)
         XCTAssertTrue(manager.sessions.isEmpty)
-        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertEqual(reports.names, ["lockFailed Work"])
         XCTAssertFalse(manager.startReportedLockFailure, "The launch hands over to the copy holding Stow")
     }
 
@@ -1508,12 +1508,12 @@ final class ProfileTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: profilesFolder.path)
         let manager = makeManager(folder)
         let reports = Recorder()
-        manager.reportNoProfiles = { reports.names.append("no profiles") }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
 
         let started = await manager.start()
         XCTAssertFalse(started)
-        XCTAssertEqual(reports.names, ["no profiles"])
+        XCTAssertEqual(reports.names, ["noProfiles"])
         XCTAssertTrue(manager.sessions.isEmpty)
         for name in ["state.json", "notes", ProfileIdentity.filename] {
             XCTAssertFalse(exists(name, in: folder), "\(name) must not be written")
@@ -1604,13 +1604,13 @@ final class ProfileTests: XCTestCase {
         defer { held.release() }
         let reports = Recorder()
         let manager = makeManager(folder)
-        manager.reportOpenElsewhere = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         defer { stop(manager) }
 
         let started = await manager.start()
         XCTAssertTrue(started)
         XCTAssertNil(manager.sessions[workEntry.id])
-        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertEqual(reports.names, ["openElsewhere Work"])
         // Nothing else would show, so the first profile shows although it was hidden.
         let stow = try XCTUnwrap(manager.sessions[stowID])
         XCTAssertFalse(stow.isHidden)
@@ -1912,12 +1912,12 @@ final class ProfileTests: XCTestCase {
         XCTAssertTrue(started)
         let entry = try await manager.createProfile(name: "Work", color: "#336699")
         let reports = Recorder()
-        manager.reportUnreadable = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
 
         let opened = await manager.open(entry.id)
 
         XCTAssertFalse(opened)
-        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertEqual(reports.names, ["unreadable Work"])
         XCTAssertTrue(manager.profiles.contains { $0.id == entry.id }, "A profile Stow can't look for stays listed")
     }
 
@@ -2112,7 +2112,7 @@ final class ProfileTests: XCTestCase {
         let manager = try XCTUnwrap(app.manager)
         let main = try XCTUnwrap(manager.activeSession)
         let reports = Recorder()
-        manager.reportNotFound = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         // The menus are read while every folder is still there.
         let profiles = menu("Profiles", in: app)
         app.menuNeedsUpdate(profiles)
@@ -2128,12 +2128,12 @@ final class ProfileTests: XCTestCase {
         try remove(work)
         let workItem = try XCTUnwrap(profiles.items.first { $0.title == "Work" })
         _ = NSApp.sendAction(try XCTUnwrap(workItem.action), to: workItem.target, from: workItem)
-        let reportedWork = await waitUntil { reports.names == ["Work"] }
+        let reportedWork = await waitUntil { reports.names == ["notFound Work"] }
         XCTAssertTrue(reportedWork)
         // From the Dock menu.
         try remove(home)
         dock.performActionForItem(at: try XCTUnwrap(dock.items.firstIndex { $0.title == "Home" }))
-        let reportedHome = await waitUntil { reports.names == ["Work", "Home"] }
+        let reportedHome = await waitUntil { reports.names == ["notFound Work", "notFound Home"] }
         XCTAssertTrue(reportedHome)
         // The profile a switch started from stays as it was.
         XCTAssertFalse(main.isHidden)
@@ -2148,7 +2148,7 @@ final class ProfileTests: XCTestCase {
         XCTAssertEqual(manager.lastActiveID, play.id)
         try remove(play)
         _ = app.applicationShouldHandleReopen(NSApp, hasVisibleWindows: false)
-        let reportedPlay = await waitUntil { reports.names == ["Work", "Home", "Play"] }
+        let reportedPlay = await waitUntil { reports.names == ["notFound Work", "notFound Home", "notFound Play"] }
         XCTAssertTrue(reportedPlay)
 
         // An empty folder in their places would make Finder's Put Back ask to replace it.
@@ -2181,7 +2181,7 @@ final class ProfileTests: XCTestCase {
         let manager = makeManager(folder, catalog: catalog(folder, trash: bin))
         defer { stop(manager) }
         let reports = Recorder()
-        manager.reportNotFound = { reports.names.append($0.name) }
+        manager.alert = { reports.answer($0) }
         let started = await manager.start()
         XCTAssertTrue(started)
         let main = try XCTUnwrap(manager.activeSession)
@@ -2196,7 +2196,7 @@ final class ProfileTests: XCTestCase {
         XCTAssertFalse(exists("profiles/\(workEntry.id.uuidString)", in: folder))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: bin.path), [workEntry.id.uuidString])
         // Said, if at all, as a profile that cannot be found, never as one open elsewhere.
-        XCTAssertTrue(reports.names.allSatisfy { $0 == "Work" })
+        XCTAssertTrue(reports.names.allSatisfy { $0 == "notFound Work" })
 
         // The same for the first profile: no new, empty "Stow" starts in the data folder under its old ID.
         let mainID = main.entry.id
@@ -2213,7 +2213,7 @@ final class ProfileTests: XCTestCase {
             Set(try FileManager.default.contentsOfDirectory(atPath: bin.path)),
             [workEntry.id.uuidString, mainID.uuidString])
         XCTAssertEqual(manager.profiles.map(\.name), ["Home"])
-        XCTAssertTrue(reports.names.allSatisfy { $0 == "Work" || $0 == "Stow" })
+        XCTAssertTrue(reports.names.allSatisfy { $0 == "notFound Work" || $0 == "notFound Stow" })
     }
 
     func testDeleteClosesAndMovesProfileToTrash() async throws {
@@ -2306,9 +2306,13 @@ final class ProfileTests: XCTestCase {
         let manager = makeManager(folder, catalog: refusing)
         defer { stop(manager) }
         let reports = Recorder()
-        manager.reportDeletionFailure = { entry, error in
-            reports.names.append(entry.name)
-            XCTAssertEqual(error as? ProfileError, .unwritable)
+        manager.alert = { alert in
+            if case .deletionFailed(_, let reason) = alert {
+                XCTAssertEqual(reason, profileProblem(ProfileError.unwritable, name: "Work"))
+            } else {
+                XCTFail("Unexpected alert \(alert)")
+            }
+            return reports.answer(alert)
         }
         let started = await manager.start()
         XCTAssertTrue(started)
@@ -2325,7 +2329,7 @@ final class ProfileTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? ProfileError, .unwritable)
         }
-        XCTAssertEqual(reports.names, ["Work"], "Work's Settings closed with it, so an alert says why")
+        XCTAssertEqual(reports.names, ["deletionFailed Work"], "Work's Settings closed with it, so an alert says why")
         XCTAssertTrue(work.isStopped)
         let reopened = try XCTUnwrap(manager.sessions[workEntry.id])
         XCTAssertFalse(reopened.isStopped)
@@ -2340,7 +2344,7 @@ final class ProfileTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? ProfileError, .unwritable)
         }
-        XCTAssertEqual(reports.names, ["Work"])
+        XCTAssertEqual(reports.names, ["deletionFailed Work"])
         XCTAssertNotNil(manager.sessions[workEntry.id])
     }
 
@@ -2611,7 +2615,7 @@ final class ProfileTests: XCTestCase {
         else { return XCTFail("The test could not take the profile lock") }
         defer { held.release() }
         let blocked = makeManager(folder)
-        blocked.reportOpenElsewhere = { _ in }
+        blocked.alert = { _ in false }
         try await ProfileCatalog(dataFolder: folder).recordSession(open: [], lastActiveID: main.entry.id)
         let blockedStart = await blocked.start()
         XCTAssertFalse(blockedStart)
@@ -2854,20 +2858,21 @@ final class ProfileTests: XCTestCase {
             stateURL: folder.appendingPathComponent("state.json"), isDemo: false, updateFetch: updateFetch)
         XCTAssertTrue(started)
         let manager = try XCTUnwrap(app.manager)
-        manager.confirmClosingWithoutSaving = { _ in false }
         failOnReports(from: manager)
+        // Closing without saving is declined; any other alert fails.
+        manager.alert = { alert in
+            if case .closeWithoutSaving = alert { return false }
+            XCTFail("Unexpected alert \(alert)")
+            return false
+        }
         return app
     }
 
     /// Fails the test on any report the test does not expect, instead of opening a modal alert.
     private func failOnReports(from manager: ProfileManager) {
-        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
-        manager.reportLockFailed = { entry in XCTFail("Unexpected report that \(entry.name) can't be locked") }
-        manager.reportNotFound = { entry in XCTFail("Unexpected report that \(entry.name) cannot be found") }
-        manager.reportUnreadable = { entry in XCTFail("Unexpected report that \(entry.name)'s folder can't be read") }
-        manager.reportNoProfiles = { XCTFail("Unexpected report that no profile can be found") }
-        manager.reportDeletionFailure = { entry, error in
-            XCTFail("Unexpected report that \(entry.name) could not be deleted: \(error)")
+        manager.alert = { alert in
+            XCTFail("Unexpected alert \(alert)")
+            return false
         }
         manager.updates.report = { outcome, _ in XCTFail("Unexpected update report: \(outcome)") }
     }
@@ -2913,10 +2918,6 @@ final class ProfileTests: XCTestCase {
             dataFolder: folder, isDemo: false, catalog: catalog, githubOverride: githubOverride,
             accessoryProviders: accessoryProviders, githubClientMaker: githubClientMaker, updateFetch: updateFetch,
             runningVersion: ReleaseVersion("1.0.0"))
-        manager.confirmClosingWithoutSaving = { entry in
-            XCTFail("Unexpected question about closing \(entry.name) without saving")
-            return false
-        }
         failOnReports(from: manager)
         return manager
     }
@@ -2991,14 +2992,19 @@ final class ProfileTests: XCTestCase {
     /// The board header's profile menu button, once SwiftUI has laid out the board.
     private func switcher(
         in session: ProfileSession, file: StaticString = #filePath, line: UInt = #line
-    ) async throws -> ProfileSwitcherButton {
-        var found: ProfileSwitcherButton?
+    ) async throws -> PullDownButton {
+        var found: PullDownButton?
         _ = await waitUntil {
             session.board.contentView?.layoutSubtreeIfNeeded()
-            found = self.subviews(of: ProfileSwitcherButton.self, in: session.board.contentView).first
+            found = self.pullDowns(in: session.board.contentView, identifier: "board.profileMenu").first
             return found != nil
         }
         return try XCTUnwrap(found, "The board header has no profile menu button", file: file, line: line)
+    }
+
+    /// The board's pull-down buttons with the accessibility identifier.
+    private func pullDowns(in root: NSView?, identifier: String) -> [PullDownButton] {
+        subviews(of: PullDownButton.self, in: root).filter { $0.accessibilityIdentifier() == identifier }
     }
 
     private func subviews<View: NSView>(of type: View.Type, in root: NSView?) -> [View] {
@@ -3122,7 +3128,8 @@ private final class OutcomeLog {
     var outcomes: [UpdateOutcome] = []
 }
 
-/// Records which profiles the manager asked or told about, and answers from a script.
+/// Records each alert the manager showed as its case and profile name ("noProfiles" has no name), and answers from a
+/// script.
 @MainActor
 private final class Recorder {
     var names: [String] = []
@@ -3130,8 +3137,16 @@ private final class Recorder {
 
     init(answers: [Bool] = []) { self.answers = answers }
 
-    func answer(_ entry: ProfileEntry) -> Bool {
-        names.append(entry.name)
+    func answer(_ alert: ProfileAlert) -> Bool {
+        switch alert {
+        case .closeWithoutSaving(let entry): names.append("closeWithoutSaving \(entry.name)")
+        case .openElsewhere(let entry): names.append("openElsewhere \(entry.name)")
+        case .lockFailed(let entry): names.append("lockFailed \(entry.name)")
+        case .notFound(let entry): names.append("notFound \(entry.name)")
+        case .unreadable(let entry): names.append("unreadable \(entry.name)")
+        case .deletionFailed(let entry, _): names.append("deletionFailed \(entry.name)")
+        case .noProfiles: names.append("noProfiles")
+        }
         return answers.isEmpty ? false : answers.removeFirst()
     }
 }

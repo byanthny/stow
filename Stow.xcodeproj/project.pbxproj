@@ -14,6 +14,7 @@
 		204A5A968FB88B397CDA5A50 /* AppStore+Layout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E19C0434F4080ADE99F6FE9D /* AppStore+Layout.swift */; };
 		205288007DE53D953B171210 /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5194C4D620BD83F79798BB8 /* BoardView.swift */; };
 		214E44F4676629AC3FF667E7 /* AppearanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27F306819D552810FCC1926D /* AppearanceView.swift */; };
+		318D0191B36272439F11FD8B /* StowAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C4506C886EF4B45C916DB6 /* StowAlert.swift */; };
 		3522BC83D67633EA0C9FE636 /* PRCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A0A36E778F7188CF52838D /* PRCard.swift */; };
 		3A7011592F9D9131EFF13A0E /* AccessibilityAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0A8CCC99137DDF9D649E5C /* AccessibilityAuditTests.swift */; };
 		45EFD5F122C8EDDD967B7DAB /* PullDownMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A23F5051D12BE7F3E8D686F /* PullDownMenu.swift */; };
@@ -74,6 +75,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		05C4506C886EF4B45C916DB6 /* StowAlert.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StowAlert.swift; sourceTree = "<group>"; };
 		0ADBB4BA961022731A776296 /* NotesFolderWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotesFolderWatcher.swift; sourceTree = "<group>"; };
 		15A0A36E778F7188CF52838D /* PRCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PRCard.swift; sourceTree = "<group>"; };
 		201C19CDEAD22A1FC05D10B0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -204,6 +206,7 @@
 				7A23F5051D12BE7F3E8D686F /* PullDownMenu.swift */,
 				6648BF0294A445DFDF63BC88 /* SettingsView.swift */,
 				F76A3454156CA963AB6500C3 /* SmokeTest.swift */,
+				05C4506C886EF4B45C916DB6 /* StowAlert.swift */,
 				FE09CDF2EC58B328525A4B53 /* StowApp.swift */,
 				F807A6B24C23D8EE03EBBC8A /* Theme.swift */,
 				C4D95B3214D2B63E6CADFAAA /* UpdateMonitor.swift */,
@@ -406,6 +409,7 @@
 				45EFD5F122C8EDDD967B7DAB /* PullDownMenu.swift in Sources */,
 				4F2CB3CEB19D67B2697FB4BB /* SettingsView.swift in Sources */,
 				F420C40DCE76CA1AA9CD0B6F /* SmokeTest.swift in Sources */,
+				318D0191B36272439F11FD8B /* StowAlert.swift in Sources */,
 				6616988118AC8B33E13E502F /* StowApp.swift in Sources */,
 				1F76E2619F135DCA5DFC4AE1 /* Theme.swift in Sources */,
 				AE5BB45ED8A1EEACE3C3EB29 /* UpdateMonitor.swift in Sources */,

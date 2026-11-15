@@ -141,14 +141,11 @@ struct DataTransferView: View {
                 "The backup could not be opened. Choose a valid Stow backup up to 64 MiB. Your current data has been kept."
             return
         }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Replace current notes and settings?"
-        alert.informativeText =
-            "“\(url.lastPathComponent)” contains \(restored.notes.count) notes and \(restored.pullRequests.count) cached pull requests. Restoring replaces current notes and settings. This Mac's GitHub settings stay as they are, and accessories come back turned off. Your current data and old notes folder are kept as backups. Reopen the new notes folder in external editors afterward; the old folder will no longer be watched."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Replace and restore")
-        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        let choice = StowAlert.run(
+            "Replace current notes and settings?",
+            "“\(url.lastPathComponent)” contains \(restored.notes.count) notes and \(restored.pullRequests.count) cached pull requests. Restoring replaces current notes and settings. This Mac's GitHub settings stay as they are, and accessories come back turned off. Your current data and old notes folder are kept as backups. Reopen the new notes folder in external editors afterward; the old folder will no longer be watched.",
+            buttons: ["Cancel", "Replace and restore"])
+        guard choice == 1 else { return }
         isRestoring = true
         Task { @MainActor in
             let success = await store.restoreBackup(restored)
@@ -220,11 +217,7 @@ enum DataTransferActions {
     }
 
     private static func showError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Stow could not complete the transfer"
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        StowAlert.run("Stow could not complete the transfer", message, buttons: ["OK"])
     }
 }
 
