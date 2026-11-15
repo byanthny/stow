@@ -442,23 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 @MainActor
 func restoredFrame(_ stored: WindowFrame?, fallback: NSRect, minimum: NSSize) -> NSRect {
-    let screens = NSScreen.screens.map(\.visibleFrame)
-    let defaultScreen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-    var candidate = fallback
-    if let stored, [stored.x, stored.y, stored.width, stored.height].allSatisfy(\.isFinite), stored.width > 0,
-        stored.height > 0
-    {
-        candidate = NSRect(x: stored.x, y: stored.y, width: stored.width, height: stored.height)
-    }
-    let screen =
-        screens.max { left, right in
-            let l = left.intersection(candidate)
-            let r = right.intersection(candidate)
-            return (l.isNull ? 0 : l.width * l.height) < (r.isNull ? 0 : r.width * r.height)
-        } ?? defaultScreen
-    candidate.size.width = min(max(candidate.width, minimum.width), screen.width)
-    candidate.size.height = min(max(candidate.height, minimum.height), screen.height)
-    candidate.origin.x = max(screen.minX, min(candidate.minX, screen.maxX - candidate.width))
-    candidate.origin.y = max(screen.minY, min(candidate.minY, screen.maxY - candidate.height))
-    return candidate
+    restoredWindowFrame(
+        stored, fallback: fallback, minimum: minimum, screens: NSScreen.screens.map(\.visibleFrame),
+        defaultScreen: NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800))
 }
