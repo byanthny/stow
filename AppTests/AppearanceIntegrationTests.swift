@@ -272,6 +272,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -279,7 +280,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { window.close() }
         let board = ScrollView {
             VStack(spacing: 0) {
-                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                NoteView(store: store, note: model, editorHeightLimit: 300) {}
                 Color.clear.frame(height: 200)
             }
         }.themed(by: store.theme)
@@ -315,6 +316,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 400), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -323,7 +325,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         // A header pinned over the board's top while the note scrolls under it, as a section header stays.
         let board = ScrollView {
             VStack(spacing: 0) {
-                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                NoteView(store: store, note: model, editorHeightLimit: 300) {}
                 Color.clear.frame(height: 600)
             }
         }
@@ -406,6 +408,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -413,7 +416,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { window.close() }
         let board = ScrollView {
             VStack(spacing: 0) {
-                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                NoteView(store: store, note: model, editorHeightLimit: 300) {}
                 Color.clear.frame(height: 200)
             }
         }.themed(by: store.theme)
@@ -442,6 +445,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote("Synthetic")
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 500), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -450,7 +454,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         window.orderFront(nil)
         func showNote() async throws -> NSTextView {
             let host = NSHostingView(
-                rootView: AnyView(NoteView(store: store, noteID: id, editorHeightLimit: 300) {}.themed(by: store.theme)))
+                rootView: AnyView(NoteView(store: store, note: model, editorHeightLimit: 300) {}.themed(by: store.theme)))
             window.contentView = host
             await settle(host)
             return try XCTUnwrap(noteScrollViews(in: host).first?.documentView as? NSTextView)
@@ -611,8 +615,9 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote("Synthetic note")
+        let model = try XCTUnwrap(store.note(id))
         func noteMenu() -> NSPopUpButton? {
-            let (window, buttons) = hostPullDowns(NoteView(store: store, noteID: id) {}.themed(by: store.theme))
+            let (window, buttons) = hostPullDowns(NoteView(store: store, note: model) {}.themed(by: store.theme))
             defer { window.close() }
             return buttons.first { $0.accessibilityLabel() == "Note actions" }
         }

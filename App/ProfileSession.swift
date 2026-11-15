@@ -183,7 +183,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
             panel.noteID = id
             panel.minSize = NSSize(width: 260, height: 208)
             panel.contentView = describedHost(
-                NoteView(store: store, noteID: id, detached: true, profile: profile).themed(by: store.theme)
+                NoteView(store: store, note: note, detached: true, profile: profile).themed(by: store.theme)
                     .environment(\.windowChrome, WindowChrome(window: panel)),
                 label: "Note", fillsTitleBar: true)
             noteWindows[id] = panel

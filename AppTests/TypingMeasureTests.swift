@@ -52,12 +52,13 @@ final class TypingMeasureTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote(DemoContent.markdown(bytes: bytes))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 400), styleMask: [.titled], backing: .buffered,
             defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
-        let host = NSHostingView(rootView: NoteView(store: store, noteID: id, detached: true).themed(by: store.theme))
+        let host = NSHostingView(rootView: NoteView(store: store, note: model, detached: true).themed(by: store.theme))
         window.contentView = host
         window.orderFront(nil)
         for _ in 0..<6 {
