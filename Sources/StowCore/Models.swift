@@ -334,3 +334,13 @@ public struct AppState: Codable, Equatable, Sendable {
         hidesWhenSwitchingAway = try container.decodeIfPresent(Bool.self, forKey: .hidesWhenSwitchingAway) ?? true
     }
 }
+
+extension Note {
+    /// A detached note's window title: its title line, with the profile's name once names show.
+    public func windowTitle(profileName: String?) -> String {
+        profileName.map { "\(boardTitle) — \($0)" } ?? boardTitle
+    }
+
+    /// The note's title for one-line rows.
+    public var boardTitle: String { title ?? "Untitled note" }
+}

@@ -255,13 +255,3 @@ private struct WindowTitle: NSViewRepresentable {
         }
     }
 }
-
-extension Note {
-    /// A detached note's window title: its title line, with the profile's name once names show.
-    func windowTitle(profileName: String?) -> String {
-        profileName.map { "\(boardTitle) — \($0)" } ?? boardTitle
-    }
-
-    /// The note's title for one-line rows.
-    var boardTitle: String { title ?? "Untitled note" }
-}

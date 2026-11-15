@@ -123,6 +123,12 @@ final class MarkdownStyleTests: XCTestCase {
         }
         return styles.map { $0.sorted() }
     }
+
+    func testDetachedNoteWindowsAreNamedAfterTheirNotes() {
+        XCTAssertEqual(Note(markdown: "# Groceries\n- synthetic").windowTitle(profileName: nil), "Groceries")
+        XCTAssertEqual(Note(markdown: "Standup\nnotes").windowTitle(profileName: "Work"), "Standup — Work")
+        XCTAssertEqual(Note(markdown: "").windowTitle(profileName: nil), "Untitled note")
+    }
 }
 
 /// A seeded generator, so a failing sequence of edits repeats.
