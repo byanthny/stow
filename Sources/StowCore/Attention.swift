@@ -192,8 +192,7 @@ extension CheckSummary {
 public func classify(_ snapshot: PullRequestSnapshot, isPinned: Bool = false) -> AttentionClassification {
     func waiting(_ reason: AttentionReason) -> AttentionClassification { .init(section: .waiting, reason: reason) }
     func needs(_ reason: AttentionReason) -> AttentionClassification { .init(section: .needsYou, reason: reason) }
-    if snapshot.state == "CLOSED" { return waiting(.closed) }
-    if snapshot.state == "MERGED" { return waiting(.merged) }
+    if snapshot.isTerminal { return waiting(snapshot.isMerged ? .merged : .closed) }
     if snapshot.isViewerAuthor == true, snapshot.isDraft == true { return waiting(.draft) }
     if snapshot.isUnavailable { return waiting(.unavailable) }
     guard snapshot.state == "OPEN" else { return waiting(.readinessUnknown) }
