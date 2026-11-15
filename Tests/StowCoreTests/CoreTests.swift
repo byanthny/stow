@@ -207,6 +207,27 @@ final class AttentionTests: XCTestCase {
         }
     }
 
+    func testReviewDecisionsReadOnlyKnownValues() {
+        let known: [(String, ReviewDecision)] = [
+            ("APPROVED", .approved), ("CHANGES_REQUESTED", .changesRequested), ("REVIEW_REQUIRED", .reviewRequired),
+        ]
+        var snapshot = ready()
+        for (value, decision) in known {
+            XCTAssertEqual(ReviewDecision(githubValue: value), decision, value)
+            snapshot.reviewDecision = value
+            XCTAssertEqual(snapshot.review, decision, value)
+        }
+        snapshot.reviewDecision = nil
+        XCTAssertNil(snapshot.review)
+
+        // An unknown decision is no decision to the type, but still a pending review on the card and never ready.
+        snapshot.reviewDecision = "FUTURE"
+        XCTAssertNil(snapshot.review)
+        XCTAssertEqual(classify(snapshot), .init(section: .waiting, reason: .readinessUnknown))
+        XCTAssertEqual(snapshot.cardStatus(under: classify(snapshot)).notes, ["Review pending"])
+        XCTAssertFalse(snapshot.isApproved)
+    }
+
     func testCardsKeepChecksBelowAndNeverRepeatTheState() {
         let passed = ChecksStatus(label: "Checks passed", tone: .success)
         let failingChecks = ChecksStatus(label: "Checks failing", tone: .failure)

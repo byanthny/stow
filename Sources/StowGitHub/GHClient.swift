@@ -589,7 +589,7 @@ public actor GHClient: GitHubClient {
             && ["BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "HAS_HOOKS", "UNSTABLE"].contains(mergeState ?? "")
             && node.object.keys.contains("reviewDecision")
             && (node["reviewDecision"].isNull
-                || ["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"].contains(review ?? ""))
+                || review.flatMap(ReviewDecision.init(githubValue:)) != nil)
             && checksKnown
             && (checks == nil || ["SUCCESS", "FAILURE", "ERROR", "PENDING", "EXPECTED"].contains(checks!))
         let readyComplete = complete && fieldsKnown && requestTypesKnown

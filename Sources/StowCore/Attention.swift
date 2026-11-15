@@ -62,6 +62,21 @@ public enum AttentionTone: String, Equatable, Sendable {
     case success, failure, pending, neutral
 }
 
+/// A pull request's review decision, from GitHub's value.
+public enum ReviewDecision: Equatable, Sendable {
+    case approved, changesRequested, reviewRequired
+
+    /// Nil for a value Stow doesn't know.
+    public init?(githubValue: String) {
+        switch githubValue {
+        case "APPROVED": self = .approved
+        case "CHANGES_REQUESTED": self = .changesRequested
+        case "REVIEW_REQUIRED": self = .reviewRequired
+        default: return nil
+        }
+    }
+}
+
 /// The checks line on a pull request card: what it says, and its tone when it has an icon.
 public struct ChecksStatus: Equatable, Sendable {
     public var label: String
@@ -79,6 +94,9 @@ extension PullRequestSnapshot {
         }
     }
 
+    /// The review decision, or nil when there is none or Stow doesn't know it.
+    public var review: ReviewDecision? { reviewDecision.flatMap(ReviewDecision.init(githubValue:)) }
+
     /// Merged or closed, as last observed.
     public var isTerminal: Bool { state == "MERGED" || state == "CLOSED" }
 
@@ -86,7 +104,7 @@ extension PullRequestSnapshot {
     public var isMerged: Bool { state == "MERGED" }
 
     /// Open and approved on fresh data. A stale or unavailable approval doesn't count.
-    public var isApproved: Bool { state == "OPEN" && reviewDecision == "APPROVED" && !isStale && !isUnavailable }
+    public var isApproved: Bool { state == "OPEN" && review == .approved && !isStale && !isUnavailable }
 }
 
 /// What a card says about a pull request: its state on one line, and its checks, always, on the line below.
@@ -105,10 +123,10 @@ extension PullRequestSnapshot {
     public func cardStatus(under classification: AttentionClassification) -> CardStatus {
         let reason = classification.reason
         let review: (text: String, tone: AttentionTone)? = reviewDecision.map { decision in
-            switch decision {
-            case "APPROVED": ("Approved", .success)
-            case "CHANGES_REQUESTED": ("Changes requested", .failure)
-            default: ("Review pending", .pending)
+            switch ReviewDecision(githubValue: decision) {
+            case .approved: ("Approved", .success)
+            case .changesRequested: ("Changes requested", .failure)
+            case .reviewRequired, nil: ("Review pending", .pending)
             }
         }
         var status = CardStatus(headline: nil, tone: .neutral, notes: [], checks: checksStatus)
@@ -186,18 +204,18 @@ public func classify(_ snapshot: PullRequestSnapshot, isPinned: Bool = false) ->
     if snapshot.mergeable == "CONFLICTING" || snapshot.mergeStateStatus == "DIRTY" {
         return needs(.resolveConflicts)
     }
-    if snapshot.reviewDecision == "CHANGES_REQUESTED" { return needs(.changesRequested) }
+    if snapshot.review == .changesRequested { return needs(.changesRequested) }
     if snapshot.checksState == "FAILURE" || snapshot.checksState == "ERROR" { return needs(.checksFailing) }
     if !snapshot.isStale, !snapshot.isUnavailable, snapshot.isDraft == false, snapshot.readinessIsComplete,
         snapshot.mergeable == "MERGEABLE", snapshot.mergeStateStatus == "CLEAN",
         snapshot.checksKnown, snapshot.checksState == nil || snapshot.checksState == "SUCCESS",
-        snapshot.reviewDecision == nil || snapshot.reviewDecision == "APPROVED"
+        snapshot.reviewDecision == nil || snapshot.review == .approved
     {
         return needs(.readyToMerge)
     }
     // Being behind the base branch matters only once nothing else is pending.
     if snapshot.checksState == "PENDING" || snapshot.checksState == "EXPECTED" { return waiting(.checksPending) }
-    if snapshot.reviewDecision == "REVIEW_REQUIRED" { return waiting(.reviewRequired) }
+    if snapshot.review == .reviewRequired { return waiting(.reviewRequired) }
     if snapshot.mergeStateStatus == "BEHIND" { return waiting(.behindBaseBranch) }
     return waiting(.readinessUnknown)
 }
