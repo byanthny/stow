@@ -38,10 +38,10 @@ struct NoteView: View {
                     }
                     Spacer(minLength: 0)
                     headerButton("folder", "Show Markdown file", "note.showFile") {
-                        DataTransferActions.showNoteFile(note, store: store)
+                        DataTransferActions.showNoteFile(note.value, store: store)
                     }
                     headerButton("square.and.arrow.up", "Export Markdown…", "note.export") {
-                        DataTransferActions.exportNote(note, store: store)
+                        DataTransferActions.exportNote(note.value, store: store)
                     }
                     headerButton("trash", "Delete note…", "note.delete") { confirmDelete() }
                     if detached {
@@ -130,7 +130,7 @@ struct NoteView: View {
     }
 
     /// The ⋯ menu offers the sample accessory only once it is on in Settings, or already on for this note.
-    private func actions(for note: Note) -> [[PullDownMenu.Item]] {
+    private func actions(for note: NoteModel) -> [[PullDownMenu.Item]] {
         var sections: [[PullDownMenu.Item]] = []
         if note.pullRequest != nil {
             sections.append([.init(title: "Remove pull request link") { store.unlinkPullRequest(noteID) }])
@@ -157,7 +157,7 @@ struct NoteView: View {
 }
 
 struct DetachedNoteLauncher: View {
-    let note: Note
+    let note: NoteModel
     @Environment(\.stowTheme) private var theme
     var action: () -> Void
     var body: some View {
@@ -205,7 +205,7 @@ struct NoteComposerRow: View {
 /// A board note folded into one line: open it inline, or pop it out into its own window.
 struct CollapsedNoteRow: View {
     @Bindable var store: AppStore
-    let note: Note
+    let note: NoteModel
     @Environment(\.stowTheme) private var theme
 
     var body: some View {

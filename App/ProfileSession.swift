@@ -78,7 +78,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         guard !isStopped else { return }
         isRestoring = true
         createBoard()
-        let notes = store.state.notes.filter(\.isDetached).compactMap { notePanel($0.id) }
+        let notes = store.notes.filter(\.isDetached).compactMap { notePanel($0.id) }
         if hidden {
             isHidden = true
             hiddenWindows = ownWindows.filter { !staysWhileHidden($0) }
@@ -140,7 +140,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
 
     /// An always-on-top note stays on screen while its profile hides, when the profile keeps such notes.
     private func staysWhileHidden(_ window: NSWindow) -> Bool {
-        guard store.state.hideKeepsAlwaysOnTopNotes, let id = (window as? StowPanel)?.noteID else { return false }
+        guard store.base.hideKeepsAlwaysOnTopNotes, let id = (window as? StowPanel)?.noteID else { return false }
         return store.note(id)?.isAlwaysOnTop == true
     }
 
@@ -255,7 +255,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
         isRestoring = true
         closeBoardAndNotes()
         createBoard()
-        for note in store.state.notes where note.isDetached { showNote(note.id) }
+        for note in store.notes where note.isDetached { showNote(note.id) }
         applyWindowAppearance()
         isRestoring = false
         showBoard()
@@ -275,7 +275,7 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     private func createBoard() {
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let frame = restoredFrame(
-            store.state.boardFrame,
+            store.boardFrame,
             fallback: NSRect(x: visible.maxX - 404, y: visible.maxY - 744, width: 380, height: 700),
             minimum: NSSize(width: 320, height: 320))
         board = makePanel(frame: frame, title: title())
@@ -337,13 +337,13 @@ final class ProfileSession: NSObject, NSWindowDelegate {
     }
 
     private func applyBoardLevel() {
-        board?.level = store.state.boardAlwaysOnTop ? .floating : .normal
+        board?.level = store.base.boardAlwaysOnTop ? .floating : .normal
         applySettingsLevel()
     }
 
     /// Settings shares the level of the profile's pinned windows, so a pinned board or note never covers it.
     private func applySettingsLevel() {
-        let pinned = store.state.boardAlwaysOnTop || store.state.notes.contains { $0.isDetached && $0.isAlwaysOnTop }
+        let pinned = store.base.boardAlwaysOnTop || store.notes.contains { $0.isDetached && $0.isAlwaysOnTop }
         settingsWindow?.level = pinned ? .floating : .normal
     }
 

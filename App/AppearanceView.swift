@@ -11,7 +11,7 @@ struct AppearanceView: View {
     @State private var showingConfig = false
     @State private var configDraft = ThemeConfigDraft()
     @State private var copiedConfig = false
-    private var settings: AppearanceSettings { store.state.appearance }
+    private var settings: AppearanceSettings { store.base.appearance }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -122,9 +122,9 @@ struct AppearanceView: View {
 
     private func binding<Value>(_ keyPath: WritableKeyPath<AppearanceSettings, Value>) -> Binding<Value> {
         Binding(
-            get: { store.state.appearance[keyPath: keyPath] },
+            get: { store.base.appearance[keyPath: keyPath] },
             set: { value in
-                var updated = store.state.appearance
+                var updated = store.base.appearance
                 updated[keyPath: keyPath] = value
                 store.applyAppearance(updated)
             })
@@ -146,7 +146,7 @@ struct AppearanceView: View {
                 },
                 set: { color in
                     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
-                    var updated = store.state.appearance
+                    var updated = store.base.appearance
                     updated.colors[keyPath: keyPath] =
                         RGBColor(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent).hex
                     updated.name = "Custom"

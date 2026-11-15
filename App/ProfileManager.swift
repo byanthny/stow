@@ -221,7 +221,7 @@ final class ProfileManager {
     func switchTo(_ id: UUID, from sourceID: UUID? = nil) async {
         let source = sourceID.flatMap { sessions[$0] } ?? activeSession
         guard await open(id), let source, source.entry.id != id, sessions[source.entry.id] === source,
-            source.store.state.hidesWhenSwitchingAway
+            source.store.base.hidesWhenSwitchingAway
         else { return }
         hide(source.entry.id)
     }

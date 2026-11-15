@@ -49,7 +49,7 @@ struct ProfilesSettingsView: View {
                 SettingsToggle(
                     "Hide when switching away", identifier: "profiles.hidesWhenSwitchingAway",
                     isOn: Binding(
-                        get: { store.state.hidesWhenSwitchingAway }, set: { store.setHidesWhenSwitchingAway($0) }))
+                        get: { store.base.hidesWhenSwitchingAway }, set: { store.setHidesWhenSwitchingAway($0) }))
             }
             Text(
                 profiles.count > 1

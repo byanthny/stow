@@ -6,11 +6,52 @@ import StowExtensions
 import StowGitHub
 import StowSampleExtension
 
+/// One note's observed values, so a view reading one note updates only when that note changes.
+@MainActor @Observable
+final class NoteModel: Identifiable {
+    let id: UUID
+    let createdAt: Date
+    var markdown: String
+    var pullRequest: PullRequestReference?
+    var isDetached: Bool
+    var isAlwaysOnTop: Bool
+    var updatedAt: Date
+    /// Nothing observes the frame, so moving the note's window redraws nothing.
+    @ObservationIgnored var frame: WindowFrame?
+
+    init(_ note: Note) {
+        id = note.id
+        createdAt = note.createdAt
+        markdown = note.markdown
+        pullRequest = note.pullRequest
+        isDetached = note.isDetached
+        isAlwaysOnTop = note.isAlwaysOnTop
+        updatedAt = note.updatedAt
+        frame = note.frame
+    }
+
+    /// The note as it is saved.
+    var value: Note {
+        Note(
+            id: id, markdown: markdown, pullRequest: pullRequest, isDetached: isDetached, isAlwaysOnTop: isAlwaysOnTop,
+            frame: frame, createdAt: createdAt, updatedAt: updatedAt)
+    }
+
+    var title: String? { MarkdownStyle.title(in: markdown) }
+    var boardTitle: String { value.boardTitle }
+    func windowTitle(profileName: String?) -> String { value.windowTitle(profileName: profileName) }
+}
+
 @MainActor @Observable
 final class AppStore {
     /// This store's own theme; no window reads another store's.
     let theme = ThemeController()
-    var state = AppState()
+    /// Everything saved except the notes and the board's frame; `snapshot()` puts them back.
+    var base = AppState()
+    /// One observed model per note, in board order.
+    var notes: [NoteModel] = []
+    /// The board window's frame. Nothing observes it, so moving the board redraws nothing.
+    @ObservationIgnored var boardFrame: WindowFrame?
     var isLoaded = false
     var isRefreshing = false
     var saveError: String?
@@ -121,10 +162,10 @@ final class AppStore {
 
     func start() async {
         do {
-            state = try await repository.load()
+            adopt(try await repository.load())
             if !isDemo, !(await repository.foundSavedIndex) {
                 // GitHub is opt-in: a new installation never uses an existing gh login unasked.
-                state.githubEnabled = false
+                base.githubEnabled = false
                 offersGitHubSetup = true
             }
         } catch {
@@ -132,22 +173,22 @@ final class AppStore {
             saveError = "Saved data could not be opened. Your original file has been preserved."
             // Nothing turns on unless the person turns it on: state that cannot be read starts, and is recovered,
             // with GitHub and accessories off, and offers GitHub as a new installation does.
-            state = state.preparedForArrival()
+            base = base.preparedForArrival()
             offersGitHubSetup = !isDemo
         }
         // Whatever its saved state says, a profile not seen before must not turn GitHub or accessories on here.
-        if isArrival { state = state.preparedForArrival() }
-        for index in state.pullRequests.indices {
-            state.pullRequests[index].markStale()
-            state.pullRequests[index].readinessIsComplete = false
+        if isArrival { base = base.preparedForArrival() }
+        for index in base.pullRequests.indices {
+            base.pullRequests[index].markStale()
+            base.pullRequests[index].readinessIsComplete = false
         }
         // Demo content sets which of its cards are fresh.
-        if isDemo && state.notes.isEmpty && !storageNeedsRecovery {
-            state = DemoContent.state()
+        if isDemo && notes.isEmpty && !storageNeedsRecovery {
+            adopt(DemoContent.state())
         }
-        theme.apply(state.appearance)
-        if !state.boardLayout.notesStartCollapsed {
-            expandedNoteIDs = Set(state.notes.map(\.id))
+        theme.apply(base.appearance)
+        if !base.boardLayout.notesStartCollapsed {
+            expandedNoteIDs = Set(notes.map(\.id))
         }
         isLoaded = true
         if !storageNeedsRecovery {
@@ -159,6 +200,24 @@ final class AppStore {
         guard !isStopped else { return }
         refreshTimer = repeating(every: backgroundInterval, immediately: false) { await $0.refresh() }
         accessoryTask = repeating(every: backgroundInterval, immediately: true) { await $0.refreshAccessories() }
+    }
+
+    /// The one value for saves, transfers, and backups. Views never read it.
+    func snapshot() -> AppState {
+        var state = base
+        state.notes = notes.map(\.value)
+        state.boardFrame = boardFrame
+        return state
+    }
+
+    /// Replaces the whole state: the notes become new models and the board's frame leaves `base`.
+    func adopt(_ state: AppState) {
+        notes = state.notes.map(NoteModel.init)
+        boardFrame = state.boardFrame
+        var rest = state
+        rest.notes = []
+        rest.boardFrame = nil
+        base = rest
     }
 
     /// Runs `work` every `interval` until cancelled or the store is gone, holding the store only while it runs.

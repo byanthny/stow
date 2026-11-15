@@ -5,7 +5,7 @@ struct PRCard: View {
     let store: AppStore
     @Environment(\.stowTheme) private var theme
     let pr: PullRequestSnapshot
-    private var pinned: Bool { store.state.pins.contains(pr.reference) }
+    private var pinned: Bool { store.base.pins.contains(pr.reference) }
     private var classification: AttentionClassification { classify(pr, isPinned: pinned) }
     private var expanded: Bool { store.expandedPRs.contains(pr.id) }
     var body: some View {
@@ -158,7 +158,7 @@ struct PRCard: View {
             if let created = pr.createdAt { Text("Opened \(created.shortAge())") }
             Text("State observed \(pr.observedStateSince.shortAge())")
         }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).frame(maxWidth: .infinity, alignment: .trailing)
-        ForEach(store.state.notes.filter { $0.pullRequest?.id == pr.id }) { note in
+        ForEach(store.notes.filter { $0.pullRequest?.id == pr.id }) { note in
             Button {
                 if note.isDetached {
                     store.detachNote(note.id)

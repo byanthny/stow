@@ -15,7 +15,7 @@ struct BoardView: View {
     @State private var visibleHeight: CGFloat = 0
 
     var body: some View {
-        let header = BoardHeader(profile: profile, layout: store.state.boardLayout)
+        let header = BoardHeader(profile: profile, layout: store.base.boardLayout)
         let iconStyle = header.tint.map { AnyShapeStyle(Color(stowHex: $0)) } ?? AnyShapeStyle(.stowMuted)
         VStack(spacing: 0) {
             HStack(spacing: 7) {
@@ -45,10 +45,10 @@ struct BoardView: View {
                     }
                 }
                 QuietIconButton(
-                    symbol: store.state.boardAlwaysOnTop ? "pin.fill" : "pin",
-                    label: store.state.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top", scale: .small
+                    symbol: store.base.boardAlwaysOnTop ? "pin.fill" : "pin",
+                    label: store.base.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top", scale: .small
                 ) { store.toggleBoardAlwaysOnTop() }
-                .accessibilityValue(store.state.boardAlwaysOnTop ? "Pinned" : "Unpinned")
+                .accessibilityValue(store.base.boardAlwaysOnTop ? "Pinned" : "Unpinned")
                 .accessibilityIdentifier("board.alwaysOnTop")
                 QuietIconButton(symbol: "plus", label: "New note") { store.addNote() }
                 QuietIconButton(symbol: "slider.horizontal.3", label: "Settings") { showSettings() }
@@ -60,10 +60,10 @@ struct BoardView: View {
                     // Section headers stay pinned so a long list still shows which section it is in.
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         banners.padding(.horizontal, 14).padding(.top, 14)
-                        ForEach(store.state.boardLayout.order, id: \.self) { section in
+                        ForEach(store.base.boardLayout.order, id: \.self) { section in
                             boardSection(section)
                         }
-                        if store.state.githubEnabled, let message = store.githubMessage {
+                        if store.base.githubEnabled, let message = store.githubMessage {
                             Label(message, systemImage: "wifi.exclamationmark")
                                 .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -89,9 +89,9 @@ struct BoardView: View {
             }
             HStack(spacing: 5) {
                 Spacer()
-                if !store.state.githubEnabled {
+                if !store.base.githubEnabled {
                     Text("Notes only")
-                } else if let refreshed = store.state.lastRefreshAt {
+                } else if let refreshed = store.base.lastRefreshAt {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         Text("Updated \(refreshed.shortAge(relativeTo: context.date))")
                     }
@@ -150,7 +150,7 @@ struct BoardView: View {
     }
 
     private func accountMismatchBanner(actual: String) -> some View {
-        let message = "GitHub is signed in as \(actual). This profile uses \(store.state.viewerLogin ?? "another account")."
+        let message = "GitHub is signed in as \(actual). This profile uses \(store.base.viewerLogin ?? "another account")."
         return VStack(alignment: .leading, spacing: 6) {
             Label(message, systemImage: "person.crop.circle.badge.exclamationmark").font(theme.font(size: 11))
             Button("Use \(actual) here") { Task { await store.useCurrentAccount() } }
@@ -163,9 +163,9 @@ struct BoardView: View {
 
     @ViewBuilder private func boardSection(_ section: BoardLayout.Section) -> some View {
         switch section {
-        case .needsYou: if store.state.githubEnabled { prSection("Needs you", section: .needsYou) }
+        case .needsYou: if store.base.githubEnabled { prSection("Needs you", section: .needsYou) }
         case .waiting:
-            if store.state.githubEnabled {
+            if store.base.githubEnabled {
                 prSection("Waiting", section: .waiting)
                 mergedSection
             }
@@ -200,7 +200,7 @@ struct BoardView: View {
         ) {
             // Click and start typing; a started note that stays empty goes away again.
             if store.draftNoteID == nil {
-                NoteComposerRow(isEmpty: store.state.notes.isEmpty) { store.startNote() }
+                NoteComposerRow(isEmpty: store.notes.isEmpty) { store.startNote() }
             }
             ForEach(notes) { note in
                 Group {
@@ -237,9 +237,9 @@ struct BoardView: View {
         emptyText: String? = nil
     ) -> some View {
         let expanded = expandedSections.contains(id)
-        let pins = store.state.pins
-        let listed = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: expanded)
-        let limited = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: false).moreCount > 0
+        let pins = store.base.pins
+        let listed = SectionCards(cards, layout: store.base.boardLayout, pins: pins, expanded: expanded)
+        let limited = SectionCards(cards, layout: store.base.boardLayout, pins: pins, expanded: false).moreCount > 0
         return pinnedSection(
             title, count: cards.count, id: id,
             summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
@@ -358,7 +358,7 @@ struct NotesHeading: Equatable {
 extension NotesHeading {
     @MainActor init(store: AppStore) {
         let listed = store.visibleNotes.count
-        self.init(count: listed, hiddenCount: store.state.notes.count - listed)
+        self.init(count: listed, hiddenCount: store.notes.count - listed)
     }
 }
 

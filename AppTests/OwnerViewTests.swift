@@ -38,7 +38,7 @@ final class OwnerViewTests: XCTestCase {
         await client.answer(isComplete: false, warning: "Synthetic incomplete-data warning")
         await store.refresh()
         XCTAssertEqual(store.githubMessage, "Synthetic incomplete-data warning")
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [review.id, waiting.id, pinned.id])
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [review.id, waiting.id, pinned.id])
         XCTAssertEqual(store.cards(in: .waiting).map(\.id), [pinned.id])
         // Dismissing still applies to every card, shown or not.
         store.dismiss(waiting.reference)
@@ -89,7 +89,7 @@ final class OwnerViewTests: XCTestCase {
         for section in sections {
             everything[section] = store.cards(in: section)
             for card in store.cards(in: section) {
-                reasons[card.id] = classify(card, isPinned: store.state.pins.contains(card.reference)).reason
+                reasons[card.id] = classify(card, isPinned: store.base.pins.contains(card.reference)).reason
             }
         }
         // The merged card sits in the Merged group under Waiting, still classified as Merged.
@@ -103,11 +103,11 @@ final class OwnerViewTests: XCTestCase {
                 .readyToMerge, .changesRequested, .checksFailing, .draft, .reviewRequested, .waitingForReview,
                 .watching, .merged,
             ])
-        let cached = store.state.pullRequests
+        let cached = store.base.pullRequests
 
         for owners in [["acme"], ["BETA"], ["acme", "beta"], ["synthetic-gamma"]] {
             store.setOwnerSelection(OwnerSelection(owners))
-            let selection = store.state.ownerSelection
+            let selection = store.base.ownerSelection
             for section in sections {
                 // The same cards in the same order, less other owners' unpinned cards.
                 let expected = (everything[section] ?? []).filter {
@@ -115,14 +115,14 @@ final class OwnerViewTests: XCTestCase {
                 }
                 XCTAssertEqual(store.cards(in: section), expected, "\(owners) in \(section)")
                 for card in store.cards(in: section) {
-                    let classification = classify(card, isPinned: store.state.pins.contains(card.reference))
+                    let classification = classify(card, isPinned: store.base.pins.contains(card.reference))
                     XCTAssertEqual(classification.section, section)
                     XCTAssertEqual(classification.reason, reasons[card.id])
                 }
             }
             XCTAssertEqual(
                 store.mergedCards, merged.filter { selection.contains($0.reference.owner) }, "\(owners) in Merged")
-            XCTAssertEqual(store.state.pullRequests, cached, "A selection never changes the cached cards")
+            XCTAssertEqual(store.base.pullRequests, cached, "A selection never changes the cached cards")
         }
     }
 
@@ -138,7 +138,7 @@ final class OwnerViewTests: XCTestCase {
         let shownBefore = store.cards(in: .waiting).map(\.id)
 
         store.setKeepsOnlySelectedOwners(true)
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [acme.id, pinned.id])
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [acme.id, pinned.id])
         XCTAssertEqual(
             store.cards(in: .waiting).map(\.id), shownBefore, "Pruning changes what is saved, not what shows")
         // The owner control still counts the other owner's cards, from memory.
@@ -156,7 +156,7 @@ final class OwnerViewTests: XCTestCase {
 
         // A refresh keeps other owners' cards in memory only.
         await store.refresh()
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [acme.id, pinned.id])
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [acme.id, pinned.id])
         XCTAssertEqual(store.ownerSummaries.map(\.cardCount), [1, 2])
         _ = await store.flush()
         file = try String(contentsOf: store.stateURL, encoding: .utf8)
@@ -165,12 +165,12 @@ final class OwnerViewTests: XCTestCase {
         // Unpinning lets a card of an owner outside the selection leave the disk too, and pinning brings it back
         // from memory with its title.
         store.togglePin(pinned.reference)
-        XCTAssertEqual(store.state.pullRequests.map(\.id), [acme.id])
+        XCTAssertEqual(store.base.pullRequests.map(\.id), [acme.id])
         XCTAssertEqual(store.ownerSummaries.map(\.cardCount), [1, 2])
         var refreshes = await client.refreshes
         store.togglePin(pinned.reference)
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [acme.id, pinned.id])
-        XCTAssertEqual(store.state.pullRequests.first { $0.id == pinned.id }?.title, "Synthetic pinned beta title")
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [acme.id, pinned.id])
+        XCTAssertEqual(store.base.pullRequests.first { $0.id == pinned.id }?.title, "Synthetic pinned beta title")
         var refreshed = await waitUntil { await client.refreshes > refreshes && !store.isRefreshing }
         XCTAssertTrue(refreshed, "Pinning refreshes")
 
@@ -182,10 +182,10 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertTrue(refreshed)
         refreshes = await client.refreshes
         store.setOwnerSelection(OwnerSelection(["acme"]))
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [acme.id, pinned.id])
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [acme.id, pinned.id])
         refreshed = await waitUntil { await client.refreshes > refreshes && !store.isRefreshing }
         XCTAssertTrue(refreshed)
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [acme.id, pinned.id])
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [acme.id, pinned.id])
         _ = await store.flush()
 
         // Reopened, the profile knows other owners only from what it kept: its pins.
@@ -193,15 +193,15 @@ final class OwnerViewTests: XCTestCase {
         let reopened = AppStore(stateURL: store.stateURL, githubClient: client, accessoryProviders: [])
         await reopened.start()
         defer { reopened.stop() }
-        XCTAssertTrue(reopened.state.keepsOnlySelectedOwners)
-        XCTAssertEqual(Set(reopened.state.pullRequests.map(\.id)), [acme.id, pinned.id])
+        XCTAssertTrue(reopened.base.keepsOnlySelectedOwners)
+        XCTAssertEqual(Set(reopened.base.pullRequests.map(\.id)), [acme.id, pinned.id])
         XCTAssertEqual(reopened.ownerSummaries.map(\.cardCount), [1, 1])
 
         // Turning the setting off saves every owner's cards again from the next refresh on.
         await reopened.refresh()
         XCTAssertEqual(reopened.ownerSummaries.map(\.cardCount), [1, 2])
         reopened.setKeepsOnlySelectedOwners(false)
-        XCTAssertEqual(Set(reopened.state.pullRequests.map(\.id)), [acme.id, beta.id, pinned.id])
+        XCTAssertEqual(Set(reopened.base.pullRequests.map(\.id)), [acme.id, beta.id, pinned.id])
         _ = await reopened.flush()
         XCTAssertTrue(try String(contentsOf: store.stateURL, encoding: .utf8).contains("Synthetic beta-only title"))
     }
@@ -236,7 +236,7 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(NotesHeading(store: store), NotesHeading(count: 3, hiddenCount: 2))
         XCTAssertEqual(NotesHeading(store: store).detail, "2 hidden")
         // Hiding a board note keeps the note, and a detached note's window stays open.
-        XCTAssertEqual(store.state.notes.map(\.id), notes.map(\.id))
+        XCTAssertEqual(store.snapshot().notes.map(\.id), notes.map(\.id))
         XCTAssertEqual(session.noteWindows[detached.id]?.isVisible, true)
         let saved = await store.flush()
         XCTAssertTrue(saved)
@@ -279,7 +279,7 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertTrue(store.sectionIsCollapsed(AppStore.mergedGroupID))
         store.toggleSection(AppStore.mergedGroupID)
         XCTAssertFalse(store.sectionIsCollapsed(AppStore.mergedGroupID))
-        XCTAssertTrue(store.state.collapsedSections.isEmpty)
+        XCTAssertTrue(store.base.collapsedSections.isEmpty)
         let saved = await store.flush()
         XCTAssertTrue(saved)
         let persisted = try await StateRepository(url: store.stateURL).load()
@@ -303,7 +303,7 @@ final class OwnerViewTests: XCTestCase {
             $0.pins = [pinned.reference]
             $0.pullRequests = [whileOpen(merged)]
         }
-        XCTAssertEqual(store.state.terminalCardKeepTime, .day)
+        XCTAssertEqual(store.base.terminalCardKeepTime, .day)
         await store.refresh()
         XCTAssertEqual(store.mergedCards.map(\.id), [merged.id])
         store.setTerminalCardKeepTime(.week)
@@ -311,7 +311,7 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(store.mergedCards.map(\.id), [merged.id], "Seen moments ago")
         store.setTerminalCardKeepTime(.dontKeep)
         XCTAssertTrue(store.mergedCards.isEmpty)
-        XCTAssertEqual(Set(store.state.pullRequests.map(\.id)), [pinned.id, open.id])
+        XCTAssertEqual(Set(store.base.pullRequests.map(\.id)), [pinned.id, open.id])
 
         // Refreshes now drop merged cards, and a longer time chosen again brings none back; pins stay in Waiting.
         await store.refresh()
@@ -350,7 +350,7 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertEqual(menuStates(button), [.on, .off, .off, .off])
 
         perform("beta (1)", in: button)
-        XCTAssertEqual(store.state.ownerSelection.owners, ["beta"])
+        XCTAssertEqual(store.base.ownerSelection.owners, ["beta"])
         XCTAssertEqual(store.cards(in: .waiting).map(\.id), [beta.id])
         XCTAssertEqual(menuStates(button), [.off, .off, .on, .off])
         let described = await waitUntil {
@@ -360,11 +360,11 @@ final class OwnerViewTests: XCTestCase {
         XCTAssertTrue(described)
         XCTAssertEqual(button.toolTip, "Owners: beta")
         perform("acme (1)", in: button)
-        XCTAssertEqual(store.state.ownerSelection.owners, ["acme", "beta"])
+        XCTAssertEqual(store.base.ownerSelection.owners, ["acme", "beta"])
         perform("beta (1)", in: button)
-        XCTAssertEqual(store.state.ownerSelection.owners, ["acme"])
+        XCTAssertEqual(store.base.ownerSelection.owners, ["acme"])
         perform("All owners", in: button)
-        XCTAssertTrue(store.state.ownerSelection.isAll)
+        XCTAssertTrue(store.base.ownerSelection.isAll)
         XCTAssertEqual(menuStates(button), [.on, .off, .off, .off])
 
         // Owners follow the owner order, which grouping also uses.
@@ -416,8 +416,8 @@ final class OwnerViewTests: XCTestCase {
             state.keepsOnlySelectedOwners = true
         }
         let refreshes = await client.refreshes
-        store.setOwnerSelection(store.state.ownerSelection.adding("synthetic-gamma"))
-        XCTAssertEqual(store.state.ownerSelection.owners, ["acme", "synthetic-gamma"])
+        store.setOwnerSelection(store.base.ownerSelection.adding("synthetic-gamma"))
+        XCTAssertEqual(store.base.ownerSelection.owners, ["acme", "synthetic-gamma"])
         XCTAssertEqual(
             store.ownerSummaries.last, OwnerSummary(owner: "synthetic-gamma", cardCount: 0, isSelected: true))
         let refreshed = await waitUntil { await client.refreshes > refreshes && !store.isRefreshing }

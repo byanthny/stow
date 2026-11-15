@@ -11,14 +11,14 @@ extension AppStore {
         coordinator = nil
         githubClient = nil
         isRefreshing = false
-        guard state.githubEnabled, !isDemo, !isStopped else { return }
+        guard base.githubEnabled, !isDemo, !isStopped else { return }
         if let githubOverride {
             githubClient = githubOverride
             coordinator = RefreshCoordinator(client: githubOverride)
             return
         }
         guard
-            let executable = GHClient.discoverExecutable(preferredPath: state.ghExecutablePath, excluding: dataFolder)
+            let executable = GHClient.discoverExecutable(preferredPath: base.ghExecutablePath, excluding: dataFolder)
         else {
             githubMessage = "GitHub is unavailable. Install gh or choose its executable in Settings."
             return
@@ -35,7 +35,7 @@ extension AppStore {
 
     func setGitHubEnabled(_ enabled: Bool) {
         offersGitHubSetup = false
-        state.githubEnabled = enabled
+        base.githubEnabled = enabled
         githubMessage = nil
         configureGitHub()
         changed()
@@ -43,14 +43,14 @@ extension AppStore {
     }
 
     func setExecutablePath(_ path: String?) {
-        state.ghExecutablePath = path
+        base.ghExecutablePath = path
         configureGitHub()
         changed()
         runOwned { await $0.refresh() }
     }
 
     func refresh() async {
-        guard isLoaded, !isRestoringBackup, !isPaused, !isStopped, state.githubEnabled, !isDemo, let coordinator
+        guard isLoaded, !isRestoringBackup, !isPaused, !isStopped, base.githubEnabled, !isDemo, let coordinator
         else { return }
         let attempt = now()
         lastRefreshAttempt = attempt
@@ -59,9 +59,9 @@ extension AppStore {
         defer { if generation == sessionGeneration { isRefreshing = false } }
         do {
             let result = try await coordinator.refresh(
-                pins: state.pins, previous: knownPullRequests, expectedViewerLogin: state.viewerLogin)
-            guard generation == sessionGeneration, state.githubEnabled else { return }
-            if let expected = state.viewerLogin,
+                pins: base.pins, previous: knownPullRequests, expectedViewerLogin: base.viewerLogin)
+            guard generation == sessionGeneration, base.githubEnabled else { return }
+            if let expected = base.viewerLogin,
                 expected.caseInsensitiveCompare(result.viewerLogin) != .orderedSame
             {
                 // Defense for injected clients: another account's result is never applied.
@@ -70,13 +70,13 @@ extension AppStore {
                 return
             }
             accountMismatch = nil
-            state.viewerLogin = result.viewerLogin
+            base.viewerLogin = result.viewerLogin
             setPullRequests(
                 reconcileSnapshots(
-                    previous: knownPullRequests, incoming: result.snapshots, pins: state.pins, now: result.fetchedAt,
-                    keepTime: state.terminalCardKeepTime))
+                    previous: knownPullRequests, incoming: result.snapshots, pins: base.pins, now: result.fetchedAt,
+                    keepTime: base.terminalCardKeepTime))
             isRefreshing = false
-            state.lastRefreshAt = result.fetchedAt
+            base.lastRefreshAt = result.fetchedAt
             githubMessage =
                 result.warning
                 ?? (result.isComplete ? nil : "Some GitHub data is incomplete. Cached cards are retained.")
@@ -85,7 +85,7 @@ extension AppStore {
             forgetFailedAttempt(attempt)
             guard generation == sessionGeneration else { return }
             // A refresh that asked for an older login can name the one this profile now uses; that is no mismatch.
-            if state.viewerLogin?.caseInsensitiveCompare(actual) == .orderedSame { return }
+            if base.viewerLogin?.caseInsensitiveCompare(actual) == .orderedSame { return }
             markAccountMismatch(actual: actual)
         } catch {
             forgetFailedAttempt(attempt)
@@ -114,7 +114,7 @@ extension AppStore {
                 cards[index].readinessIsComplete = false
             }
         }
-        markStale(&state.pullRequests)
+        markStale(&base.pullRequests)
         markStale(&memoryOnlyPullRequests)
     }
 
@@ -130,10 +130,10 @@ extension AppStore {
     func useCurrentAccount() async {
         guard let actual = accountMismatch else { return }
         accountMismatch = nil
-        state.viewerLogin = actual
-        state.pullRequests = []
+        base.viewerLogin = actual
+        base.pullRequests = []
         memoryOnlyPullRequests = []
-        state.dismissedIDs = []
+        base.dismissedIDs = []
         expandedPRs = []
         cancelDetails()
         sessionGeneration += 1
@@ -160,7 +160,7 @@ extension AppStore {
             return
         }
         expandedPRs.insert(reference.id)
-        guard !isDemo, state.githubEnabled, accountMismatch == nil, let githubClient,
+        guard !isDemo, base.githubEnabled, accountMismatch == nil, let githubClient,
             !loadingDetails.contains(reference.id)
         else { return }
         loadingDetails.insert(reference.id)
@@ -178,14 +178,14 @@ extension AppStore {
             do {
                 let details = try await githubClient.details(for: reference)
                 try Task.checkCancellation()
-                guard generation == sessionGeneration, state.githubEnabled,
-                    let index = state.pullRequests.firstIndex(where: { $0.id == reference.id })
+                guard generation == sessionGeneration, base.githubEnabled,
+                    let index = base.pullRequests.firstIndex(where: { $0.id == reference.id })
                 else { return }
-                state.pullRequests[index].details = details
+                base.pullRequests[index].details = details
                 changed()
             } catch is CancellationError {} catch {
                 if !Task.isCancelled, detailTokens[reference.id] == token,
-                    generation == sessionGeneration && state.githubEnabled
+                    generation == sessionGeneration && base.githubEnabled
                 {
                     githubMessage = "Details are unavailable. The cached card is still available."
                 }
@@ -194,19 +194,19 @@ extension AppStore {
     }
 
     var visiblePRs: [PullRequestSnapshot] {
-        guard state.githubEnabled else { return [] }
-        return state.pullRequests.filter { !state.dismissedIDs.contains($0.id) }
+        guard base.githubEnabled else { return [] }
+        return base.pullRequests.filter { !base.dismissedIDs.contains($0.id) }
     }
 
     /// A section's cards, newest first. The owner selection leaves out other owners' cards, except pinned ones, and
     /// never changes how a card is classified. Unpinned merged and closed cards are in `mergedCards` instead.
     func cards(in section: AttentionSection) -> [PullRequestSnapshot] {
         let cards = visiblePRs.filter {
-            let isPinned = state.pins.contains($0.reference)
-            return isShown($0, selection: state.ownerSelection, pins: state.pins)
+            let isPinned = base.pins.contains($0.reference)
+            return isShown($0, selection: base.ownerSelection, pins: base.pins)
                 && classify($0, isPinned: isPinned).section == section && (isPinned || !$0.isTerminal)
         }
-        return pinnedFirst(cards, pins: state.pins)
+        return pinnedFirst(cards, pins: base.pins)
     }
 
     /// The section identifier of the Merged group, which sits under Waiting and isn't part of the saved order.
@@ -215,32 +215,32 @@ extension AppStore {
     /// The Merged group's cards: unpinned merged and closed ones of the selected owners, newest first.
     var mergedCards: [PullRequestSnapshot] {
         let cards = visiblePRs.filter {
-            $0.isTerminal && !state.pins.contains($0.reference)
-                && isShown($0, selection: state.ownerSelection, pins: state.pins)
+            $0.isTerminal && !base.pins.contains($0.reference)
+                && isShown($0, selection: base.ownerSelection, pins: base.pins)
         }
         return pinnedFirst(cards, pins: [])
     }
 
     /// Every card the profile knows now: the saved ones, then those kept only in memory.
-    private var knownPullRequests: [PullRequestSnapshot] { state.pullRequests + memoryOnlyPullRequests }
+    private var knownPullRequests: [PullRequestSnapshot] { base.pullRequests + memoryOnlyPullRequests }
 
     /// Replaces the cards. While the profile keeps only its selected owners on disk, other owners' cards go to
     /// memory instead of the saved state, unless they are pinned.
     private func setPullRequests(_ cards: [PullRequestSnapshot]) {
-        guard state.keepsOnlySelectedOwners else {
-            state.pullRequests = cards
+        guard base.keepsOnlySelectedOwners else {
+            base.pullRequests = cards
             memoryOnlyPullRequests = []
             return
         }
-        let kept = retainingSelectedOwners(cards, selection: state.ownerSelection, pins: state.pins)
+        let kept = retainingSelectedOwners(cards, selection: base.ownerSelection, pins: base.pins)
         let keptIDs = Set(kept.map(\.id))
-        state.pullRequests = kept
+        base.pullRequests = kept
         memoryOnlyPullRequests = cards.filter { !keptIDs.contains($0.id) }
     }
 
     /// Moves cards between the saved state and memory after the selection, the pins, or the storage setting change.
     private func reapplyKeptOwners() {
-        guard state.keepsOnlySelectedOwners || !memoryOnlyPullRequests.isEmpty else { return }
+        guard base.keepsOnlySelectedOwners || !memoryOnlyPullRequests.isEmpty else { return }
         setPullRequests(knownPullRequests)
     }
 
@@ -249,73 +249,73 @@ extension AppStore {
     /// latest refresh, kept in memory.
     var ownerSummaries: [OwnerSummary] {
         StowCore.ownerSummaries(
-            pullRequests: knownPullRequests, pins: state.pins, dismissedIDs: state.dismissedIDs,
-            selection: state.ownerSelection, order: state.boardLayout.ownerOrder)
+            pullRequests: knownPullRequests, pins: base.pins, dismissedIDs: base.dismissedIDs,
+            selection: base.ownerSelection, order: base.boardLayout.ownerOrder)
     }
 
     /// The board header shows the owner control with GitHub on and cards from more than one owner, whenever a
     /// selection is active, so it never hides cards silently, or always when Settings → Board asks.
     var showsOwnerControl: Bool {
         StowCore.showsOwnerControl(
-            githubEnabled: state.githubEnabled, pullRequests: visiblePRs, selection: state.ownerSelection,
-            alwaysShow: state.boardLayout.alwaysShowOwnerControl)
+            githubEnabled: base.githubEnabled, pullRequests: visiblePRs, selection: base.ownerSelection,
+            alwaysShow: base.boardLayout.alwaysShowOwnerControl)
     }
 
     /// Chooses whose pull requests show, and saves. A profile that keeps only its selected owners on disk also
     /// refreshes at once, so an owner just added gets its cards.
     func setOwnerSelection(_ selection: OwnerSelection) {
-        guard selection != state.ownerSelection else { return }
-        state.ownerSelection = selection
+        guard selection != base.ownerSelection else { return }
+        base.ownerSelection = selection
         reapplyKeptOwners()
         changed()
-        if state.keepsOnlySelectedOwners { runOwned { await $0.refresh() } }
+        if base.keepsOnlySelectedOwners { runOwned { await $0.refresh() } }
     }
 
     /// Settings → Board → Keep only selected owners on disk. Turning it on takes other owners' cards out of the
     /// saved state at once, keeping pins; turning it off saves the cards held in memory again.
     func setKeepsOnlySelectedOwners(_ keeps: Bool) {
-        guard keeps != state.keepsOnlySelectedOwners else { return }
-        state.keepsOnlySelectedOwners = keeps
+        guard keeps != base.keepsOnlySelectedOwners else { return }
+        base.keepsOnlySelectedOwners = keeps
         reapplyKeptOwners()
         changed()
     }
 
     /// Settings → Board → Keep merged and closed. A shorter time takes cards already past it off the board at once.
     func setTerminalCardKeepTime(_ keepTime: TerminalCardKeepTime) {
-        guard keepTime != state.terminalCardKeepTime else { return }
-        state.terminalCardKeepTime = keepTime
+        guard keepTime != base.terminalCardKeepTime else { return }
+        base.terminalCardKeepTime = keepTime
         setPullRequests(
-            droppingExpiredTerminalCards(knownPullRequests, pins: state.pins, keepTime: keepTime, now: .now))
+            droppingExpiredTerminalCards(knownPullRequests, pins: base.pins, keepTime: keepTime, now: .now))
         changed()
     }
 
     /// The notes the board lists. With Settings → Board → Hide notes linked to hidden owners on, a note linked to
     /// another owner's pull request hides, unless that card is pinned and so shows. Standalone notes always show,
     /// and hiding never closes a detached note's window.
-    var visibleNotes: [Note] {
+    var visibleNotes: [NoteModel] {
         // Without GitHub there is no owner control to show the selection, so it hides nothing.
-        guard state.githubEnabled, state.boardLayout.hidesNotesForHiddenOwners else { return state.notes }
-        return state.notes.filter { note in
-            isNoteShown(note, selection: state.ownerSelection, hidesLinkedNotes: true)
-                || note.pullRequest.map { state.pins.contains($0) } == true
+        guard base.githubEnabled, base.boardLayout.hidesNotesForHiddenOwners else { return notes }
+        return notes.filter { note in
+            isNoteShown(linkedTo: note.pullRequest, selection: base.ownerSelection, hidesLinkedNotes: true)
+                || note.pullRequest.map { base.pins.contains($0) } == true
         }
     }
 
     func pin(_ reference: PullRequestReference) {
-        if !state.pins.contains(reference) { state.pins.append(reference) }
-        state.dismissedIDs.removeAll { $0 == reference.id }
+        if !base.pins.contains(reference) { base.pins.append(reference) }
+        base.dismissedIDs.removeAll { $0 == reference.id }
         // A card held only in memory is saved again once pinned.
         reapplyKeptOwners()
-        if !state.pullRequests.contains(where: { $0.id == reference.id }) {
-            state.pullRequests.append(.init(reference: reference, title: reference.displayName, isStale: true))
+        if !base.pullRequests.contains(where: { $0.id == reference.id }) {
+            base.pullRequests.append(.init(reference: reference, title: reference.displayName, isStale: true))
         }
         changed()
         runOwned { await $0.refresh() }
     }
 
     func togglePin(_ reference: PullRequestReference) {
-        if state.pins.contains(reference) {
-            state.pins.removeAll { $0 == reference }
+        if base.pins.contains(reference) {
+            base.pins.removeAll { $0 == reference }
             // Unpinned, a card of an owner outside the selection is no longer saved.
             reapplyKeptOwners()
             changed()
@@ -325,12 +325,12 @@ extension AppStore {
     }
 
     func dismiss(_ reference: PullRequestReference) {
-        if !state.dismissedIDs.contains(reference.id) { state.dismissedIDs.append(reference.id) }
+        if !base.dismissedIDs.contains(reference.id) { base.dismissedIDs.append(reference.id) }
         changed()
     }
 
     func restoreDismissal(_ id: String) {
-        state.dismissedIDs.removeAll { $0 == id }
+        base.dismissedIDs.removeAll { $0 == id }
         changed()
     }
 }

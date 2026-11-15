@@ -15,19 +15,19 @@ final class SectionsAndAppearanceTests: XCTestCase {
         let app = try await prepare(directory)
         defer { dispose(app) }
         let store = try XCTUnwrap(app.store)
-        let seed = try XCTUnwrap(store.state.notes.first)
-        let count = store.state.notes.count
+        let seed = try XCTUnwrap(store.snapshot().notes.first)
+        let count = store.snapshot().notes.count
 
         // A started note is open, focused, and empty; folding it away without typing removes it.
         let first = store.startNote()
         XCTAssertEqual(store.draftNoteID, first)
-        XCTAssertEqual(store.state.notes.count, count + 1)
+        XCTAssertEqual(store.snapshot().notes.count, count + 1)
         XCTAssertTrue(store.isNoteExpanded(first))
         XCTAssertEqual(store.focusNoteID, first)
         store.toggleNoteExpanded(first)
         XCTAssertNil(store.note(first))
         XCTAssertNil(store.draftNoteID)
-        XCTAssertEqual(store.state.notes.count, count)
+        XCTAssertEqual(store.snapshot().notes.count, count)
 
         // Opening another note, or making a new one with the + button, also drops an empty started note.
         let second = store.startNote()
@@ -77,7 +77,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
         // A click in that row still reaches the header's buttons: + is second from the trailing edge, after
         // the 15-point margin, the 22-point Settings button, and 7 points of spacing.
         let point = NSPoint(x: row.maxX - 15 - 22 - 7 - 11, y: row.midY)
-        let count = store.state.notes.count
+        let count = store.snapshot().notes.count
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             let event = try XCTUnwrap(
                 NSEvent.mouseEvent(
@@ -86,11 +86,11 @@ final class SectionsAndAppearanceTests: XCTestCase {
                     pressure: type == .leftMouseDown ? 1 : 0))
             board.sendEvent(event)
         }
-        let clicked = await waitUntil { store.state.notes.count == count + 1 }
+        let clicked = await waitUntil { store.snapshot().notes.count == count + 1 }
         XCTAssertTrue(clicked, "The header's New note button took the click")
 
         // A detached note's header shares its title bar row the same way.
-        let note = try XCTUnwrap(store.state.notes.first)
+        let note = try XCTUnwrap(store.snapshot().notes.first)
         store.detachNote(note.id)
         let panel = try XCTUnwrap(app.noteWindows[note.id])
         let noteRow = await headerRow(in: panel)
@@ -118,12 +118,12 @@ final class SectionsAndAppearanceTests: XCTestCase {
         let app = try await prepare(directory)
         defer { dispose(app) }
         let sectionIDs = [AttentionSection.needsYou.rawValue, AttentionSection.waiting.rawValue, "notes"]
-        XCTAssertTrue(app.store.state.collapsedSections.isEmpty)
+        XCTAssertTrue(app.store.base.collapsedSections.isEmpty)
         for section in sectionIDs { XCTAssertFalse(app.store.sectionIsCollapsed(section)) }
-        let originalNotes = app.store.state.notes
+        let originalNotes = app.store.snapshot().notes
         for section in sectionIDs { app.store.toggleSection(section) }
         XCTAssertEqual(
-            app.store.state.notes, originalNotes, "Collapsing sections must preserve note content and metadata")
+            app.store.snapshot().notes, originalNotes, "Collapsing sections must preserve note content and metadata")
         for section in sectionIDs { XCTAssertTrue(app.store.sectionIsCollapsed(section)) }
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
@@ -131,7 +131,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
 
         let restored = try await prepare(directory)
         defer { dispose(restored) }
-        XCTAssertEqual(restored.store.state.notes, originalNotes)
+        XCTAssertEqual(restored.store.snapshot().notes, originalNotes)
         for section in sectionIDs { XCTAssertTrue(restored.store.sectionIsCollapsed(section)) }
         let newID = restored.store.addNote("New synthetic note opens the notes section")
         XCTAssertFalse(restored.store.sectionIsCollapsed("notes"))
@@ -139,10 +139,10 @@ final class SectionsAndAppearanceTests: XCTestCase {
         XCTAssertTrue(restored.store.sectionIsCollapsed(AttentionSection.waiting.rawValue))
         restored.store.toggleSection("notes")
         XCTAssertTrue(restored.store.sectionIsCollapsed("notes"))
-        let notesBeforeFocus = restored.store.state.notes
+        let notesBeforeFocus = restored.store.snapshot().notes
         restored.store.requestFocus(newID)
         XCTAssertFalse(restored.store.sectionIsCollapsed("notes"))
-        XCTAssertEqual(restored.store.state.notes, notesBeforeFocus)
+        XCTAssertEqual(restored.store.snapshot().notes, notesBeforeFocus)
         let savedExpanded = await restored.store.flush()
         XCTAssertTrue(savedExpanded)
         let persisted = try await StateRepository(url: stateURL(directory)).load()
@@ -167,7 +167,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
         appearance.colors.background = "#E4E8EC"
         appearance.colors.text = "#18202A"
         XCTAssertTrue(app.store.applyAppearance(appearance))
-        XCTAssertEqual(app.store.state.appearance, appearance)
+        XCTAssertEqual(app.store.base.appearance, appearance)
         XCTAssertEqual(app.store.theme.settings, appearance)
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
@@ -177,7 +177,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
 
         let restored = try await prepare(directory)
         defer { dispose(restored) }
-        XCTAssertEqual(restored.store.state.appearance, appearance)
+        XCTAssertEqual(restored.store.base.appearance, appearance)
         XCTAssertEqual(restored.store.theme.settings, appearance)
         XCTAssertEqual(restored.store.theme.snapshot.colorScheme, .light)
         XCTAssertEqual(restored.board.appearance?.name, .aqua)
@@ -188,7 +188,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let note = try XCTUnwrap(app.store.state.notes.first)
+        let note = try XCTUnwrap(app.store.snapshot().notes.first)
         app.store.detachNote(note.id)
         let panel = try XCTUnwrap(app.noteWindows[note.id])
         let ready = await waitUntil {
@@ -201,8 +201,8 @@ final class SectionsAndAppearanceTests: XCTestCase {
         let selection = NSRange(location: 2, length: 7)
         editor.setSelectedRange(selection)
         let markdown = editor.string
-        let originalNote = app.store.note(note.id)
-        var appearance = app.store.state.appearance
+        let originalNote = app.store.note(note.id)?.value
+        var appearance = app.store.base.appearance
         appearance.editorFontName = availableMonospaceFontName()
         appearance.editorFontSize = 19
         appearance.editorLineHeight = 1.8
@@ -218,7 +218,7 @@ final class SectionsAndAppearanceTests: XCTestCase {
         XCTAssertTrue(textViews(in: panel.contentView).first === editor)
         XCTAssertEqual(editor.string, markdown)
         XCTAssertEqual(editor.selectedRange(), selection)
-        XCTAssertEqual(app.store.note(note.id), originalNote)
+        XCTAssertEqual(app.store.note(note.id)?.value, originalNote)
         if let name = appearance.editorFontName, let expected = NSFont(name: name, size: 19) {
             XCTAssertEqual((editor.typingAttributes[.font] as? NSFont)?.fontName, expected.fontName)
         }
@@ -230,10 +230,10 @@ final class SectionsAndAppearanceTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let note = try XCTUnwrap(app.store.state.notes.first)
+        let note = try XCTUnwrap(app.store.snapshot().notes.first)
         app.store.detachNote(note.id)
         let panel = try XCTUnwrap(app.noteWindows[note.id])
-        var appearance = app.store.state.appearance
+        var appearance = app.store.base.appearance
         appearance.backgroundOpacity = 0.25
         XCTAssertTrue(app.store.applyAppearance(appearance))
         let ready = await waitUntil {

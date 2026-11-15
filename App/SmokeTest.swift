@@ -36,15 +36,15 @@
             checks["notesRemainWhenBoardHidden"] = noteWindows[noteID]?.isVisible == true
             _ = applicationShouldHandleReopen(NSApp, hasVisibleWindows: true)
             checks["dockReopenShowsBoard"] = board.isVisible
-            let count = store.state.notes.count
+            let count = store.notes.count
             store.pasteOutsideEditor("https://github.com/example/project/pull/42\nremember to check restoration")
             checks["pastePinsAndAddsNote"] =
-                store.state.pins.contains { $0.number == 42 } && store.state.notes.count == count + 1
+                store.base.pins.contains { $0.number == 42 } && store.notes.count == count + 1
             store.toggleSample(noteID: noteID)
             await store.refreshAccessories()
             checks["optionalAccessory"] = !store.accessoryResults.isEmpty
             store.setGitHubEnabled(false)
-            checks["notesOnly"] = !store.state.githubEnabled && store.note(noteID) != nil
+            checks["notesOnly"] = !store.base.githubEnabled && store.note(noteID) != nil
             checks["persistedDetachedState"] = await store.flush()
             do {
                 let saved = try await StateRepository(url: store.stateURL).load()

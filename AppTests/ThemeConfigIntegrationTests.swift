@@ -12,8 +12,8 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try await makeStore(directory)
         defer { store.stop() }
-        let beforeAppearance = store.state.appearance
-        let beforeNotes = store.state.notes
+        let beforeAppearance = store.base.appearance
+        let beforeNotes = store.snapshot().notes
         let savedBefore = try Data(contentsOf: stateURL(directory))
         let draft = ThemeConfigDraft()
         draft.begin(beforeAppearance)
@@ -24,9 +24,9 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         XCTAssertFalse(draft.apply(to: store))
         XCTAssertNotNil(draft.error, "The sheet needs a visible error while leaving its source editable")
         XCTAssertEqual(draft.source, invalidSource)
-        XCTAssertEqual(store.state.appearance, beforeAppearance)
+        XCTAssertEqual(store.base.appearance, beforeAppearance)
         XCTAssertEqual(store.theme.settings, beforeAppearance)
-        XCTAssertEqual(store.state.notes, beforeNotes)
+        XCTAssertEqual(store.snapshot().notes, beforeNotes)
         XCTAssertEqual(try Data(contentsOf: stateURL(directory)), savedBefore)
 
         var corrected = beforeAppearance
@@ -38,18 +38,18 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         draft.source = try corrected.encodedConfig()
         XCTAssertTrue(draft.apply(to: store))
         XCTAssertNil(draft.error)
-        XCTAssertEqual(store.state.appearance, corrected)
+        XCTAssertEqual(store.base.appearance, corrected)
         XCTAssertEqual(store.theme.settings, corrected)
-        XCTAssertEqual(store.state.notes, beforeNotes)
+        XCTAssertEqual(store.snapshot().notes, beforeNotes)
         let saved = await store.flush()
         XCTAssertTrue(saved)
         store.stop()
         let restored = AppStore(stateURL: stateURL(directory), isDemo: true)
         await restored.start()
         defer { restored.stop() }
-        XCTAssertEqual(restored.state.appearance, corrected)
+        XCTAssertEqual(restored.base.appearance, corrected)
         XCTAssertEqual(restored.theme.settings, corrected)
-        XCTAssertEqual(restored.state.notes, beforeNotes)
+        XCTAssertEqual(restored.snapshot().notes, beforeNotes)
     }
 
     func testLegacyJSONPastedIntoTheSameDraftAppliesWithoutChangingNotes() async throws {
@@ -57,15 +57,15 @@ final class ThemeConfigIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let store = try await makeStore(directory)
         defer { store.stop() }
-        let notes = store.state.notes
+        let notes = store.snapshot().notes
         var legacy = AppearanceSettings.paper
         legacy.editorFontSize = 18
         let draft = ThemeConfigDraft()
         draft.source = " \n\t" + String(decoding: try legacy.encodedTheme(), as: UTF8.self)
         XCTAssertTrue(draft.apply(to: store))
         XCTAssertNil(draft.error)
-        XCTAssertEqual(store.state.appearance, legacy)
-        XCTAssertEqual(store.state.notes, notes)
+        XCTAssertEqual(store.base.appearance, legacy)
+        XCTAssertEqual(store.snapshot().notes, notes)
     }
 
     private func makeDirectory() throws -> URL {

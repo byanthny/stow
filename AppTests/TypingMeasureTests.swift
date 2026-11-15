@@ -28,7 +28,7 @@ final class TypingMeasureTests: XCTestCase {
         await app.prepare(stateURL: directory.appendingPathComponent("state.json"), isDemo: true)
         defer { for session in app.manager?.sessions.values.map({ $0 }) ?? [] { session.stop() } }
         let store = try XCTUnwrap(app.store)
-        let note = try XCTUnwrap(store.state.notes.last { $0.isDetached && $0.markdown.utf8.count < 100 })
+        let note = try XCTUnwrap(store.snapshot().notes.last { $0.isDetached && $0.markdown.utf8.count < 100 })
         XCTAssertEqual(app.noteWindows.count, 5)
         let board = try XCTUnwrap(app.board)
         let panel = try XCTUnwrap(app.noteWindows[note.id])

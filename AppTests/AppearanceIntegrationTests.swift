@@ -585,9 +585,9 @@ final class AppearanceIntegrationTests: XCTestCase {
 
         presets.menu?.performActionForItem(at: graphite)
 
-        XCTAssertEqual(store.state.appearance.name, AppearanceSettings.graphite.name)
-        XCTAssertEqual(store.state.appearance.colors, AppearanceSettings.graphite.colors)
-        XCTAssertEqual(store.state.appearance.editorFontName, "Synthetic-Note-Font")
+        XCTAssertEqual(store.base.appearance.name, AppearanceSettings.graphite.name)
+        XCTAssertEqual(store.base.appearance.colors, AppearanceSettings.graphite.colors)
+        XCTAssertEqual(store.base.appearance.editorFontName, "Synthetic-Note-Font")
     }
 
     /// Hosts `view` in a window and finds its pull-down buttons, so a test can choose a menu item as a click does.
