@@ -147,9 +147,8 @@ struct AppearanceView: View {
                 set: { color in
                     guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return }
                     var updated = store.state.appearance
-                    updated.colors[keyPath: keyPath] = String(
-                        format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
-                        Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()))
+                    updated.colors[keyPath: keyPath] =
+                        RGBColor(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent).hex
                     updated.name = "Custom"
                     store.applyAppearance(updated)
                 }), supportsOpacity: false)

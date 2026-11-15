@@ -1,20 +1,27 @@
 import Foundation
 
-/// A color as red, green, and blue from 0 to 1, for contrast math on theme colors.
-struct RGBColor: Equatable {
-    var red: Double
-    var green: Double
-    var blue: Double
+/// A color as red, green, and blue from 0 to 1.
+public struct RGBColor: Equatable, Sendable {
+    public var red: Double
+    public var green: Double
+    public var blue: Double
+
+    public init(red: Double, green: Double, blue: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
 
     /// A `#RRGGBB` color, or nil when the text isn't one.
-    init?(hex: String) {
+    public init?(hex: String) {
         guard AppearanceColors.isValidHex(hex), let value = UInt32(hex.dropFirst(), radix: 16) else { return nil }
         red = Double((value >> 16) & 0xFF) / 255
         green = Double((value >> 8) & 0xFF) / 255
         blue = Double(value & 0xFF) / 255
     }
 
-    /// A color from hue in degrees, and saturation and lightness from 0 to 1.
+    /// A color from hue in degrees (0 to 360, unlike the 0 to 1 hue of the HSB initializer), and saturation and
+    /// lightness from 0 to 1.
     init(hue: Double, saturation: Double, lightness: Double) {
         let chroma = (1 - abs(2 * lightness - 1)) * saturation
         let sector = hue.truncatingRemainder(dividingBy: 360) / 60
@@ -34,7 +41,26 @@ struct RGBColor: Equatable {
         blue = b + match
     }
 
-    var hex: String {
+    /// A color from hue, saturation, and brightness, each from 0 to 1 as AppKit takes them.
+    public init(hue: Double, saturation: Double, brightness: Double) {
+        let sector = hue * 6
+        let fraction = sector - sector.rounded(.down)
+        let low = brightness * (1 - saturation)
+        let falling = brightness * (1 - saturation * fraction)
+        let rising = brightness * (1 - saturation * (1 - fraction))
+        (red, green, blue) =
+            switch Int(sector) % 6 {
+            case 0: (brightness, rising, low)
+            case 1: (falling, brightness, low)
+            case 2: (low, brightness, rising)
+            case 3: (low, falling, brightness)
+            case 4: (rising, low, brightness)
+            default: (brightness, low, falling)
+            }
+    }
+
+    /// The color as `#RRGGBB`, each channel clamped to 0...1 and rounded to a whole byte.
+    public var hex: String {
         String(format: "#%02X%02X%02X", Int(Self.byte(red)), Int(Self.byte(green)), Int(Self.byte(blue)))
     }
 
