@@ -54,6 +54,8 @@ final class NoteModel: Identifiable {
 final class AppStore {
     /// This store's own theme; no window reads another store's.
     let theme = ThemeController()
+    /// The clock that redraws this profile's ages, shared with every other profile.
+    let clock: MinuteClock
     /// Everything saved except the notes and the board's frame; `snapshot()` puts them back.
     var base = AppState()
     /// One observed model per note, in board order.
@@ -155,9 +157,11 @@ final class AppStore {
     init(
         stateURL: URL, dataFolder: URL? = nil, isDemo: Bool = false, githubClient: (any GitHubClient)? = nil,
         githubClientFactory: (@MainActor (URL) -> any GitHubClient)? = nil,
-        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()], arrival: Bool = false
+        accessoryProviders: [any AccessoryProvider] = [SyntheticAccessoryProvider()], arrival: Bool = false,
+        clock: MinuteClock = .shared
     ) {
         self.stateURL = stateURL
+        self.clock = clock
         self.dataFolder = dataFolder ?? stateURL.deletingLastPathComponent()
         self.notesDirectory = stateURL.deletingLastPathComponent().appendingPathComponent("notes", isDirectory: true)
         self.isDemo = isDemo

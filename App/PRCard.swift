@@ -93,15 +93,13 @@ struct PRCard: View {
 
     /// When the pull request last changed, kept current each minute, and a clock when Stow couldn't refresh it.
     private var activity: some View {
-        TimelineView(.periodic(from: .now, by: 60)) { context in
-            HStack(spacing: 3) {
-                if pr.isStale || pr.isUnavailable {
-                    Image(systemName: "clock").accessibilityLabel("Not refreshed")
-                        .help("Stow couldn't refresh this card, so it shows what GitHub said last time.")
-                }
-                if let updated = pr.updatedAt {
-                    Text("Active \(updated.shortAge(relativeTo: context.date))")
-                }
+        HStack(spacing: 3) {
+            if pr.isStale || pr.isUnavailable {
+                Image(systemName: "clock").accessibilityLabel("Not refreshed")
+                    .help("Stow couldn't refresh this card, so it shows what GitHub said last time.")
+            }
+            if let updated = pr.updatedAt {
+                MinuteAge(clock: store.clock) { now in Text("Active \(updated.shortAge(relativeTo: now))") }
             }
         }
         .font(theme.font(size: 10)).foregroundStyle(.stowMuted)

@@ -61,7 +61,7 @@ extension AppStore {
                 guard !Task.isCancelled,
                     base.extensionInstances.contains(where: { $0.id == id && $0.isEnabled })
                 else { return }
-                accessoryResults[id] = result
+                if accessoryResults[id] != result { accessoryResults[id] = result }
             }
             accessoryRuns[id] = task
             await task.value

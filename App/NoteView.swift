@@ -231,8 +231,8 @@ struct CollapsedNoteRow: View {
                         Text(verbatim: note.boardTitle).font(theme.font(size: 12, weight: .medium)).lineLimit(1)
                         HStack(spacing: 6) {
                             if let reference = note.pullRequest { Text(verbatim: reference.displayName) }
-                            TimelineView(.periodic(from: .now, by: 60)) { context in
-                                Text("Edited \(note.updatedAt.shortAge(relativeTo: context.date))")
+                            MinuteAge(clock: store.clock) { now in
+                                Text("Edited \(note.updatedAt.shortAge(relativeTo: now))")
                             }
                         }.font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1)
                     }

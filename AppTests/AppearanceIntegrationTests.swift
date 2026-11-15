@@ -240,6 +240,41 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertTrue(long.scrolls, "A note over the limit scrolls inside")
     }
 
+    func testABoardNoteMeasuresItsTextAgainOnlyAfterAChange() {
+        let coordinator = NativeEditor(
+            text: .constant(""), focusRequestID: UUID(), appearance: .paper, fitsText: 104...300
+        ).makeCoordinator()
+        let editor = NoteTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 200))
+        editor.textContainerInset = NSSize(width: 4, height: 8)
+        editor.string = "Synthetic title\nSynthetic line"
+        NativeEditor.applyAppearance(.paper, to: editor)
+        coordinator.watchEdits(of: editor)
+        var measured = 0
+        coordinator.measureHeight = { editor, width, limit in
+            measured += 1
+            return NativeEditor.textHeight(of: editor, width: width, limit: limit)
+        }
+
+        let first = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertEqual(coordinator.textHeight(of: editor, width: 320, limit: 300), first)
+        XCTAssertEqual(measured, 1, "Nothing changed, yet the text was laid out again")
+        _ = coordinator.textHeight(of: editor, width: 200, limit: 300)
+        _ = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertEqual(measured, 2, "Each width is measured once")
+
+        editor.textStorage?.append(NSAttributedString(string: "\nSynthetic edit\nAnother line"))
+        let edited = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertGreaterThan(edited, first, "An edit measures again")
+        var larger = AppearanceSettings.paper
+        larger.editorFontSize += 8
+        NativeEditor.applyAppearance(larger, to: editor)
+        let enlarged = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertGreaterThan(enlarged, edited, "A larger font measures again")
+        editor.textContainerInset = NSSize(width: 4, height: 20)
+        XCTAssertEqual(coordinator.textHeight(of: editor, width: 320, limit: 300), enlarged + 24, accuracy: 0.5)
+        XCTAssertEqual(measured, 5)
+    }
+
     func testTypingAtTheEndOfAGrowingNoteKeepsTheCursorInView() async throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 300), styleMask: [.titled], backing: .buffered,

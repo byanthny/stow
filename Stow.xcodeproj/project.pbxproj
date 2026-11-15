@@ -17,6 +17,7 @@
 		318D0191B36272439F11FD8B /* StowAlert.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C4506C886EF4B45C916DB6 /* StowAlert.swift */; };
 		3522BC83D67633EA0C9FE636 /* PRCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A0A36E778F7188CF52838D /* PRCard.swift */; };
 		3A7011592F9D9131EFF13A0E /* AccessibilityAuditTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A0A8CCC99137DDF9D649E5C /* AccessibilityAuditTests.swift */; };
+		3BE9B658DE2B54D0D8943422 /* MinuteClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = BECCB922A43D95196A414CF2 /* MinuteClock.swift */; };
 		45EFD5F122C8EDDD967B7DAB /* PullDownMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A23F5051D12BE7F3E8D686F /* PullDownMenu.swift */; };
 		49A81CA514577E60691BA45C /* NotesFolderPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39A7319D2D8E9F3D12867849 /* NotesFolderPresenter.swift */; };
 		4AC4A2E0C34FBA831907FF08 /* AppStore+Notes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7483C4EC90997FBA51745AD /* AppStore+Notes.swift */; };
@@ -111,6 +112,7 @@
 		B7483C4EC90997FBA51745AD /* AppStore+Notes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppStore+Notes.swift"; sourceTree = "<group>"; };
 		B81E0113F9DC9DAA89FFFBD3 /* DataTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataTransferTests.swift; sourceTree = "<group>"; };
 		BC0D09AC5E5723C5281D40CA /* DataTransferView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataTransferView.swift; sourceTree = "<group>"; };
+		BECCB922A43D95196A414CF2 /* MinuteClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinuteClock.swift; sourceTree = "<group>"; };
 		C4D95B3214D2B63E6CADFAAA /* UpdateMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateMonitor.swift; sourceTree = "<group>"; };
 		C5C90A0A75F673872DF82240 /* AppStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStore.swift; sourceTree = "<group>"; };
 		C77BAF160150D32A58024D83 /* BoardWindowLevelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardWindowLevelTests.swift; sourceTree = "<group>"; };
@@ -200,6 +202,7 @@
 				2B984318AC22D6CC4F5676B9 /* DemoContent.swift */,
 				8F85FD678524729F2EAC4880 /* Info.plist */,
 				EAD31FFE1EB0783C12611B81 /* LaunchMetrics.swift */,
+				BECCB922A43D95196A414CF2 /* MinuteClock.swift */,
 				65FE07DEE8B707F6F7A3E21A /* NativeEditor.swift */,
 				39A7319D2D8E9F3D12867849 /* NotesFolderPresenter.swift */,
 				0ADBB4BA961022731A776296 /* NotesFolderWatcher.swift */,
@@ -421,6 +424,7 @@
 				523E84CD5DDE69790C2198C4 /* DataTransferView.swift in Sources */,
 				56BE1A684F9D58C9329C1B1C /* DemoContent.swift in Sources */,
 				78F81CC38809F80FAD9061B4 /* LaunchMetrics.swift in Sources */,
+				3BE9B658DE2B54D0D8943422 /* MinuteClock.swift in Sources */,
 				A1078DAD5CB22BA84D0CF57C /* NativeEditor.swift in Sources */,
 				951157544F8EAEA6A79F588F /* NoteView.swift in Sources */,
 				49A81CA514577E60691BA45C /* NotesFolderPresenter.swift in Sources */,

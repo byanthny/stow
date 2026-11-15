@@ -53,6 +53,11 @@ public enum PrivateFile {
 
     /// The bytes of the regular file at `url`, or nil when nothing is there; refuses a link and over `maximumBytes`.
     public static func read(_ url: URL, maximumBytes: Int) throws -> Data? {
+        try readSigned(url, maximumBytes: maximumBytes)?.data
+    }
+
+    /// The bytes `read` returns, with the file's signature as it was opened.
+    public static func readSigned(_ url: URL, maximumBytes: Int) throws -> (data: Data, signature: FileSignature)? {
         let descriptor = url.path.withCString { Darwin.open($0, O_RDONLY | O_NOFOLLOW | O_NONBLOCK) }
         if descriptor < 0 {
             if errno == ENOENT { return nil }
@@ -65,9 +70,11 @@ public enum PrivateFile {
             throw PrivateFileError.unreadable
         }
         guard info.st_size <= maximumBytes else { throw PrivateFileError.tooLarge }
-        do { return try read(handle, maximumBytes: maximumBytes) } catch let error as PrivateFileError {
+        let data: Data
+        do { data = try read(handle, maximumBytes: maximumBytes) } catch let error as PrivateFileError {
             throw error
         } catch { throw PrivateFileError.unreadable }
+        return (data, FileSignature(info))
     }
 
     /// Reads `handle` to its end, throwing `tooLarge` past `maximumBytes`; read errors pass through.
@@ -83,7 +90,7 @@ public enum PrivateFile {
     }
 
     /// Writes `data` to a new owner-only file at `url`, refusing anything already there; a failed write removes it.
-    public static func create(_ data: Data, at url: URL) throws {
+    @discardableResult public static func create(_ data: Data, at url: URL) throws -> FileSignature {
         let descriptor = url.path.withCString {
             Darwin.open($0, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, mode_t(0o600))
         }
@@ -97,19 +104,25 @@ public enum PrivateFile {
         guard Darwin.fchmod(descriptor, mode_t(0o600)) == 0 else { throw PrivateFileError.unwritable }
         try handle.write(contentsOf: data)
         try handle.synchronize()
+        var info = stat()
+        guard Darwin.fstat(descriptor, &info) == 0 else { throw PrivateFileError.unwritable }
         try handle.close()
         completed = true
+        return FileSignature(info)
     }
 
     /// Writes `data` to a new owner-only file beside `url`, then renames it over `url`, replacing a link rather than
     /// following it. With `replacing` false it links the file there instead, refusing anything already at `url`.
+    /// `prepared` gets the new file's signature before the file reaches `url`.
     public static func writeAtomically(
-        _ data: Data, to url: URL, replacing: Bool = true, temporaryPrefix: String = ".stow-"
+        _ data: Data, to url: URL, replacing: Bool = true, temporaryPrefix: String = ".stow-",
+        prepared: (FileSignature) -> Void = { _ in }
     ) throws {
         let temporary = url.deletingLastPathComponent().appendingPathComponent(
             "\(temporaryPrefix)\(UUID().uuidString).tmp")
-        try create(data, at: temporary)
+        let signature = try create(data, at: temporary)
         defer { try? FileManager.default.removeItem(at: temporary) }
+        prepared(signature)
         let status = temporary.path.withCString { source in
             url.path.withCString { destination in
                 replacing ? Darwin.rename(source, destination) : Darwin.link(source, destination)
