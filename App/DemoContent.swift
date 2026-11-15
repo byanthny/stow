@@ -4,9 +4,9 @@ import StowCore
 /// Synthetic content is only used by the explicit debug verification launch argument.
 enum DemoContent {
     /// The card and note counts a `--stow-demo-load` launch asks for.
-    nonisolated(unsafe) static var load: (cards: Int, notes: Int)?
+    @MainActor static var load: (cards: Int, notes: Int)?
 
-    static func state() -> AppState {
+    @MainActor static func state() -> AppState {
         if let load { return loadState(cards: load.cards, notes: load.notes) }
         var state = AppState()
         let first = PullRequestReference(owner: "example", repository: "desktop", number: 24)
@@ -109,7 +109,7 @@ enum DemoContent {
     }
 
     /// Deterministic synthetic cards and notes for measuring: the first note is about 46 KB and detached with four others.
-    static func loadState(cards: Int, notes: Int) -> AppState {
+    @MainActor static func loadState(cards: Int, notes: Int) -> AppState {
         var state = AppState()
         let repositories = ["desktop", "toolkit", "site", "docs"]
         // A cycle of card states that spreads cards across the board's sections.

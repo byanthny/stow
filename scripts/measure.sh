@@ -33,7 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The Debug configuration keeps the testing launch arguments; -O makes it run like a release build.
+# The Debug configuration keeps the testing launch arguments and testability and builds file by file; -O optimizes it.
 xcodebuild \
     -project Stow.xcodeproj \
     -scheme Stow \
@@ -54,7 +54,7 @@ xcodebuild \
 app="$output/DerivedData/Debug/Build/Products/Debug/Stow.app"
 open -n -a "$app" --args --stow-testing-state "$folder" --stow-demo-load 30,20
 for _ in $(seq 1 20); do
-    pid=$(pgrep -n -f "$app/Contents/MacOS/Stow" || true)
+    pid=$(pgrep -f -- "Contents/MacOS/Stow --stow-testing-state $folder" || true)
     [ -z "$pid" ] || break
     sleep 1
 done
@@ -87,7 +87,8 @@ cat "$output/usage.txt"
 
 if [ "$skip_tests" -eq 0 ]; then
     # Without the debug stub an optimized hosted app is hardened, and library validation rejects the ad-hoc test bundle.
-    xcodebuild \
+    # xcodebuild passes TEST_RUNNER_-prefixed variables to the test runner without the prefix.
+    TEST_RUNNER_STOW_MEASURE=1 xcodebuild \
         -project Stow.xcodeproj \
         -scheme Stow \
         -configuration Debug \
@@ -104,11 +105,11 @@ if [ "$skip_tests" -eq 0 ]; then
         ENABLE_HARDENED_RUNTIME=NO \
         -only-testing:StowAppTests/TypingMeasureTests \
         test >"$output/tests.log" 2>&1 || { tail -20 "$output/tests.log" >&2; exit 1; }
-    awk '/measured \[Clock Monotonic Time, s\] average:/ {
-        name = $0; sub(/.*testTypingIn/, "", name); sub(/\]. measured.*/, "", name)
-        if (name ~ /^A[0-9]/) { sub(/^A/, "", name); sub(/Note$/, "", name); name = name " note" }
-        else name = "short note with the board and 5 note windows open"
-        average = $0; sub(/.*average: /, "", average); sub(/,.*/, "", average)
-        printf "typing 50 characters, %s: %.3f s average\n", name, average
+    awk '/^typing-measure / {
+        name = $2; sub(/:$/, "", name)
+        if (name == "board") label = "short note with the board and 5 note windows open"
+        else label = name " note"
+        average = $4
+        printf "typing 50 characters, %s: %.3f s average\n", label, average
     }' "$output/tests.log"
 fi

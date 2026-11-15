@@ -5,12 +5,19 @@ import XCTest
 
 @testable import Stow
 
-/// Measures typing 50 characters at the end of a note through the editor's key-press path, one frame per key.
+/// Times typing 50 characters at the end of a note through the editor's key-press path, with queued main-thread work
+/// and one frame per key. Runs only for `scripts/measure.sh`, which sets STOW_MEASURE.
 @MainActor
 final class TypingMeasureTests: XCTestCase {
-    func testTypingInA4KBNote() async throws { try await measureTyping(inNoteOf: 4_000) }
-    func testTypingInA46KBNote() async throws { try await measureTyping(inNoteOf: 46_000) }
-    func testTypingInA100KBNote() async throws { try await measureTyping(inNoteOf: 100_000) }
+    private let typed = String(String(repeating: "typed text ", count: 5).prefix(50))
+
+    override func setUpWithError() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["STOW_MEASURE"] == "1")
+    }
+
+    func testTypingInA4KBNote() async throws { try await measureTyping("4KB", bytes: 4_000) }
+    func testTypingInA46KBNote() async throws { try await measureTyping("46KB", bytes: 46_000) }
+    func testTypingInA100KBNote() async throws { try await measureTyping("100KB", bytes: 100_000) }
 
     func testTypingInAShortNoteWithTheBoardAndNoteWindowsOpen() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -35,19 +42,12 @@ final class TypingMeasureTests: XCTestCase {
         panel.makeFirstResponder(editor)
         editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
 
-        let options = XCTMeasureOptions()
-        options.iterationCount = 3
-        measure(metrics: [XCTClockMetric(), XCTCPUMetric()], options: options) {
-            for character in String(repeating: "typed text ", count: 5).prefix(50) {
-                editor.insertText(String(character), replacementRange: editor.selectedRange())
-                drawFrame(of: windows)
-            }
-        }
+        try await time("board", typing: editor, in: windows)
         XCTAssertEqual(store.note(note.id)?.markdown, editor.string, "Typing reached the store")
         _ = await store.flush()
     }
 
-    private func measureTyping(inNoteOf bytes: Int) async throws {
+    private func measureTyping(_ name: String, bytes: Int) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
@@ -69,15 +69,27 @@ final class TypingMeasureTests: XCTestCase {
         window.makeFirstResponder(editor)
         editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
 
-        let options = XCTMeasureOptions()
-        options.iterationCount = 3
-        measure(metrics: [XCTClockMetric(), XCTCPUMetric()], options: options) {
-            for character in String(repeating: "typed text ", count: 5).prefix(50) {
+        try await time(name, typing: editor, in: windows)
+        XCTAssertEqual(store.note(id)?.markdown, editor.string, "Typing reached the store")
+    }
+
+    /// One warm-up run and three timed runs of 50 keys, each followed by queued work and a frame.
+    private func time(_ name: String, typing editor: NSTextView, in windows: [NSWindow]) async throws {
+        var seconds: [Double] = []
+        for run in 0..<4 {
+            let start = ContinuousClock.now
+            for character in typed {
                 editor.insertText(String(character), replacementRange: editor.selectedRange())
+                await Task.yield()
+                await Task.yield()
                 drawFrame(of: windows)
             }
+            if run > 0 { seconds.append((ContinuousClock.now - start) / .seconds(1)) }
         }
-        XCTAssertEqual(store.note(id)?.markdown, editor.string, "Typing reached the store")
+        XCTAssertTrue(editor.string.hasSuffix(typed), "The typed characters landed at the end")
+        let average = seconds.reduce(0, +) / Double(seconds.count)
+        let runs = seconds.map { String(format: "%.3f", $0) }.joined(separator: ", ")
+        print(String(format: "typing-measure %@: average %.3f s (%@)", name, average, runs))
     }
 
     /// One frame for each window, as a key press gets: the run loop applies pending updates, then layout and drawing.
