@@ -11,7 +11,15 @@ import StowSampleExtension
 final class NoteModel: Identifiable {
     let id: UUID
     let createdAt: Date
-    var markdown: String
+    /// The note's text. Setting it notifies at once, without comparing the whole text a second time.
+    var markdown: String {
+        get {
+            access(keyPath: \.markdown)
+            return text
+        }
+        set { withMutation(keyPath: \.markdown) { text = newValue } }
+    }
+    @ObservationIgnored private var text: String
     var pullRequest: PullRequestReference?
     var isDetached: Bool
     var isAlwaysOnTop: Bool
@@ -22,7 +30,7 @@ final class NoteModel: Identifiable {
     init(_ note: Note) {
         id = note.id
         createdAt = note.createdAt
-        markdown = note.markdown
+        text = note.markdown
         pullRequest = note.pullRequest
         isDetached = note.isDetached
         isAlwaysOnTop = note.isAlwaysOnTop
