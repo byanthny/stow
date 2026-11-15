@@ -9,21 +9,21 @@ extension AppStore {
         notesDirectory = await repository.notesDirectory
         // A store stopped meanwhile watches nothing.
         guard !isStopped else { return }
-        let presenter = NotesFolderPresenter(directory: notesDirectory) { [weak self] in
+        let files = repository.noteFiles
+        let directory = notesDirectory
+        let filesChanged: @Sendable () -> Void = { [weak self] in
+            // Files as Stow last wrote or read them start no merge.
+            guard !files.match(directory) else { return }
             Task { @MainActor [weak self] in
                 guard let self, !self.isStopped, !self.isTerminating, !self.isRestoringBackup else { return }
                 self.changed()
             }
         }
+        let presenter = NotesFolderPresenter(directory: notesDirectory, changed: filesChanged)
         notesPresenter = presenter
         NSFileCoordinator.addFilePresenter(presenter)
         do {
-            notesWatcher = try NotesFolderWatcher(directory: notesDirectory) { [weak self] in
-                Task { @MainActor [weak self] in
-                    guard let self, !self.isStopped, !self.isTerminating, !self.isRestoringBackup else { return }
-                    self.changed()
-                }
-            }
+            notesWatcher = try NotesFolderWatcher(directory: notesDirectory, changed: filesChanged)
         } catch {
             noteFileMessage = "Automatic file watching is unavailable. Return to Stow to reload external edits."
         }
@@ -157,8 +157,11 @@ extension AppStore {
         guard let save = terminationTask else { return }
         terminationTask = nil
         let writer = repository
-        reopenTask = Task.detached {
-            if await save.value { await writer.reopen() }
+        reopenTask = Task.detached { [weak self] in
+            guard await save.value else { return }
+            await writer.reopen()
+            // Merges what the final save read and the board never got.
+            await self?.changed()
         }
     }
 

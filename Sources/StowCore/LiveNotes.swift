@@ -26,9 +26,14 @@ enum LiveNoteIO {
     }
 
     static func read(_ url: URL, maximumBytes: Int) throws -> Data? {
+        try readSigned(url, maximumBytes: maximumBytes)?.data
+    }
+
+    /// The bytes `read` returns, with the file's signature as it was opened.
+    static func readSigned(_ url: URL, maximumBytes: Int) throws -> (data: Data, signature: FileSignature)? {
         guard try exists(url) else { return nil }
         var coordinationError: NSError?
-        var result: Result<Data?, Error>?
+        var result: Result<(data: Data, signature: FileSignature)?, Error>?
         NSFileCoordinator(filePresenter: nil).coordinate(
             readingItemAt: url, options: .withoutChanges,
             error: &coordinationError
@@ -39,8 +44,10 @@ enum LiveNoteIO {
         throw StateError.unreadable
     }
 
-    private static func readUncoordinated(_ url: URL, maximumBytes: Int) throws -> Data? {
-        do { return try PrivateFile.read(url, maximumBytes: maximumBytes) } catch { throw stateError(error) }
+    private static func readUncoordinated(_ url: URL, maximumBytes: Int) throws -> (
+        data: Data, signature: FileSignature
+    )? {
+        do { return try PrivateFile.readSigned(url, maximumBytes: maximumBytes) } catch { throw stateError(error) }
     }
 
     /// The state error for a private file failure: an oversize file is corrupt.
@@ -59,6 +66,11 @@ enum LiveNoteIO {
     static func files(in directory: URL) throws -> [UUID: URL] {
         guard try exists(directory) else { return [:] }
         try ensureDirectory(directory)
+        return try managedFiles(in: directory)
+    }
+
+    /// The UUID-named Markdown files in `directory`, listed without creating or changing anything.
+    static func managedFiles(in directory: URL) throws -> [UUID: URL] {
         let files: [URL]
         do { files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) } catch
         { throw StateError.unreadable }
@@ -73,9 +85,10 @@ enum LiveNoteIO {
         return result
     }
 
+    /// `prepared` gets the new file's signature before the file reaches `url`.
     static func write(
         _ data: Data, to url: URL, replace: Bool = true,
-        expectedData: Data? = nil, checkExpected: Bool = false
+        expectedData: Data? = nil, checkExpected: Bool = false, prepared: (FileSignature) -> Void = { _ in }
     ) throws {
         var coordinationError: NSError?
         var result: Result<Void, Error>?
@@ -89,16 +102,18 @@ enum LiveNoteIO {
                 if checkExpected {
                     let current = try readUncoordinated(
                         coordinatedURL, maximumBytes: MarkdownTransfer.maximumNoteByteCount)
-                    guard current == expectedData else { throw StateError.unwritable }
+                    guard current?.data == expectedData else { throw StateError.unwritable }
                 }
-                try writeUncoordinated(data, to: coordinatedURL, replace: replace)
+                try writeUncoordinated(data, to: coordinatedURL, replace: replace, prepared: prepared)
             }
         }
         if let result { return try result.get() }
         throw StateError.unwritable
     }
 
-    private static func writeUncoordinated(_ data: Data, to url: URL, replace: Bool) throws {
+    private static func writeUncoordinated(
+        _ data: Data, to url: URL, replace: Bool, prepared: (FileSignature) -> Void
+    ) throws {
         // Refuse even dangling destination symlinks. Replacing them would hide data/redirect user intent.
         if try exists(url) {
             var info = stat()
@@ -107,7 +122,9 @@ enum LiveNoteIO {
             else { throw StateError.unreadable }
             guard replace else { throw StateError.unwritable }
         }
-        do { try PrivateFile.writeAtomically(data, to: url, replacing: replace) } catch { throw StateError.unwritable }
+        do { try PrivateFile.writeAtomically(data, to: url, replacing: replace, prepared: prepared) } catch {
+            throw StateError.unwritable
+        }
     }
 
     static func remove(_ url: URL) throws {
@@ -127,5 +144,33 @@ enum LiveNoteIO {
         }
         if let result { return try result.get() }
         throw StateError.unwritable
+    }
+}
+
+/// The managed Markdown files as Stow last wrote or read them, so a change it made itself starts no merge.
+public final class NoteFileSignatures: @unchecked Sendable {
+    private let lock = NSLock()
+    /// Signatures by file name.
+    private var signatures: [String: FileSignature] = [:]
+
+    public init() {}
+
+    /// Records `file` as written or read with `signature`, or as removed when it is nil.
+    func record(_ signature: FileSignature?, for file: URL) {
+        lock.withLock { signatures[file.lastPathComponent] = signature }
+    }
+
+    func replace(with recorded: [String: FileSignature]) {
+        lock.withLock { signatures = recorded }
+    }
+
+    /// Whether `directory` holds exactly the managed files recorded, each as recorded.
+    public func match(_ directory: URL) -> Bool {
+        guard directory.isRealFolder, let files = try? LiveNoteIO.managedFiles(in: directory) else { return false }
+        let recorded = lock.withLock { signatures }
+        return files.count == recorded.count
+            && files.values.allSatisfy { file in
+                recorded[file.lastPathComponent].map { FileSignature(at: file) == $0 } ?? false
+            }
     }
 }

@@ -72,6 +72,110 @@ final class LiveNotesTests: XCTestCase {
         XCTAssertEqual(loaded.notes[0].markdown, "external 🐈\r\n")
     }
 
+    func testOnlyFilesChangedOutsideTheRepositoryDifferFromItsRecord() async throws {
+        let root = try directory()
+        let url = root.appendingPathComponent("state.json")
+        let repository = StateRepository(url: url)
+        let files = repository.noteFiles
+        var local = state("first")
+        try await repository.save(local)
+        let notes = await repository.notesDirectory
+        XCTAssertTrue(files.match(notes), "A file the repository wrote")
+        local.notes[0].markdown = "second"
+        local.notes.append(Note(markdown: "another"))
+        local = try await repository.saveMerging(local).state
+        XCTAssertTrue(files.match(notes), "Files the repository rewrote and added")
+        try Data("ignored".utf8).write(to: notes.appendingPathComponent("ordinary-name.md"))
+        XCTAssertTrue(files.match(notes), "A file the repository doesn't manage")
+
+        let source = await repository.noteFileURL(id: local.notes[0].id)
+        try Data("second, edited outside".utf8).write(to: source)
+        XCTAssertFalse(files.match(notes), "An edit in place")
+        local = try await repository.saveMerging(local).state
+        XCTAssertTrue(files.match(notes), "A file the repository read")
+        try Data("second, edited OUTSIDE".utf8).write(to: source)
+        XCTAssertFalse(files.match(notes), "An edit in place of the same size")
+        local = try await repository.saveMerging(local).state
+        try Data("replaced".utf8).write(to: source, options: .atomic)
+        XCTAssertFalse(files.match(notes), "An atomic replacement")
+        local = try await repository.saveMerging(local).state
+        XCTAssertTrue(files.match(notes))
+
+        let added = notes.appendingPathComponent("\(UUID().uuidString).md")
+        try Data("added outside".utf8).write(to: added)
+        XCTAssertFalse(files.match(notes), "A new file")
+        local = try await repository.saveMerging(local).state
+        XCTAssertTrue(files.match(notes))
+        try FileManager.default.removeItem(at: added)
+        XCTAssertFalse(files.match(notes), "A deleted file")
+        local = try await repository.saveMerging(local).state
+        XCTAssertTrue(files.match(notes))
+        try await repository.saveAndClose(local, deletedNoteIDs: [local.notes[1].id])
+        XCTAssertTrue(files.match(notes), "A file the repository deleted")
+
+        let reloaded = StateRepository(url: url)
+        _ = try await reloaded.load()
+        XCTAssertTrue(reloaded.noteFiles.match(notes), "Files a load read")
+        try FileManager.default.removeItem(at: notes)
+        XCTAssertFalse(reloaded.noteFiles.match(notes), "A missing notes folder")
+    }
+
+    func testMatchingAMissingNotesFolderCreatesNothing() throws {
+        let root = try directory()
+        let notes = root.appendingPathComponent("notes", isDirectory: true)
+        let files = NoteFileSignatures()
+        XCTAssertFalse(files.match(notes))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: notes.path), "Matching created the notes folder")
+        let elsewhere = root.appendingPathComponent("elsewhere", isDirectory: true)
+        try FileManager.default.createDirectory(at: elsewhere, withIntermediateDirectories: false)
+        try FileManager.default.createSymbolicLink(at: notes, withDestinationURL: elsewhere)
+        XCTAssertFalse(files.match(notes), "A link in place of the notes folder")
+    }
+
+    func testAFailedSaveClearsTheRecord() async throws {
+        let root = try directory()
+        let repository = StateRepository(url: root.appendingPathComponent("state.json"))
+        var local = state("first")
+        try await repository.save(local)
+        let notes = await repository.notesDirectory
+        XCTAssertTrue(repository.noteFiles.match(notes))
+        // The note is written, then the index can't be.
+        local.notes[0].markdown = "written before the index failed"
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: root.path)
+        addTeardownBlock { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path) }
+        do {
+            _ = try await repository.saveMerging(local)
+            XCTFail("The save succeeded")
+        } catch {}
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        let source = await repository.noteFileURL(id: local.notes[0].id)
+        XCTAssertEqual(try Data(contentsOf: source), Data(local.notes[0].markdown.utf8))
+        XCTAssertFalse(repository.noteFiles.match(notes), "The file a failed save wrote starts no merge")
+        _ = try await repository.saveMerging(local)
+        XCTAssertTrue(repository.noteFiles.match(notes))
+    }
+
+    func testARestoreReplacesTheRecord() async throws {
+        let repository = StateRepository(url: try directory().appendingPathComponent("state.json"))
+        try await repository.save(state("before the restore"))
+        let previous = await repository.notesDirectory
+        _ = try await repository.restore(state("restored"))
+        let restored = await repository.notesDirectory
+        XCTAssertNotEqual(restored, previous)
+        XCTAssertTrue(repository.noteFiles.match(restored), "The restored files")
+        XCTAssertFalse(repository.noteFiles.match(previous), "The files before the restore")
+    }
+
+    func testARecoveryClearsTheRecord() async throws {
+        let repository = StateRepository(url: try directory().appendingPathComponent("state.json"))
+        try await repository.save(state("before the recovery"))
+        let notes = await repository.notesDirectory
+        try await repository.recoverByBackingUp()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: notes.path))
+        try FileManager.default.createDirectory(at: notes, withIntermediateDirectories: false)
+        XCTAssertTrue(repository.noteFiles.match(notes), "Files from before the recovery are still recorded")
+    }
+
     func testCleanExternalAdoptionSurvivesStaleQuitSnapshot() async throws {
         let url = try directory().appendingPathComponent("state.json")
         let repository = StateRepository(url: url)

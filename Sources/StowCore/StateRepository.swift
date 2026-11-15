@@ -39,6 +39,8 @@ public actor StateRepository {
     }
     private let url: URL
     public private(set) var notesDirectory: URL
+    /// The notes folder's managed files as this repository last wrote or read them.
+    public nonisolated let noteFiles = NoteFileSignatures()
     /// Whether the last load found a saved index. False for a new installation.
     public private(set) var foundSavedIndex = false
     private var hasLoaded = false
@@ -104,10 +106,14 @@ public actor StateRepository {
             var loaded: [Note] = []
             var seen = Set<UUID>()
             var newBaselines: [UUID: Data] = [:]
+            var signatures: [String: FileSignature] = [:]
             for var note in state.notes {
                 guard seen.insert(note.id).inserted else { throw StateError.corrupt }
                 let sourceURL = files[note.id] ?? notesDirectory.appendingPathComponent("\(note.id.uuidString).md")
-                if let bytes = try LiveNoteIO.read(sourceURL, maximumBytes: MarkdownTransfer.maximumNoteByteCount) {
+                if let read = try LiveNoteIO.readSigned(sourceURL, maximumBytes: MarkdownTransfer.maximumNoteByteCount)
+                {
+                    let bytes = read.data
+                    signatures[sourceURL.lastPathComponent] = read.signature
                     let externalSource = try LiveNoteIO.source(bytes)
                     if legacy, Data(note.markdown.utf8) != bytes {
                         // An interrupted migration or pre-existing UUID file contains another body.
@@ -133,12 +139,13 @@ public actor StateRepository {
                 }
                 loaded.append(note)
             }
-            for id in files.keys.sorted(by: { $0.uuidString < $1.uuidString }) where !seen.contains(id) {
-                guard let bytes = try LiveNoteIO.read(files[id]!, maximumBytes: MarkdownTransfer.maximumNoteByteCount)
+            for (id, file) in files.sorted(by: { $0.key.uuidString < $1.key.uuidString }) where !seen.contains(id) {
+                guard let read = try LiveNoteIO.readSigned(file, maximumBytes: MarkdownTransfer.maximumNoteByteCount)
                 else { continue }
-                let note = Note(id: id, markdown: try LiveNoteIO.source(bytes))
+                signatures[file.lastPathComponent] = read.signature
+                let note = Note(id: id, markdown: try LiveNoteIO.source(read.data))
                 loaded.append(note)
-                newBaselines[id] = bytes
+                newBaselines[id] = read.data
             }
             state.notes = loaded
             baselines = newBaselines
@@ -147,12 +154,15 @@ public actor StateRepository {
             lastState = state
             expectsNotesDirectory = try LiveNoteIO.exists(notesDirectory)
             hasLoaded = true
+            noteFiles.replace(with: signatures)
             return state
         } catch let error as StateError {
             requiresRecovery = true
+            noteFiles.replace(with: [:])
             throw error
         } catch {
             requiresRecovery = true
+            noteFiles.replace(with: [:])
             throw StateError.corrupt
         }
     }
@@ -183,6 +193,10 @@ public actor StateRepository {
         guard incoming.schemaVersion == AppState.currentVersion else {
             throw StateError.unsupportedVersion(incoming.schemaVersion)
         }
+        // A failed save clears the record.
+        var signatures: [String: FileSignature] = [:]
+        var recorded = false
+        defer { if !recorded { noteFiles.replace(with: [:]) } }
         var result = incoming
         var conflictIDs: [UUID] = []
         var externallyDeletedIDs: [UUID] = []
@@ -206,9 +220,10 @@ public actor StateRepository {
             currentFiles = try LiveNoteIO.files(in: notesDirectory)
             // Validate every managed file before writing any metadata or source.
             for (id, file) in currentFiles {
-                if let data = try LiveNoteIO.read(file, maximumBytes: MarkdownTransfer.maximumNoteByteCount) {
-                    _ = try LiveNoteIO.source(data)
-                    diskData[id] = data
+                if let read = try LiveNoteIO.readSigned(file, maximumBytes: MarkdownTransfer.maximumNoteByteCount) {
+                    _ = try LiveNoteIO.source(read.data)
+                    diskData[id] = read.data
+                    signatures[file.lastPathComponent] = read.signature
                 }
             }
         } catch {
@@ -328,15 +343,23 @@ public actor StateRepository {
                 // Skip unchanged files, preserving external editor replacement/mtime information.
                 let target = currentFiles[note.id] ?? noteFileURL(id: note.id)
                 if diskData[note.id] != data {
-                    try LiveNoteIO.write(data, to: target, expectedData: diskData[note.id], checkExpected: true)
+                    try LiveNoteIO.write(data, to: target, expectedData: diskData[note.id], checkExpected: true) {
+                        noteFiles.record($0, for: target)
+                        signatures[target.lastPathComponent] = $0
+                    }
                 }
             }
             try LiveNoteIO.write(indexData, to: url)
             // Deletions are last: a failed metadata write never destroys note source.
             for id in removedIDs {
-                if let file = currentFiles[id] { try LiveNoteIO.remove(file) }
+                guard let file = currentFiles[id] else { continue }
+                noteFiles.record(nil, for: file)
+                signatures[file.lastPathComponent] = nil
+                try LiveNoteIO.remove(file)
             }
         } catch { throw StateError.unwritable }
+        noteFiles.replace(with: signatures)
+        recorded = true
         baselines = Dictionary(uniqueKeysWithValues: merged.map { ($0.id, Data($0.markdown.utf8)) })
         baselineNotes = Dictionary(uniqueKeysWithValues: merged.map { ($0.id, $0) })
         locations = currentFiles
@@ -385,14 +408,16 @@ public actor StateRepository {
             _ = try decoder.decode(DiskState.self, from: data)
         } catch { throw StateError.unwritable }
         var committed = false
+        var signatures: [String: FileSignature] = [:]
         defer { if !committed { try? FileManager.default.removeItem(at: newDirectory) } }
         do {
             try LiveNoteIO.ensureDirectory(url.deletingLastPathComponent())
             try LiveNoteIO.ensureDirectory(newDirectory)
             for note in state.notes {
-                try LiveNoteIO.write(
-                    Data(note.markdown.utf8),
-                    to: newDirectory.appendingPathComponent("\(note.id.uuidString).md"), replace: false)
+                let file = newDirectory.appendingPathComponent("\(note.id.uuidString).md")
+                try LiveNoteIO.write(Data(note.markdown.utf8), to: file, replace: false) {
+                    signatures[file.lastPathComponent] = $0
+                }
             }
             if let oldIndex = try LiveNoteIO.read(url, maximumBytes: LiveNoteIO.maximumIndexBytes) {
                 let backup = url.appendingPathExtension("before-restore-\(UUID().uuidString)")
@@ -402,6 +427,7 @@ public actor StateRepository {
             committed = true
         } catch { throw (error as? StateError) ?? StateError.unwritable }
         notesDirectory = newDirectory
+        noteFiles.replace(with: signatures)
         expectsNotesDirectory = true
         baselines = Dictionary(uniqueKeysWithValues: state.notes.map { ($0.id, Data($0.markdown.utf8)) })
         baselineNotes = Dictionary(uniqueKeysWithValues: state.notes.map { ($0.id, $0) })
@@ -443,6 +469,7 @@ public actor StateRepository {
         }
         requiresRecovery = false
         hasLoaded = true
+        noteFiles.replace(with: [:])
         baselines = [:]
         baselineNotes = [:]
         locations = [:]

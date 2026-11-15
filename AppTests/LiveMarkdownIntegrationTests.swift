@@ -241,6 +241,57 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         await shutdown(app)
     }
 
+    func testStowsOwnWritesStartNoMergeButOutsideChangesDo() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        let store = try XCTUnwrap(app.store)
+        let id = try XCTUnwrap(store.snapshot().notes.first?.id)
+        store.editNote(id, markdown: "# Synthetic original\n\nEdited in Stow.")
+        store.addNote("# Added in Stow")
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
+        let revision = store.changeRevision
+        try await Task.sleep(for: .seconds(1.5))
+        XCTAssertEqual(store.changeRevision, revision, "Stow's own writes started a merge")
+
+        let file = noteFile(id, store: store)
+        let edited = "# Edited outside\n"
+        try Data(edited.utf8).write(to: file)
+        let merged = await waitUntil { store.note(id)?.markdown == edited }
+        XCTAssertTrue(merged, "An outside edit starts a merge")
+        let added = UUID()
+        let addedFile = store.notesDirectory.appendingPathComponent("\(added.uuidString).md")
+        try Data("# New outside\n".utf8).write(to: addedFile)
+        let appeared = await waitUntil { store.note(added) != nil }
+        XCTAssertTrue(appeared, "A new file starts a merge")
+        try FileManager.default.removeItem(at: file)
+        let removed = await waitUntil { store.note(id) == nil }
+        XCTAssertTrue(removed, "A deleted file starts a merge")
+        await shutdown(app)
+    }
+
+    func testAnOutsideEditTheFinalSaveReadReachesTheBoardAfterACancelledQuit() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        let store = try XCTUnwrap(app.store)
+        let id = try XCTUnwrap(store.snapshot().notes.first?.id)
+        let edited = "# Edited outside during a quit\n"
+        // The watcher's notice of the edit arrives while quitting and is set aside.
+        store.isTerminating = true
+        try Data(edited.utf8).write(to: noteFile(id, store: store))
+        try await Task.sleep(for: .milliseconds(500))
+        let saved = await store.terminationSave().value
+        XCTAssertTrue(saved)
+        store.cancelTermination()
+        let merged = await waitUntil { store.note(id)?.markdown == edited }
+        XCTAssertTrue(merged, "An outside edit the final save read never reached the board")
+        await shutdown(app)
+    }
+
     func testRemovingThePullRequestLinkKeepsTheNoteAndItsFile() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
