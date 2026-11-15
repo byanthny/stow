@@ -468,11 +468,10 @@ final class OwnerViewTests: XCTestCase {
         let client = OwnerClient(cards: cards)
         let manager = ProfileManager(
             dataFolder: folder, isDemo: false, githubOverride: { _ in client }, accessoryProviders: [])
-        manager.confirmClosingWithoutSaving = { entry in
-            XCTFail("Unexpected question about closing \(entry.name) without saving")
+        manager.alert = { alert in
+            XCTFail("Unexpected alert \(alert)")
             return false
         }
-        manager.reportOpenElsewhere = { entry in XCTFail("Unexpected report that \(entry.name) is open elsewhere") }
         let started = await manager.start()
         XCTAssertTrue(started)
         addTeardownBlock { @MainActor in
