@@ -147,13 +147,10 @@ struct NoteView: View {
     private func confirmDelete() {
         guard let note = store.note(noteID) else { return }
         if !note.markdown.allSatisfy(\.isWhitespace) {
-            let alert = NSAlert()
-            alert.messageText = "Delete “\(note.boardTitle)”?"
-            alert.informativeText = "Its Markdown file is deleted too. This can’t be undone."
-            alert.addButton(withTitle: "Delete").hasDestructiveAction = true
-            alert.addButton(withTitle: "Cancel")
-            alert.window.appearance = theme.appKitAppearance
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let choice = StowAlert.run(
+                "Delete “\(note.boardTitle)”?", "Its Markdown file is deleted too. This can’t be undone.",
+                buttons: ["Delete", "Cancel"], firstIsDestructive: true, appearance: theme.appKitAppearance)
+            guard choice == 0 else { return }
         }
         store.deleteNote(noteID)
     }

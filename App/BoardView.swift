@@ -288,13 +288,11 @@ struct BoardView: View {
     }
 
     private func confirmRecovery() {
-        let alert = NSAlert()
-        alert.messageText = "Back up saved data and start recovery?"
-        alert.informativeText =
-            "The existing file will be kept beside state.json as a backup. Notes currently in memory will be saved as the new state."
-        alert.addButton(withTitle: "Back up and recover")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn { Task { await store.recoverState() } }
+        let choice = StowAlert.run(
+            "Back up saved data and start recovery?",
+            "The existing file will be kept beside state.json as a backup. Notes currently in memory will be saved as the new state.",
+            buttons: ["Back up and recover", "Cancel"])
+        if choice == 0 { Task { await store.recoverState() } }
     }
 }
 

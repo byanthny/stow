@@ -305,23 +305,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let other = others.first(where: { $0.bundleURL == Bundle.main.bundleURL }) ?? others.first {
             other.activate(options: [])
         } else {
-            let alert = NSAlert()
-            alert.messageText = "Stow is already open"
-            alert.informativeText = "Another Stow process is using this data. Quit it, then open Stow again."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            StowAlert.run(
+                "Stow is already open", "Another Stow process is using this data. Quit it, then open Stow again.",
+                buttons: ["OK"])
         }
     }
 
     /// Says that the data folder's lock file can't be used, before Stow quits.
     private static func reportLockFailure(_ dataFolder: URL) {
         let lockFile = dataFolder.appendingPathComponent(StateLock.instanceFilename).path as NSString
-        let alert = NSAlert()
-        alert.messageText = "Stow can’t lock its data folder"
-        alert.informativeText =
-            "Stow will quit. Check that \(lockFile.abbreviatingWithTildeInPath) is an ordinary file you own, then open Stow again."
-        alert.addButton(withTitle: "Quit")
-        alert.runModal()
+        StowAlert.run(
+            "Stow can’t lock its data folder",
+            "Stow will quit. Check that \(lockFile.abbreviatingWithTildeInPath) is an ordinary file you own, then open Stow again.",
+            buttons: ["Quit"])
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -338,18 +334,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     let failed = Set(results.filter { !$0.value }.keys)
                     guard !failed.isEmpty else { return NSApp.reply(toApplicationShouldTerminate: true) }
                     let failedNames = manager.profiles.filter { failed.contains($0.id) }.map(\.name)
-                    let alert = NSAlert()
                     // A single profile reads as Stow always has; with names showing, it names the failed ones.
-                    alert.messageText = "Some changes could not be saved"
+                    var message = "Some changes could not be saved"
                     if manager.showsProfileNames, !failedNames.isEmpty {
                         let names = ListFormatter.localizedString(byJoining: failedNames)
-                        alert.messageText = "Some changes in \(names) could not be saved"
+                        message = "Some changes in \(names) could not be saved"
                     }
-                    alert.informativeText =
-                        "Keep Stow open to preserve notes currently in memory, or quit without saving those changes."
-                    alert.addButton(withTitle: "Keep open")
-                    alert.addButton(withTitle: "Quit without saving")
-                    let quit = alert.runModal() == .alertSecondButtonReturn
+                    let quit =
+                        StowAlert.run(
+                            message,
+                            "Keep Stow open to preserve notes currently in memory, or quit without saving those changes.",
+                            buttons: ["Keep open", "Quit without saving"]) == 1
                     if !quit { manager.cancelTermination() }
                     NSApp.reply(toApplicationShouldTerminate: quit)
                 }

@@ -141,20 +141,15 @@ enum AddOwnerPrompt {
         var login = ""
         var problem: String?
         while true {
-            let alert = NSAlert()
-            alert.messageText = "Add owner"
-            alert.informativeText = problem ?? "Enter the GitHub login of an organization or user."
-            alert.addButton(withTitle: "Add")
-            alert.addButton(withTitle: "Cancel")
             let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
             field.stringValue = login
             field.placeholderString = "GitHub login"
             field.setAccessibilityLabel("GitHub login")
             field.setAccessibilityIdentifier("owners.addOwner.login")
-            alert.accessoryView = field
-            alert.window.initialFirstResponder = field
-            alert.window.appearance = appearance
-            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+            let choice = StowAlert.run(
+                "Add owner", problem ?? "Enter the GitHub login of an organization or user.",
+                buttons: ["Add", "Cancel"], accessory: field, appearance: appearance)
+            guard choice == 0 else { return nil }
             login = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
             problem = OwnerSelection.problem(with: login)
             if problem == nil { return login }

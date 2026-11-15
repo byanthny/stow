@@ -225,13 +225,11 @@ private struct ProfileRow: View {
     }
 
     private func confirmDelete() {
-        let alert = NSAlert()
-        alert.messageText = "Delete \(entry.name)?"
-        alert.informativeText =
-            "Stow closes the profile and moves its folder, with its notes and settings, to the Trash. You can put it back from the Trash until you empty it."
-        alert.addButton(withTitle: "Move to Trash").hasDestructiveAction = true
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let choice = StowAlert.run(
+            "Delete \(entry.name)?",
+            "Stow closes the profile and moves its folder, with its notes and settings, to the Trash. You can put it back from the Trash until you empty it.",
+            buttons: ["Move to Trash", "Cancel"], firstIsDestructive: true)
+        guard choice == 0 else { return }
         // When this window closes with the profile, the manager says why a deletion failed instead.
         let settingsID = settingsID
         run { try await $0.delete(entry.id, askedFrom: settingsID) }
