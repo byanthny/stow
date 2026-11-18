@@ -184,6 +184,9 @@ public struct PullRequestSnapshot: Codable, Equatable, Sendable, Identifiable {
         self.isStale = isStale
         self.details = details
     }
+
+    /// Marks the card as not refreshed, so it shows what GitHub said last time and can't be ready.
+    public mutating func markStale() { isStale = true }
 }
 
 public struct ExtensionInstanceState: Codable, Equatable, Sendable, Identifiable {
@@ -330,4 +333,14 @@ public struct AppState: Codable, Equatable, Sendable {
             try container.decodeIfPresent(Bool.self, forKey: .hideKeepsAlwaysOnTopNotes) ?? false
         hidesWhenSwitchingAway = try container.decodeIfPresent(Bool.self, forKey: .hidesWhenSwitchingAway) ?? true
     }
+}
+
+extension Note {
+    /// A detached note's window title: its title line, with the profile's name once names show.
+    public func windowTitle(profileName: String?) -> String {
+        profileName.map { "\(boardTitle) — \($0)" } ?? boardTitle
+    }
+
+    /// The note's title for one-line rows.
+    public var boardTitle: String { title ?? "Untitled note" }
 }

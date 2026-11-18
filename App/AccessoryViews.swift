@@ -5,7 +5,7 @@ struct AccessoryViews: View {
     let store: AppStore
     var noteID: UUID?
     var body: some View {
-        ForEach(store.state.extensionInstances.filter { $0.isEnabled && $0.noteID == noteID }) { instance in
+        ForEach(store.base.extensionInstances.filter { $0.isEnabled && $0.noteID == noteID }) { instance in
             HStack(spacing: 6) {
                 if let result = store.accessoryResults[instance.id], let snapshot = result.snapshot {
                     if let symbol = snapshot.systemImage { Image(systemName: symbol) }

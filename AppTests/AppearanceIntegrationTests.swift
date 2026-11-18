@@ -240,6 +240,41 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertTrue(long.scrolls, "A note over the limit scrolls inside")
     }
 
+    func testABoardNoteMeasuresItsTextAgainOnlyAfterAChange() {
+        let coordinator = NativeEditor(
+            text: .constant(""), focusRequestID: UUID(), appearance: .paper, fitsText: 104...300
+        ).makeCoordinator()
+        let editor = NoteTextView(frame: NSRect(x: 0, y: 0, width: 320, height: 200))
+        editor.textContainerInset = NSSize(width: 4, height: 8)
+        editor.string = "Synthetic title\nSynthetic line"
+        NativeEditor.applyAppearance(.paper, to: editor)
+        coordinator.watchEdits(of: editor)
+        var measured = 0
+        coordinator.measureHeight = { editor, width, limit in
+            measured += 1
+            return NativeEditor.textHeight(of: editor, width: width, limit: limit)
+        }
+
+        let first = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertEqual(coordinator.textHeight(of: editor, width: 320, limit: 300), first)
+        XCTAssertEqual(measured, 1, "Nothing changed, yet the text was laid out again")
+        _ = coordinator.textHeight(of: editor, width: 200, limit: 300)
+        _ = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertEqual(measured, 2, "Each width is measured once")
+
+        editor.textStorage?.append(NSAttributedString(string: "\nSynthetic edit\nAnother line"))
+        let edited = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertGreaterThan(edited, first, "An edit measures again")
+        var larger = AppearanceSettings.paper
+        larger.editorFontSize += 8
+        NativeEditor.applyAppearance(larger, to: editor)
+        let enlarged = coordinator.textHeight(of: editor, width: 320, limit: 300)
+        XCTAssertGreaterThan(enlarged, edited, "A larger font measures again")
+        editor.textContainerInset = NSSize(width: 4, height: 20)
+        XCTAssertEqual(coordinator.textHeight(of: editor, width: 320, limit: 300), enlarged + 24, accuracy: 0.5)
+        XCTAssertEqual(measured, 5)
+    }
+
     func testTypingAtTheEndOfAGrowingNoteKeepsTheCursorInView() async throws {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 300), styleMask: [.titled], backing: .buffered,
@@ -272,6 +307,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -279,7 +315,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { window.close() }
         let board = ScrollView {
             VStack(spacing: 0) {
-                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                NoteView(store: store, note: model, editorHeightLimit: 300) {}
                 Color.clear.frame(height: 200)
             }
         }.themed(by: store.theme)
@@ -315,6 +351,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 400), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -323,7 +360,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         // A header pinned over the board's top while the note scrolls under it, as a section header stays.
         let board = ScrollView {
             VStack(spacing: 0) {
-                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                NoteView(store: store, note: model, editorHeightLimit: 300) {}
                 Color.clear.frame(height: 600)
             }
         }
@@ -406,6 +443,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote((1...40).map { "Synthetic line \($0)" }.joined(separator: "\n"))
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 700), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -413,7 +451,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { window.close() }
         let board = ScrollView {
             VStack(spacing: 0) {
-                NoteView(store: store, noteID: id, editorHeightLimit: 300) {}
+                NoteView(store: store, note: model, editorHeightLimit: 300) {}
                 Color.clear.frame(height: 200)
             }
         }.themed(by: store.theme)
@@ -442,6 +480,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote("Synthetic")
+        let model = try XCTUnwrap(store.note(id))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 500), styleMask: [.titled], backing: .buffered,
             defer: false)
@@ -450,7 +489,7 @@ final class AppearanceIntegrationTests: XCTestCase {
         window.orderFront(nil)
         func showNote() async throws -> NSTextView {
             let host = NSHostingView(
-                rootView: AnyView(NoteView(store: store, noteID: id, editorHeightLimit: 300) {}.themed(by: store.theme)))
+                rootView: AnyView(NoteView(store: store, note: model, editorHeightLimit: 300) {}.themed(by: store.theme)))
             window.contentView = host
             await settle(host)
             return try XCTUnwrap(noteScrollViews(in: host).first?.documentView as? NSTextView)
@@ -585,9 +624,9 @@ final class AppearanceIntegrationTests: XCTestCase {
 
         presets.menu?.performActionForItem(at: graphite)
 
-        XCTAssertEqual(store.state.appearance.name, AppearanceSettings.graphite.name)
-        XCTAssertEqual(store.state.appearance.colors, AppearanceSettings.graphite.colors)
-        XCTAssertEqual(store.state.appearance.editorFontName, "Synthetic-Note-Font")
+        XCTAssertEqual(store.base.appearance.name, AppearanceSettings.graphite.name)
+        XCTAssertEqual(store.base.appearance.colors, AppearanceSettings.graphite.colors)
+        XCTAssertEqual(store.base.appearance.editorFontName, "Synthetic-Note-Font")
     }
 
     /// Hosts `view` in a window and finds its pull-down buttons, so a test can choose a menu item as a click does.
@@ -611,8 +650,9 @@ final class AppearanceIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: root) }
         let store = AppStore(stateURL: root.appendingPathComponent("state.json"))
         let id = store.addNote("Synthetic note")
+        let model = try XCTUnwrap(store.note(id))
         func noteMenu() -> NSPopUpButton? {
-            let (window, buttons) = hostPullDowns(NoteView(store: store, noteID: id) {}.themed(by: store.theme))
+            let (window, buttons) = hostPullDowns(NoteView(store: store, note: model) {}.themed(by: store.theme))
             defer { window.close() }
             return buttons.first { $0.accessibilityLabel() == "Note actions" }
         }
@@ -623,10 +663,14 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertTrue(titles.contains("Enable sample accessory"))
     }
 
-    func testDetachedNoteWindowsAreNamedAfterTheirNotes() {
-        XCTAssertEqual(Note(markdown: "# Groceries\n- synthetic").windowTitle(profileName: nil), "Groceries")
-        XCTAssertEqual(Note(markdown: "Standup\nnotes").windowTitle(profileName: "Work"), "Standup — Work")
-        XCTAssertEqual(Note(markdown: "").windowTitle(profileName: nil), "Untitled note")
+    func testReduceTransparencyFollowsTheSystemBeforeThePostReturns() {
+        let system = SystemReduceTransparency()
+        let theme = ThemeController(readsReduceTransparency: { system.isOn })
+        XCTAssertFalse(theme.reduceTransparency)
+        system.isOn = true
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+        XCTAssertTrue(theme.reduceTransparency)
     }
 
     func testThemesDoNotBleedBetweenStores() throws {
@@ -646,6 +690,10 @@ final class AppearanceIntegrationTests: XCTestCase {
         XCTAssertEqual(b.theme.snapshot.colorScheme, .light)
         XCTAssertNotEqual(a.theme.snapshot, b.theme.snapshot)
     }
+}
+
+@MainActor private final class SystemReduceTransparency {
+    var isOn = false
 }
 
 /// A board-style note: room above it, and a binding, so typing grows it inside a scrolling board.

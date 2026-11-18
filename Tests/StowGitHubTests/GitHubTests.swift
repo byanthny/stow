@@ -581,6 +581,46 @@ struct GitHubTests {
         #expect(details.checks.dropFirst().allSatisfy { $0.url?.absoluteString == "https://example.com/check" })
     }
 
+    @Test func cutDetailsKeepFailingRunningAndUnknownChecksFirst() async throws {
+        func checkRun(_ name: String, status: String = "COMPLETED", conclusion: String?) -> GraphQLValue {
+            .object([
+                "__typename": .string("CheckRun"), "name": .string(name), "status": .string(status),
+                "conclusion": conclusion.map(GraphQLValue.string) ?? .null,
+            ])
+        }
+        let quiet =
+            [checkRun("Neutral", conclusion: "NEUTRAL"), checkRun("Skipped", conclusion: "SKIPPED")]
+            + (0..<98).map { checkRun("Passed \($0)", conclusion: "SUCCESS") }
+        let attention = [
+            checkRun("Failed", conclusion: "FAILURE"), checkRun("Running", status: "IN_PROGRESS", conclusion: nil),
+            checkRun("Stale", conclusion: "STALE"),
+        ]
+        let contexts: GraphQLValue = .object([
+            "nodes": .array(quiet + attention),
+            "pageInfo": .object(["hasNextPage": .bool(false), "endCursor": .null]),
+        ])
+        func page(_ connection: String, _ body: GraphQLValue) -> GraphQLValue {
+            let pullRequest: GraphQLValue =
+                connection == "contexts"
+                ? .object(["statusCheckRollup": .object(["contexts": body])]) : .object([connection: body])
+            return .object(["data": .object(["repository": .object(["pullRequest": pullRequest])])])
+        }
+        let empty: GraphQLValue = .object([
+            "nodes": .array([]), "pageInfo": .object(["hasNextPage": .bool(false), "endCursor": .null]),
+        ])
+        let transport = ScriptedTransport([
+            .init("contexts", try encoded(page("contexts", contexts))),
+            .init("latestReviews", try encoded(page("latestReviews", empty))),
+            .init("reviewThreads", try encoded(page("reviewThreads", empty))),
+        ])
+        let details = try await GHClient(transport: transport).details(
+            for: .init(owner: "example", repository: "fixture", number: 1))
+        #expect(details.checks.count == GHClient.maxDetailItems)
+        #expect(!details.isComplete)
+        #expect(details.checks.prefix(5).map(\.name) == ["Failed", "Running", "Stale", "Neutral", "Skipped"])
+        #expect(details.checks.dropFirst(5).allSatisfy { $0.state == "SUCCESS" })
+    }
+
     @Test func onlyPrivateRegularExecutablesNamedGHAreLaunched() throws {
         let manager = FileManager.default
         let root = manager.temporaryDirectory.appendingPathComponent("StowGHPathTests-\(UUID().uuidString)")

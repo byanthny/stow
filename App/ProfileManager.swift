@@ -34,74 +34,8 @@ final class ProfileManager {
     @ObservationIgnored private(set) var hasStarted = false
     /// Set when `start()` opened nothing and reported a failed lock with no profile open elsewhere; Stow then quits.
     @ObservationIgnored private(set) var startReportedLockFailure = false
-    /// Asks whether to close a profile whose changes could not be saved. True closes it without saving.
-    @ObservationIgnored var confirmClosingWithoutSaving: @MainActor (ProfileEntry) -> Bool = { entry in
-        let alert = NSAlert()
-        alert.messageText = "Some changes in \(entry.name) could not be saved"
-        alert.informativeText =
-            "Keep the profile open to preserve notes currently in memory, or close it without saving those changes."
-        alert.addButton(withTitle: "Keep open")
-        alert.addButton(withTitle: "Close without saving")
-        return alert.runModal() == .alertSecondButtonReturn
-    }
-    /// Says that a profile someone asked to open is open in another copy of Stow.
-    @ObservationIgnored var reportOpenElsewhere: @MainActor (ProfileEntry) -> Void = { entry in
-        let alert = NSAlert()
-        alert.messageText = "\(entry.name) is open in another copy of Stow"
-        alert.informativeText = "Quit the other copy, then open the profile here."
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-    /// Says that a profile stays closed because its lock file can't be used.
-    @ObservationIgnored var reportLockFailed: @MainActor (ProfileEntry) -> Void = { entry in
-        let lockFile = entry.folder.appendingPathComponent(StateLock.filename).path as NSString
-        let alert = NSAlert()
-        alert.messageText = "Stow can’t open \(entry.name)"
-        alert.informativeText =
-            "Its lock file can’t be used, so \(entry.name) stays closed. Check that \(lockFile.abbreviatingWithTildeInPath) is an ordinary file you own, then open the profile again."
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-    /// Says that a profile someone asked to open is no longer where Stow found it, such as one moved to the Trash
-    /// in Finder after the menus listed it.
-    @ObservationIgnored var reportNotFound: @MainActor (ProfileEntry) -> Void = { entry in
-        let alert = NSAlert()
-        alert.messageText = "Stow can’t find \(entry.name)"
-        alert.informativeText =
-            "Its folder was moved or deleted. If it’s in the Trash, put it back, then open it again."
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-    /// Says that the profile folders can't be read, so Stow can't tell whether a profile someone asked to open is
-    /// still there.
-    @ObservationIgnored var reportUnreadable: @MainActor (ProfileEntry) -> Void = { entry in
-        let alert = NSAlert()
-        alert.messageText = "Stow can’t read its profile folders"
-        alert.informativeText =
-            "\(entry.name) stays closed. Check that Stow’s data folder can be read, then open the profile again."
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
-    /// Says that a launch found profile data but no profile it could list, so it opened nothing rather than start a
-    /// new first profile beside the others.
-    @ObservationIgnored var reportNoProfiles: @MainActor () -> Void = {
-        let alert = NSAlert()
-        alert.messageText = "Stow can’t find any profiles"
-        alert.informativeText =
-            "Stow has a profile list but can’t read any profile folder. Put a deleted profile back from the Trash, or check that the data folder can be read, then open Stow again."
-        alert.addButton(withTitle: "Quit")
-        alert.runModal()
-    }
-    /// Says why a deletion failed when the Settings window that asked for it has closed, as when a profile's own
-    /// Settings deletes it, so the reason is never lost with the window.
-    @ObservationIgnored var reportDeletionFailure: @MainActor (ProfileEntry, any Error) -> Void = { entry, error in
-        guard let reason = profileProblem(error, name: entry.name) else { return }
-        let alert = NSAlert()
-        alert.messageText = "\(entry.name) couldn’t be deleted"
-        alert.informativeText = reason
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
-    }
+    /// Shows an alert and returns whether the second button was chosen. Tests replace it so none opens a modal.
+    @ObservationIgnored var alert: @MainActor (ProfileAlert) -> Bool = { $0.show() }
     private let catalog: ProfileCatalog
     /// The folder holding every profile. A `gh` inside it is never launched.
     private let dataFolder: URL
@@ -190,7 +124,7 @@ final class ProfileManager {
         profiles = snapshot?.profiles ?? []
         if profiles.isEmpty {
             guard snapshot?.isNewInstallation ?? true else {
-                reportNoProfiles()
+                _ = alert(.noProfiles)
                 return false
             }
             profiles = [await catalog.dataFolderEntry()]
@@ -229,7 +163,7 @@ final class ProfileManager {
         }
         let shown = profiles.compactMap { sessions[$0.id] }.filter { !$0.isHidden }
         guard let front = shown.first(where: { $0.entry.id == recorded.lastActiveID }) ?? shown.first else {
-            for entry in lockFailed { reportLockFailed(entry) }
+            for entry in lockFailed { _ = alert(.lockFailed(entry)) }
             startReportedLockFailure = !lockFailed.isEmpty && !handsOver
             return false
         }
@@ -239,8 +173,8 @@ final class ProfileManager {
         updates.start(with: snapshot?.index.updates ?? UpdateSettings())
         // The most recently active profile on screen comes forward, as it was at quit.
         if shown.count > 1 { front.show() }
-        for entry in openElsewhere { reportOpenElsewhere(entry) }
-        for entry in lockFailed { reportLockFailed(entry) }
+        for entry in openElsewhere { _ = alert(.openElsewhere(entry)) }
+        for entry in lockFailed { _ = alert(.lockFailed(entry)) }
         return true
     }
 
@@ -258,10 +192,10 @@ final class ProfileManager {
             guard let entry = self.profiles.first(where: { $0.id == id }) else { return false }
             switch await self.openSession(entry) {
             case .opened: return true
-            case .heldElsewhere: self.reportOpenElsewhere(entry)
-            case .lockFailed: self.reportLockFailed(entry)
-            case .notFound: self.reportNotFound(entry)
-            case .unreadable: self.reportUnreadable(entry)
+            case .heldElsewhere: _ = self.alert(.openElsewhere(entry))
+            case .lockFailed: _ = self.alert(.lockFailed(entry))
+            case .notFound: _ = self.alert(.notFound(entry))
+            case .unreadable: _ = self.alert(.unreadable(entry))
             }
             return false
         }
@@ -287,7 +221,7 @@ final class ProfileManager {
     func switchTo(_ id: UUID, from sourceID: UUID? = nil) async {
         let source = sourceID.flatMap { sessions[$0] } ?? activeSession
         guard await open(id), let source, source.entry.id != id, sessions[source.entry.id] === source,
-            source.store.state.hidesWhenSwitchingAway
+            source.store.base.hidesWhenSwitchingAway
         else { return }
         hide(source.entry.id)
     }
@@ -332,23 +266,23 @@ final class ProfileManager {
 
     /// The board header's profile menu for a profile: the other profiles to switch to, Hide and Close, then New
     /// profile… and Profile settings…. With one profile, only the last two.
-    func profileMenu(for id: UUID) -> [[ProfileMenuItem]] {
-        var sections: [[ProfileMenuItem]] = []
+    func profileMenu(for id: UUID) -> [[PullDownMenu.Item]] {
+        var sections: [[PullDownMenu.Item]] = []
         if profiles.count > 1 {
             sections.append(
                 profiles.filter { $0.id != id }.map { entry in
-                    ProfileMenuItem(title: entry.name, state: menuState(of: entry.id)) { [weak self] in
+                    PullDownMenu.Item(title: entry.name, state: menuState(of: entry.id)) { [weak self] in
                         Task { await self?.switchTo(entry.id, from: id) }
                     }
                 })
             sections.append([
-                ProfileMenuItem(title: "Hide profile") { [weak self] in self?.hide(id) },
-                ProfileMenuItem(title: "Close profile") { [weak self] in Task { _ = await self?.close(id) } },
+                PullDownMenu.Item(title: "Hide profile") { [weak self] in self?.hide(id) },
+                PullDownMenu.Item(title: "Close profile") { [weak self] in Task { _ = await self?.close(id) } },
             ])
         }
         sections.append([
-            ProfileMenuItem(title: "New profile…") { [weak self] in self?.requestNewProfile(from: id) },
-            ProfileMenuItem(title: "Profile settings…") { [weak self] in self?.sessions[id]?.showSettings() },
+            PullDownMenu.Item(title: "New profile…") { [weak self] in self?.requestNewProfile(from: id) },
+            PullDownMenu.Item(title: "Profile settings…") { [weak self] in self?.sessions[id]?.showSettings() },
         ])
         return sections
     }
@@ -452,14 +386,14 @@ final class ProfileManager {
 
     /// Deletes a profile as Settings → Profiles asks. A failure after the asking profile closed, as when a profile's
     /// own Settings deletes it and the move to the Trash fails, can no longer show in that window, so
-    /// `reportDeletionFailure` says why. The error is thrown either way.
+    /// an alert says why. The error is thrown either way.
     func delete(_ id: UUID, askedFrom settingsID: UUID) async throws {
         let entry = profiles.first { $0.id == id }
         do {
             try await delete(id)
         } catch {
             if let entry, sessions[settingsID]?.settingsWindow?.isVisible != true {
-                reportDeletionFailure(entry, error)
+                if let reason = profileProblem(error, name: entry.name) { _ = alert(.deletionFailed(entry, reason)) }
             }
             throw error
         }
@@ -526,7 +460,7 @@ final class ProfileManager {
     /// `close(_:)` for a caller that already waits its turn among the profile's requests.
     private func closeNow(_ id: UUID) async -> Bool {
         guard let session = sessions[id] else { return true }
-        if !(await session.store.flush()), !confirmClosingWithoutSaving(session.entry) { return false }
+        if !(await session.store.flush()), !alert(.closeWithoutSaving(session.entry)) { return false }
         // Menus and other requests stop finding the profile before it stops.
         sessions[id] = nil
         // A New profile sheet waiting in its Settings must not reappear when the profile opens again.
@@ -703,9 +637,59 @@ struct ProfileHandle {
     var showsIdentity: Bool { manager?.showsProfileNames ?? false }
 }
 
-/// An item in a board's profile menu.
-struct ProfileMenuItem {
-    let title: String
-    var state: NSControl.StateValue = .off
-    let action: @MainActor () -> Void
+/// An alert a profile change can need. Its text and buttons are here; `show` runs it.
+enum ProfileAlert {
+    /// A profile whose changes could not be saved is closing. The second button closes it without saving.
+    case closeWithoutSaving(ProfileEntry)
+    /// A profile someone asked to open is open in another copy of Stow.
+    case openElsewhere(ProfileEntry)
+    /// A profile stays closed because its lock file can't be used.
+    case lockFailed(ProfileEntry)
+    /// A profile someone asked to open is no longer where Stow found it.
+    case notFound(ProfileEntry)
+    /// The profile folders can't be read, so Stow can't tell whether the profile is still there.
+    case unreadable(ProfileEntry)
+    /// A launch found profile data but no profile it could list.
+    case noProfiles
+    /// A deletion failed after the Settings window that asked for it had closed. Carries the reason.
+    case deletionFailed(ProfileEntry, String)
+
+    /// Runs the alert and returns whether the second button was chosen.
+    @MainActor func show() -> Bool {
+        switch self {
+        case .closeWithoutSaving(let entry):
+            return StowAlert.run(
+                "Some changes in \(entry.name) could not be saved",
+                "Keep the profile open to preserve notes currently in memory, or close it without saving those changes.",
+                buttons: ["Keep open", "Close without saving"]) == 1
+        case .openElsewhere(let entry):
+            StowAlert.run(
+                "\(entry.name) is open in another copy of Stow", "Quit the other copy, then open the profile here.",
+                buttons: ["OK"])
+        case .lockFailed(let entry):
+            let lockFile = entry.folder.appendingPathComponent(StateLock.filename).path as NSString
+            StowAlert.run(
+                "Stow can’t open \(entry.name)",
+                "Its lock file can’t be used, so \(entry.name) stays closed. Check that \(lockFile.abbreviatingWithTildeInPath) is an ordinary file you own, then open the profile again.",
+                buttons: ["OK"])
+        case .notFound(let entry):
+            StowAlert.run(
+                "Stow can’t find \(entry.name)",
+                "Its folder was moved or deleted. If it’s in the Trash, put it back, then open it again.",
+                buttons: ["OK"])
+        case .unreadable(let entry):
+            StowAlert.run(
+                "Stow can’t read its profile folders",
+                "\(entry.name) stays closed. Check that Stow’s data folder can be read, then open the profile again.",
+                buttons: ["OK"])
+        case .noProfiles:
+            StowAlert.run(
+                "Stow can’t find any profiles",
+                "Stow has a profile list but can’t read any profile folder. Put a deleted profile back from the Trash, or check that the data folder can be read, then open Stow again.",
+                buttons: ["Quit"])
+        case .deletionFailed(let entry, let reason):
+            StowAlert.run("\(entry.name) couldn’t be deleted", reason, buttons: ["OK"])
+        }
+        return false
+    }
 }

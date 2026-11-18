@@ -130,25 +130,17 @@ final class UpdateMonitor {
 
     /// The alert Check for updates… shows.
     static func showAlert(_ outcome: UpdateOutcome, running: ReleaseVersion?) {
-        let alert = NSAlert()
         let current = running.map { "You have Stow \($0)." } ?? ""
         switch outcome {
         case .available(let release):
-            alert.messageText = "Stow \(release.version) is available"
-            alert.informativeText = "\(current) Its release page has the download and what changed."
-            alert.addButton(withTitle: "View release")
-            alert.addButton(withTitle: "Later")
-            if alert.runModal() == .alertFirstButtonReturn { AppStore.openLink(release.page) }
+            let choice = StowAlert.run(
+                "Stow \(release.version) is available",
+                "\(current) Its release page has the download and what changed.", buttons: ["View release", "Later"])
+            if choice == 0 { AppStore.openLink(release.page) }
         case .upToDate:
-            alert.messageText = "Stow is up to date"
-            alert.informativeText = current
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            StowAlert.run("Stow is up to date", current, buttons: ["OK"])
         case .failed(let error):
-            alert.messageText = "Stow couldn’t check for updates"
-            alert.informativeText = error.errorDescription ?? ""
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            StowAlert.run("Stow couldn’t check for updates", error.errorDescription ?? "", buttons: ["OK"])
         }
     }
 }

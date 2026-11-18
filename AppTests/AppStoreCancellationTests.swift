@@ -23,10 +23,10 @@ final class AppStoreCancellationTests: XCTestCase {
             // and keeps the store saving, which a stopped store no longer does.
             store.isPaused = true
             defer { store.stop() }
-            XCTAssertTrue(store.state.githubEnabled)
+            XCTAssertTrue(store.base.githubEnabled)
             XCTAssertFalse(store.offersGitHubSetup)
             let reference = PullRequestReference(owner: "example", repository: "synthetic", number: 42)
-            store.state.pullRequests = [.init(reference: reference, title: "Synthetic cached card")]
+            store.base.pullRequests = [.init(reference: reference, title: "Synthetic cached card")]
             store.toggleDetails(reference)
             let started = await waitUntil { await client.didStart }
             XCTAssertTrue(started)
@@ -43,9 +43,9 @@ final class AppStoreCancellationTests: XCTestCase {
             XCTAssertTrue(cancellationObserved)
             // Allow any incorrectly scheduled debounced write from a late callback to run.
             try await Task.sleep(for: .milliseconds(350))
-            XCTAssertFalse(store.state.githubEnabled)
+            XCTAssertFalse(store.base.githubEnabled)
             XCTAssertFalse(store.loadingDetails.contains(reference.id))
-            XCTAssertNil(store.state.pullRequests.first?.details)
+            XCTAssertNil(store.base.pullRequests.first?.details)
             XCTAssertEqual(store.githubMessage, "Current session message")
             XCTAssertEqual(try Data(contentsOf: stateURL(directory)), savedBeforeCompletion)
             let persisted = try await StateRepository(url: stateURL(directory)).load()
@@ -61,11 +61,11 @@ final class AppStoreCancellationTests: XCTestCase {
         await store.start()
         store.stop()
         defer { store.stop() }
-        XCTAssertFalse(store.state.githubEnabled, "A new installation must not use an existing gh login unasked")
+        XCTAssertFalse(store.base.githubEnabled, "A new installation must not use an existing gh login unasked")
         XCTAssertTrue(store.offersGitHubSetup)
         store.answerGitHubSetup(useGitHub: false)
         XCTAssertFalse(store.offersGitHubSetup)
-        XCTAssertFalse(store.state.githubEnabled)
+        XCTAssertFalse(store.base.githubEnabled)
 
         // The first launch saved the choice, so a relaunch is no longer a new installation.
         let relaunched = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
@@ -73,7 +73,7 @@ final class AppStoreCancellationTests: XCTestCase {
         relaunched.stop()
         defer { relaunched.stop() }
         XCTAssertFalse(relaunched.offersGitHubSetup)
-        XCTAssertFalse(relaunched.state.githubEnabled)
+        XCTAssertFalse(relaunched.base.githubEnabled)
 
         let fresh = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: fresh) }
@@ -82,7 +82,7 @@ final class AppStoreCancellationTests: XCTestCase {
         accepting.stop()
         defer { accepting.stop() }
         accepting.answerGitHubSetup(useGitHub: true)
-        XCTAssertTrue(accepting.state.githubEnabled)
+        XCTAssertTrue(accepting.base.githubEnabled)
         XCTAssertFalse(accepting.offersGitHubSetup)
     }
 
@@ -98,7 +98,7 @@ final class AppStoreCancellationTests: XCTestCase {
         // Pausing quiets background timers and keeps the store saving, which a stopped store no longer does.
         store.isPaused = true
         defer { store.stop() }
-        let ids = store.state.notes.map(\.id)
+        let ids = store.snapshot().notes.map(\.id)
         XCTAssertTrue(store.expandedNoteIDs.isEmpty, "Board notes start as one-line rows")
         store.toggleNoteExpanded(ids[0])
         store.toggleNoteExpanded(ids[1])
@@ -120,7 +120,68 @@ final class AppStoreCancellationTests: XCTestCase {
         relaunched.stop()
         defer { relaunched.stop() }
         XCTAssertEqual(
-            relaunched.expandedNoteIDs.count, relaunched.state.notes.count, "Expanded start opens every note")
+            relaunched.expandedNoteIDs.count, relaunched.snapshot().notes.count, "Expanded start opens every note")
+    }
+
+    func testReleasedStoreEndsItsBackgroundLoops() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store: AppStore? = AppStore(stateURL: stateURL(directory), accessoryProviders: [])
+        store?.backgroundInterval = .milliseconds(20)
+        await store?.start()
+        let loops = try [XCTUnwrap(store?.refreshTimer), XCTUnwrap(store?.accessoryTask)]
+        defer { for loop in loops { loop.cancel() } }
+        let presenter = try XCTUnwrap(store?.notesPresenter)
+        defer { NSFileCoordinator.removeFilePresenter(presenter) }
+        weak var released: AppStore?
+        released = store
+        store = nil
+        XCTAssertNil(released, "Only the caller holds the store")
+
+        let ended = Counter()
+        for loop in loops {
+            Task {
+                await loop.value
+                ended.count += 1
+            }
+        }
+        let allEnded = await waitUntil { ended.count == loops.count }
+        XCTAssertTrue(allEnded, "A store released without stop() leaves no loop waking")
+    }
+
+    func testStopCancelsKickedRefreshesSoNoRequestStartsAfterward() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var initial = AppState()
+        initial.githubEnabled = true
+        try await StateRepository(url: stateURL(directory)).save(initial)
+        let client = HeldRefreshClient()
+        let store = AppStore(stateURL: stateURL(directory), githubClient: client, accessoryProviders: [])
+        await store.start()
+        defer { store.stop() }
+        let attempts = Counter()
+        store.now = {
+            attempts.count += 1
+            return .now
+        }
+
+        store.pin(PullRequestReference(owner: "example", repository: "synthetic", number: 1))
+        let started = await waitUntil { await client.calls == 1 }
+        XCTAssertTrue(started)
+        // Different pins join the refresh in flight and ask for another one after it.
+        store.pin(PullRequestReference(owner: "example", repository: "synthetic", number: 2))
+        let joined = await waitUntil { attempts.count == 2 }
+        XCTAssertTrue(joined)
+        let kicked = Array(store.ownedTasks.values)
+        XCTAssertEqual(kicked.count, 2)
+
+        store.stop()
+        XCTAssertTrue(store.ownedTasks.isEmpty)
+        XCTAssertTrue(kicked.allSatisfy(\.isCancelled))
+        await client.release()
+        for task in kicked { await task.value }
+        let restarted = await waitUntil { await client.calls > 1 }
+        XCTAssertFalse(restarted, "No GitHub request starts after stop()")
     }
 
     func testDisablingQueuedAccessoryPreventsItsProviderFromStarting() async throws {
@@ -129,14 +190,6 @@ final class AppStoreCancellationTests: XCTestCase {
 
     func testDeletingQueuedAccessoryOwnerPreventsItsProviderFromStarting() async throws {
         try await checkQueuedAccessoryRemoval(deleteOwner: true)
-    }
-
-    func testCheckSymbolsDistinguishPendingUnknownFailureAndSuccess() {
-        XCTAssertEqual(checkSymbol("PENDING"), "clock")
-        XCTAssertEqual(checkSymbol("IN_PROGRESS"), "clock")
-        XCTAssertEqual(checkSymbol("future-state"), "questionmark.circle")
-        XCTAssertEqual(checkSymbol("SUCCESS"), "checkmark.circle")
-        XCTAssertEqual(checkSymbol("FAILURE"), "xmark.circle")
     }
 
     private func checkQueuedAccessoryRemoval(deleteOwner: Bool) async throws {
@@ -158,8 +211,8 @@ final class AppStoreCancellationTests: XCTestCase {
         await store.start()
         store.stop()
         defer { store.stop() }
-        store.state.notes = [firstNote, secondNote]
-        store.state.extensionInstances = [first, second]
+        store.notes = [firstNote, secondNote].map(NoteModel.init)
+        store.base.extensionInstances = [first, second]
         let refresh = Task { await store.refreshAccessories() }
         defer { refresh.cancel() }
         let started = await waitUntil { await provider.hasStarted(first.id) }
@@ -181,9 +234,9 @@ final class AppStoreCancellationTests: XCTestCase {
         XCTAssertEqual(store.sampleEnabled(noteID: secondNote.id), false)
         if deleteOwner {
             XCTAssertNil(store.note(secondNote.id))
-            XCTAssertFalse(store.state.extensionInstances.contains { $0.id == second.id })
+            XCTAssertFalse(store.base.extensionInstances.contains { $0.id == second.id })
         } else {
-            XCTAssertEqual(store.state.extensionInstances.first { $0.id == second.id }?.isEnabled, false)
+            XCTAssertEqual(store.base.extensionInstances.first { $0.id == second.id }?.isEnabled, false)
         }
     }
 
@@ -203,6 +256,10 @@ final class AppStoreCancellationTests: XCTestCase {
         }
         return await predicate()
     }
+}
+
+@MainActor private final class Counter {
+    var count = 0
 }
 
 private actor CancelledDetailClient: GitHubClient {
@@ -229,6 +286,31 @@ private actor CancelledDetailClient: GitHubClient {
         case .success: return .init(latestComment: "Synthetic late comment must never be applied")
         case .failure: throw GitHubError.requestFailed
         }
+    }
+}
+
+/// Holds the first refresh until released, ignoring cancellation as a request already sent can.
+private actor HeldRefreshClient: GitHubClient {
+    private(set) var calls = 0
+    private var isReleased = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    func release() {
+        isReleased = true
+        for continuation in held { continuation.resume() }
+        held.removeAll()
+    }
+
+    func refresh(pins: [PullRequestReference], previous: [PullRequestSnapshot], expectedViewerLogin: String?)
+        async throws -> GitHubRefreshResult
+    {
+        calls += 1
+        if !isReleased { await withCheckedContinuation { held.append($0) } }
+        return .init(viewerLogin: "synthetic-viewer", snapshots: [])
+    }
+
+    func details(for reference: PullRequestReference) async throws -> PullRequestDetails {
+        throw GitHubError.requestFailed
     }
 }
 

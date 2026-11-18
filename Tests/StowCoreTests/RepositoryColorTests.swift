@@ -41,8 +41,41 @@ final class RepositoryColorTests: XCTestCase {
         XCTAssertTrue(AppearanceColors.isValidHex(color))
     }
 
+    func testEachRepositoryAndSurfaceIsWorkedOutOnce() {
+        let surface = "#123456"
+        let key = RepositoryColor.Key(repository: "example/memo", surface: surface)
+        let color = RepositoryColor.hex(for: reference("Example", "Memo"), onSurface: surface)
+        XCTAssertEqual(RepositoryColor.chosen.cached(key), color, "The color was not kept")
+        XCTAssertEqual(RepositoryColor.hex(for: reference("example", "memo", 9), onSurface: surface), color)
+        XCTAssertNil(RepositoryColor.chosen.cached(.init(repository: "example/memo", surface: "#654321")))
+    }
+
+    func testKeptColorsStayFewAndAgreeAcrossThreads() {
+        let surfaces = ["#101010", "#F0F0F0", "#2E3440"]
+        let expected = (0..<300).map {
+            RepositoryColor.hex(for: reference("example", "spread-\($0)"), onSurface: "#101010")
+        }
+        XCTAssertLessThanOrEqual(RepositoryColor.chosen.count, 256)
+        let mismatches = ColorMismatches()
+        DispatchQueue.concurrentPerform(iterations: 900) { index in
+            let color = RepositoryColor.hex(
+                for: reference("example", "spread-\(index % 300)"), onSurface: surfaces[index % surfaces.count])
+            if surfaces[index % surfaces.count] == "#101010", color != expected[index % 300] { mismatches.add(color) }
+        }
+        XCTAssertEqual(mismatches.colors, [])
+        XCTAssertLessThanOrEqual(RepositoryColor.chosen.count, 256)
+    }
+
     func testStableHashIsFNV1a() {
         XCTAssertEqual("".stableHash, 0xcbf2_9ce4_8422_2325)
         XCTAssertEqual("a".stableHash, 0xaf63_dc4c_8601_ec8c)
     }
+}
+
+/// Colors that differed from the expected ones, gathered from many threads.
+private final class ColorMismatches: @unchecked Sendable {
+    private let lock = NSLock()
+    private var found: [String] = []
+    var colors: [String] { lock.withLock { found } }
+    func add(_ color: String) { lock.withLock { found.append(color) } }
 }

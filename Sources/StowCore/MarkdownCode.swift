@@ -23,48 +23,79 @@ public enum MarkdownCode {
     public static func spans(in source: String) -> [Span] {
         let units = Array(source.utf16)
         var spans: [Span] = []
-        var fence: (start: Int, character: UInt16, length: Int)?
+        var fences = Fences()
+        var blockStart = 0
         var paragraphStart: Int?
-        var lineStart = 0
 
         func endParagraph(at end: Int) {
             if let start = paragraphStart { spans += inlineSpans(units, from: start, to: end) }
             paragraphStart = nil
         }
 
-        while lineStart < units.count {
-            var contentEnd = lineStart
-            while contentEnd < units.count, units[contentEnd] != newline, units[contentEnd] != carriageReturn {
-                contentEnd += 1
-            }
-            var lineEnd = contentEnd
-            if lineEnd < units.count, units[lineEnd] == carriageReturn { lineEnd += 1 }
-            if lineEnd < units.count, units[lineEnd] == newline { lineEnd += 1 }
-            let line = lineStart..<contentEnd
-
-            if let open = fence {
-                if let close = fenceRun(units, line), close.character == open.character, close.length >= open.length,
-                    close.isBare
-                {
-                    spans.append(Span(kind: .block, range: NSRange(location: open.start, length: lineEnd - open.start)))
-                    fence = nil
+        forEachLine(in: units) { line, lineEnd in
+            switch fences.read(units[line]) {
+            case .opens:
+                endParagraph(at: line.lowerBound)
+                blockStart = line.lowerBound
+            case .closes:
+                spans.append(Span(kind: .block, range: NSRange(location: blockStart, length: lineEnd - blockStart)))
+            case .inside: break
+            case .outside:
+                if line.allSatisfy({ units[$0] == space || units[$0] == tab }) {
+                    endParagraph(at: line.lowerBound)
+                } else if paragraphStart == nil {
+                    paragraphStart = line.lowerBound
                 }
-            } else if let open = fenceRun(units, line), open.character == tilde || !open.infoHasBacktick {
-                endParagraph(at: lineStart)
-                fence = (lineStart, open.character, open.length)
-            } else if line.allSatisfy({ units[$0] == space || units[$0] == tab }) {
-                endParagraph(at: lineStart)
-            } else if paragraphStart == nil {
-                paragraphStart = lineStart
             }
-            lineStart = lineEnd
+            return true
         }
-        if let open = fence {
-            spans.append(Span(kind: .block, range: NSRange(location: open.start, length: units.count - open.start)))
+        if fences.isOpen {
+            spans.append(Span(kind: .block, range: NSRange(location: blockStart, length: units.count - blockStart)))
         } else {
             endParagraph(at: units.count)
         }
         return spans.sorted { $0.range.location < $1.range.location }
+    }
+
+    /// Calls `body` with each line's content and where its break ends, until `body` returns false.
+    static func forEachLine<Units: Collection<UInt16>>(
+        in units: Units, _ body: (_ line: Range<Units.Index>, _ end: Units.Index) -> Bool
+    ) {
+        var lineStart = units.startIndex
+        while lineStart < units.endIndex {
+            var contentEnd = lineStart
+            while contentEnd < units.endIndex, units[contentEnd] != newline, units[contentEnd] != carriageReturn {
+                units.formIndex(after: &contentEnd)
+            }
+            var lineEnd = contentEnd
+            if lineEnd < units.endIndex, units[lineEnd] == carriageReturn { units.formIndex(after: &lineEnd) }
+            if lineEnd < units.endIndex, units[lineEnd] == newline { units.formIndex(after: &lineEnd) }
+            guard body(lineStart..<contentEnd, lineEnd) else { return }
+            lineStart = lineEnd
+        }
+    }
+
+    /// Follows fenced blocks line by line, from a note's first line.
+    struct Fences {
+        enum Line { case outside, opens, inside, closes }
+
+        private var open: (character: UInt16, length: Int)?
+
+        var isOpen: Bool { open != nil }
+
+        /// Where the next line, its content without its break, stands. A block's fence lines belong to it.
+        mutating func read<Units: Collection<UInt16>>(_ line: Units) -> Line {
+            if let fence = open {
+                guard let close = fenceRun(line), close.character == fence.character, close.length >= fence.length,
+                    close.isBare
+                else { return .inside }
+                open = nil
+                return .closes
+            }
+            guard let run = fenceRun(line), run.character == tilde || !run.infoHasBacktick else { return .outside }
+            open = (run.character, run.length)
+            return .opens
+        }
     }
 
     private struct FenceRun {
@@ -76,17 +107,24 @@ public enum MarkdownCode {
     }
 
     /// Up to three spaces, then at least three backticks or tildes.
-    private static func fenceRun(_ units: [UInt16], _ line: Range<Int>) -> FenceRun? {
-        var index = line.lowerBound
-        while index < line.upperBound, units[index] == space, index - line.lowerBound < 3 { index += 1 }
-        guard index < line.upperBound, units[index] == backtick || units[index] == tilde else { return nil }
-        let character = units[index]
-        let runStart = index
-        while index < line.upperBound, units[index] == character { index += 1 }
-        guard index - runStart >= 3 else { return nil }
-        let rest = units[index..<line.upperBound]
+    private static func fenceRun<Units: Collection<UInt16>>(_ line: Units) -> FenceRun? {
+        var index = line.startIndex
+        var indent = 0
+        while index < line.endIndex, line[index] == space, indent < 3 {
+            line.formIndex(after: &index)
+            indent += 1
+        }
+        guard index < line.endIndex, line[index] == backtick || line[index] == tilde else { return nil }
+        let character = line[index]
+        var length = 0
+        while index < line.endIndex, line[index] == character {
+            line.formIndex(after: &index)
+            length += 1
+        }
+        guard length >= 3 else { return nil }
+        let rest = line[index...]
         return FenceRun(
-            character: character, length: index - runStart, isBare: rest.allSatisfy { $0 == space || $0 == tab },
+            character: character, length: length, isBare: rest.allSatisfy { $0 == space || $0 == tab },
             infoHasBacktick: rest.contains(backtick))
     }
 

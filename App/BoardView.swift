@@ -15,16 +15,25 @@ struct BoardView: View {
     @State private var visibleHeight: CGFloat = 0
 
     var body: some View {
-        let header = BoardHeader(profile: profile, layout: store.state.boardLayout)
+        let header = BoardHeader(profile: profile, layout: store.base.boardLayout)
         let iconStyle = header.tint.map { AnyShapeStyle(Color(stowHex: $0)) } ?? AnyShapeStyle(.stowMuted)
+        // Reads what the lists below show, never a note's text.
+        let notes = store.visibleNotes
+        let focusRequestID = store.focusRequestID
+        let _ = (store.expandedNoteIDs, store.draftNoteID, store.expandedPRs, store.loadingDetails)
+        let _ = store.notes.map { ($0.isDetached, $0.pullRequest) }
         VStack(spacing: 0) {
             HStack(spacing: 7) {
                 // The icon is decorative; the profile menu button over it carries the profile's name.
                 ProfileIconView(icon: header.icon, placeholder: "tray").font(theme.font(size: 16, weight: .medium))
                     .foregroundStyle(iconStyle).accessibilityHidden(true)
                     .overlay {
-                        ProfileSwitcher(header: header) { profile.manager?.profileMenu(for: profile.id) ?? [] }
-                            .frame(minWidth: 22, minHeight: 22)
+                        // Other profiles to switch to, Hide, Close, New profile…, and Profile settings…, built on open.
+                        PullDownMenu(
+                            provider: { profile.manager?.profileMenu(for: profile.id) ?? [] }, label: header.name,
+                            identifier: "board.profileMenu", toolTip: "Profiles",
+                            help: "Switches profiles and opens profile settings", covers: true
+                        ).frame(minWidth: 22, minHeight: 22)
                     }
                 if let title = header.title {
                     // VoiceOver reads the name from the profile menu button.
@@ -41,10 +50,10 @@ struct BoardView: View {
                     }
                 }
                 QuietIconButton(
-                    symbol: store.state.boardAlwaysOnTop ? "pin.fill" : "pin",
-                    label: store.state.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top", scale: .small
+                    symbol: store.base.boardAlwaysOnTop ? "pin.fill" : "pin",
+                    label: store.base.boardAlwaysOnTop ? "Unpin board from top" : "Pin board on top", scale: .small
                 ) { store.toggleBoardAlwaysOnTop() }
-                .accessibilityValue(store.state.boardAlwaysOnTop ? "Pinned" : "Unpinned")
+                .accessibilityValue(store.base.boardAlwaysOnTop ? "Pinned" : "Unpinned")
                 .accessibilityIdentifier("board.alwaysOnTop")
                 QuietIconButton(symbol: "plus", label: "New note") { store.addNote() }
                 QuietIconButton(symbol: "slider.horizontal.3", label: "Settings") { showSettings() }
@@ -56,10 +65,10 @@ struct BoardView: View {
                     // Section headers stay pinned so a long list still shows which section it is in.
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         banners.padding(.horizontal, 14).padding(.top, 14)
-                        ForEach(store.state.boardLayout.order, id: \.self) { section in
-                            boardSection(section)
+                        ForEach(store.base.boardLayout.order, id: \.self) { section in
+                            boardSection(section, notes: notes)
                         }
-                        if store.state.githubEnabled, let message = store.githubMessage {
+                        if store.base.githubEnabled, let message = store.githubMessage {
                             Label(message, systemImage: "wifi.exclamationmark")
                                 .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -73,7 +82,7 @@ struct BoardView: View {
                 } action: { height in
                     visibleHeight = height
                 }
-                .onChange(of: store.focusRequestID) { _, _ in
+                .onChange(of: focusRequestID) { _, _ in
                     guard let id = store.focusNoteID else { return }
                     Task { @MainActor in
                         await Task.yield()
@@ -85,12 +94,10 @@ struct BoardView: View {
             }
             HStack(spacing: 5) {
                 Spacer()
-                if !store.state.githubEnabled {
+                if !store.base.githubEnabled {
                     Text("Notes only")
-                } else if let refreshed = store.state.lastRefreshAt {
-                    TimelineView(.periodic(from: .now, by: 60)) { context in
-                        Text("Updated \(refreshed.shortAge(relativeTo: context.date))")
-                    }
+                } else if let refreshed = store.base.lastRefreshAt {
+                    MinuteAge(clock: store.clock) { now in Text("Updated \(refreshed.shortAge(relativeTo: now))") }
                 } else {
                     Text("Notes are saved on this Mac")
                 }
@@ -146,7 +153,7 @@ struct BoardView: View {
     }
 
     private func accountMismatchBanner(actual: String) -> some View {
-        let message = "GitHub is signed in as \(actual). This profile uses \(store.state.viewerLogin ?? "another account")."
+        let message = "GitHub is signed in as \(actual). This profile uses \(store.base.viewerLogin ?? "another account")."
         return VStack(alignment: .leading, spacing: 6) {
             Label(message, systemImage: "person.crop.circle.badge.exclamationmark").font(theme.font(size: 11))
             Button("Use \(actual) here") { Task { await store.useCurrentAccount() } }
@@ -157,15 +164,15 @@ struct BoardView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("github.accountMismatch")
     }
 
-    @ViewBuilder private func boardSection(_ section: BoardLayout.Section) -> some View {
+    @ViewBuilder private func boardSection(_ section: BoardLayout.Section, notes: [NoteModel]) -> some View {
         switch section {
-        case .needsYou: if store.state.githubEnabled { prSection("Needs you", section: .needsYou) }
+        case .needsYou: if store.base.githubEnabled { prSection("Needs you", section: .needsYou) }
         case .waiting:
-            if store.state.githubEnabled {
+            if store.base.githubEnabled {
                 prSection("Waiting", section: .waiting)
                 mergedSection
             }
-        case .notes: notesSection
+        case .notes: notesSection(listing: notes)
         }
     }
 
@@ -187,16 +194,19 @@ struct BoardView: View {
             .accessibilityElement(children: .contain).accessibilityIdentifier("github.setup")
     }
 
-    private var notesSection: some View {
-        let notes = store.visibleNotes
+    /// The Notes section listing the notes the board shows now.
+    var notesSection: some View { notesSection(listing: store.visibleNotes) }
+
+    private func notesSection(listing notes: [NoteModel]) -> some View {
         let heading = NotesHeading(store: store)
         return pinnedSection(
-            "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue,
-            summary: notes.first?.boardTitle
+            "Notes", count: heading.count, detail: heading.detail, id: BoardLayout.Section.notes.rawValue
         ) {
+            if let first = notes.first { NoteSummary(note: first) }
+        } content: {
             // Click and start typing; a started note that stays empty goes away again.
             if store.draftNoteID == nil {
-                NoteComposerRow(isEmpty: store.state.notes.isEmpty) { store.startNote() }
+                NoteComposerRow(isEmpty: store.notes.isEmpty) { store.startNote() }
             }
             ForEach(notes) { note in
                 Group {
@@ -204,7 +214,7 @@ struct BoardView: View {
                         DetachedNoteLauncher(note: note) { store.detachNote(note.id) }
                     } else if store.isNoteExpanded(note.id) {
                         // Leaves room for the pinned section header and the note's own header.
-                        NoteView(store: store, noteID: note.id, editorHeightLimit: max(176, visibleHeight - 96)) {
+                        NoteView(store: store, note: note, editorHeightLimit: max(176, visibleHeight - 96)) {
                             store.toggleNoteExpanded(note.id)
                         }
                     } else {
@@ -233,20 +243,25 @@ struct BoardView: View {
         emptyText: String? = nil
     ) -> some View {
         let expanded = expandedSections.contains(id)
-        let pins = store.state.pins
-        let listed = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: expanded)
-        let limited = SectionCards(cards, layout: store.state.boardLayout, pins: pins, expanded: false).moreCount > 0
-        return pinnedSection(
-            title, count: cards.count, id: id,
-            summary: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "),
-            needsAttention: needsAttention
-        ) {
+        let pins = store.base.pins
+        let listed = SectionCards(cards, layout: store.base.boardLayout, pins: pins, expanded: expanded)
+        let limited = SectionCards(cards, layout: store.base.boardLayout, pins: pins, expanded: false).moreCount > 0
+        return pinnedSection(title, count: cards.count, id: id, needsAttention: needsAttention) {
+            SectionSummary(
+                text: cards.prefix(2).map { "\($0.reference.repository): \($0.title)" }.joined(separator: " · "))
+        } content: {
             if cards.isEmpty, let emptyText {
                 Text(emptyText).font(theme.font(size: 11)).foregroundStyle(.stowMuted).padding(.vertical, 3)
             }
             ForEach(listed.groups) { group in
                 if let owner = group.owner { OwnerSubheading(owner: owner, count: group.count) }
-                ForEach(group.cards) { pr in PRCard(store: store, pr: pr) }
+                ForEach(group.cards) { pr in
+                    let isExpanded = store.expandedPRs.contains(pr.id)
+                    PRCard(
+                        store: store, pr: pr, isPinned: pins.contains(pr.reference), isExpanded: isExpanded,
+                        isLoading: store.loadingDetails.contains(pr.id),
+                        notes: isExpanded ? store.notes.filter { $0.pullRequest?.id == pr.id } : [])
+                }
             }
             if limited {
                 Button(expanded ? "Show fewer" : "Show \(listed.moreCount) more") {
@@ -260,18 +275,15 @@ struct BoardView: View {
         }
     }
 
-    private func pinnedSection<Content: View>(
-        _ title: String, count: Int, detail: String? = nil, id: String, summary: String?,
-        needsAttention: Bool = false, @ViewBuilder content: () -> Content
+    private func pinnedSection<Summary: View, Content: View>(
+        _ title: String, count: Int, detail: String? = nil, id: String, needsAttention: Bool = false,
+        @ViewBuilder summary: () -> Summary, @ViewBuilder content: () -> Content
     ) -> some View {
         let isCollapsed = store.sectionIsCollapsed(id)
         return Section {
             VStack(alignment: .leading, spacing: 9) {
                 if isCollapsed {
-                    if let summary, !summary.isEmpty {
-                        Text(summary).font(theme.font(size: 10)).foregroundStyle(.stowMuted)
-                            .lineLimit(1).padding(.leading, 15)
-                    }
+                    summary()
                 } else {
                     content()
                 }
@@ -288,13 +300,11 @@ struct BoardView: View {
     }
 
     private func confirmRecovery() {
-        let alert = NSAlert()
-        alert.messageText = "Back up saved data and start recovery?"
-        alert.informativeText =
-            "The existing file will be kept beside state.json as a backup. Notes currently in memory will be saved as the new state."
-        alert.addButton(withTitle: "Back up and recover")
-        alert.addButton(withTitle: "Cancel")
-        if alert.runModal() == .alertFirstButtonReturn { Task { await store.recoverState() } }
+        let choice = StowAlert.run(
+            "Back up saved data and start recovery?",
+            "The existing file will be kept beside state.json as a backup. Notes currently in memory will be saved as the new state.",
+            buttons: ["Back up and recover", "Cancel"])
+        if choice == 0 { Task { await store.recoverState() } }
     }
 }
 
@@ -345,6 +355,24 @@ private struct BoardSectionHeader: View {
     }
 }
 
+/// A collapsed section's one-line summary.
+private struct SectionSummary: View {
+    let text: String
+    @Environment(\.stowTheme) private var theme
+
+    var body: some View {
+        if !text.isEmpty {
+            Text(text).font(theme.font(size: 10)).foregroundStyle(.stowMuted).lineLimit(1).padding(.leading, 15)
+        }
+    }
+}
+
+/// The collapsed Notes section's summary, the first listed note's title, so only this view reads its text.
+private struct NoteSummary: View {
+    let note: NoteModel
+    var body: some View { SectionSummary(text: note.boardTitle) }
+}
+
 /// What the Notes header counts: the notes the board lists, and how many linked notes an owner filter hides.
 struct NotesHeading: Equatable {
     var count: Int
@@ -356,40 +384,7 @@ struct NotesHeading: Equatable {
 extension NotesHeading {
     @MainActor init(store: AppStore) {
         let listed = store.visibleNotes.count
-        self.init(count: listed, hiddenCount: store.state.notes.count - listed)
-    }
-}
-
-/// A pull-request section's cards as the board lists them: under owner subheadings when Settings → Board groups by
-/// owner, and only as many as show before Show more, which still counts cards per section.
-struct SectionCards {
-    struct Group: Identifiable {
-        /// The subheading, or nil while the board does not group by owner.
-        let owner: String?
-        /// The owner's cards in the section, counting those after Show more.
-        let count: Int
-        /// The cards that show, in the section's order.
-        let cards: [PullRequestSnapshot]
-        var id: String { owner?.lowercased() ?? "" }
-    }
-
-    /// Groups with at least one card showing; an owner whose cards all come after Show more waits for it.
-    let groups: [Group]
-    /// The cards after Show more.
-    let moreCount: Int
-
-    /// Pinned cards always show and count toward the section's limit.
-    init(_ cards: [PullRequestSnapshot], layout: BoardLayout, pins: [PullRequestReference], expanded: Bool) {
-        let owners: [(owner: String?, cards: [PullRequestSnapshot])] =
-            layout.groupByOwner
-            ? groupedByOwner(cards, order: layout.ownerOrder).map { ($0.owner, $0.cards) } : [(nil, cards)]
-        let visible = layout.visibleCards(owners.flatMap { $0.cards }, pins: pins, expanded: expanded)
-        let shownIDs = Set(visible.shown.map(\.id))
-        moreCount = visible.hidden
-        groups = owners.compactMap { owner, ownerCards in
-            let shown = ownerCards.filter { shownIDs.contains($0.id) }
-            return shown.isEmpty ? nil : Group(owner: owner, count: ownerCards.count, cards: shown)
-        }
+        self.init(count: listed, hiddenCount: store.notes.count - listed)
     }
 }
 
@@ -430,79 +425,4 @@ struct BoardHeader: Equatable {
         icon = entry?.icon?.displayable
         tint = profile.showsIdentity ? entry?.color : nil
     }
-}
-
-/// The board header's profile menu: other profiles to switch to, Hide, Close, New profile…, and Profile settings….
-/// A transparent AppKit pull-down button over the header's icon, because SwiftUI's `Menu` gives assistive apps no
-/// press action. Its label is the profile's name.
-struct ProfileSwitcher: NSViewRepresentable {
-    let header: BoardHeader
-    let menu: @MainActor () -> [[ProfileMenuItem]]
-
-    func makeNSView(context: Context) -> ProfileSwitcherButton {
-        let button = ProfileSwitcherButton(frame: .zero, pullsDown: true)
-        button.isBordered = false
-        (button.cell as? NSPopUpButtonCell)?.arrowPosition = .noArrow
-        // The first item of a pull-down menu is the button's empty face; the rest are built as the menu opens.
-        let items = NSMenu()
-        items.addItem(NSMenuItem(title: "", action: nil, keyEquivalent: ""))
-        items.delegate = context.coordinator
-        button.menu = items
-        button.toolTip = "Profiles"
-        button.setAccessibilityIdentifier("board.profileMenu")
-        button.setAccessibilityHelp("Switches profiles and opens profile settings")
-        return button
-    }
-
-    /// Changes only what differs: each AppKit setter can post accessibility notifications to assistive apps.
-    func updateNSView(_ button: ProfileSwitcherButton, context: Context) {
-        context.coordinator.provider = menu
-        if button.accessibilityLabel() != header.name { button.setAccessibilityLabel(header.name) }
-        if button.isEnabled != context.environment.isEnabled { button.isEnabled = context.environment.isEnabled }
-    }
-
-    /// Fills the space over the icon that SwiftUI offers.
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView button: ProfileSwitcherButton, context: Context) -> CGSize? {
-        proposal.replacingUnspecifiedDimensions(by: CGSize(width: 22, height: 22))
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    @MainActor final class Coordinator: NSObject, NSMenuDelegate {
-        var provider: @MainActor () -> [[ProfileMenuItem]] = { [] }
-        private var actions: [@MainActor () -> Void] = []
-
-        /// Rebuilds the menu as it opens, so it lists the profiles and their states as they are now.
-        func menuNeedsUpdate(_ menu: NSMenu) {
-            while menu.items.count > 1 { menu.removeItem(at: 1) }
-            actions = []
-            for (number, section) in provider().enumerated() {
-                if number > 0 { menu.addItem(.separator()) }
-                for item in section {
-                    let entry = NSMenuItem(title: item.title, action: #selector(choose(_:)), keyEquivalent: "")
-                    entry.target = self
-                    entry.tag = actions.count
-                    entry.state = item.state
-                    actions.append(item.action)
-                    menu.addItem(entry)
-                }
-            }
-        }
-
-        /// The menu has no key equivalents, so key presses never need it rebuilt.
-        func menuHasKeyEquivalent(
-            _ menu: NSMenu, for event: NSEvent, target: AutoreleasingUnsafeMutablePointer<AnyObject?>,
-            action: UnsafeMutablePointer<Selector?>
-        ) -> Bool { false }
-
-        @objc func choose(_ sender: NSMenuItem) {
-            guard actions.indices.contains(sender.tag) else { return }
-            actions[sender.tag]()
-        }
-    }
-}
-
-/// The profile menu button, without a pop-up button's usual insets, so it covers exactly the space SwiftUI gives it.
-final class ProfileSwitcherButton: NSPopUpButton {
-    override var alignmentRectInsets: NSEdgeInsets { NSEdgeInsets() }
 }

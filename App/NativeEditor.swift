@@ -90,7 +90,7 @@ struct NativeEditor: NSViewRepresentable {
         guard let fitsText, let editor = scroll.documentView as? NSTextView else { return nil }
         let width = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? scroll.frame.width
         guard width > 0 else { return nil }
-        let height = Self.textHeight(of: editor, width: width, limit: fitsText.upperBound)
+        let height = context.coordinator.textHeight(of: editor, width: width, limit: fitsText.upperBound)
         return CGSize(width: width, height: min(max(height, fitsText.lowerBound), fitsText.upperBound))
     }
 
@@ -250,7 +250,41 @@ struct NativeEditor: NSViewRepresentable {
         private var styledLength = 0
         /// Text edits since the last restyle.
         private var edits: [(range: NSRange, delta: Int)] = []
+        /// Counts changes to the text and its attributes.
+        private var textVersion = 0
+        /// Heights measured for `measuredLayout`, by width and limit.
+        private var heights: [HeightKey: CGFloat] = [:]
+        private var measuredLayout: MeasuredLayout?
+        /// Measures the text's height on a copy; tests replace it.
+        var measureHeight: @MainActor (NSTextView, CGFloat, CGFloat) -> CGFloat = NativeEditor.textHeight
         init(_ parent: NativeEditor) { self.parent = parent }
+
+        private struct HeightKey: Hashable {
+            var width: CGFloat
+            var limit: CGFloat
+        }
+
+        private struct MeasuredLayout: Equatable {
+            var textVersion: Int
+            var inset: NSSize
+            var padding: CGFloat
+        }
+
+        /// The height `editor`'s text needs at `width`, up to `limit`, measured again only after a change.
+        func textHeight(of editor: NSTextView, width: CGFloat, limit: CGFloat) -> CGFloat {
+            let layout = MeasuredLayout(
+                textVersion: textVersion, inset: editor.textContainerInset,
+                padding: editor.textContainer?.lineFragmentPadding ?? 5)
+            if layout != measuredLayout || heights.count >= 8 {
+                heights = [:]
+                measuredLayout = layout
+            }
+            let key = HeightKey(width: width, limit: limit)
+            if let height = heights[key] { return height }
+            let height = measureHeight(editor, width, limit)
+            heights[key] = height
+            return height
+        }
 
         /// Any link the text view finds itself opens only if it's a web link.
         func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
@@ -265,6 +299,7 @@ struct NativeEditor: NSViewRepresentable {
         }
 
         @objc private func textStorageEdited(_ notification: Notification) {
+            textVersion &+= 1
             guard let storage = notification.object as? NSTextStorage, storage.editedMask.contains(.editedCharacters)
             else { return }
             edits.append((storage.editedRange, storage.changeInLength))

@@ -96,6 +96,37 @@ public func showsOwnerControl(
 
 /// Standalone notes always show. Linked notes hide only when the setting is on and their owner is not selected.
 public func isNoteShown(_ note: Note, selection: OwnerSelection, hidesLinkedNotes: Bool) -> Bool {
-    guard hidesLinkedNotes, let reference = note.pullRequest else { return true }
+    isNoteShown(linkedTo: note.pullRequest, selection: selection, hidesLinkedNotes: hidesLinkedNotes)
+}
+
+/// Whether a note with this link shows, by the same rule as `isNoteShown(_:selection:hidesLinkedNotes:)`.
+public func isNoteShown(linkedTo reference: PullRequestReference?, selection: OwnerSelection, hidesLinkedNotes: Bool)
+    -> Bool
+{
+    guard hidesLinkedNotes, let reference else { return true }
     return selection.isAll || selection.contains(reference.owner)
+}
+
+extension OwnerSelection {
+    /// Why `login` can't be an owner in Add owner…, or nil when it is a GitHub login.
+    public static func problem(with login: String) -> String? {
+        if OwnerSelection.isValidLogin(login) { return nil }
+        if login.isEmpty { return "Enter the owner’s GitHub login." }
+        let usesAllowedCharacters = login.unicodeScalars.allSatisfy {
+            $0 == "-" || ($0.isASCII && CharacterSet.alphanumerics.contains($0))
+        }
+        if !usesAllowedCharacters { return "A GitHub login uses only letters from A to Z, numbers, and hyphens." }
+        if login.count > 39 { return "A GitHub login has at most 39 characters." }
+        return "A GitHub login can’t start or end with a hyphen or have two hyphens in a row."
+    }
+
+    /// The selection with `owner` added. An owner already selected, ignoring case, keeps its spelling.
+    public func adding(_ owner: String) -> OwnerSelection { OwnerSelection(owners + [owner]) }
+
+    /// The selection with `owner` added, or taken out when it is selected. Taking out the last owner selects All
+    /// owners.
+    public func toggling(_ owner: String) -> OwnerSelection {
+        guard contains(owner) else { return adding(owner) }
+        return OwnerSelection(owners.filter { $0.caseInsensitiveCompare(owner) != .orderedSame })
+    }
 }

@@ -157,9 +157,8 @@ extension GHClient {
         // Cached details are saved with every index write, so keep them bounded.
         if checks.count > Self.maxDetailItems {
             // Keep checks that may need attention when the list must be cut.
-            let passing: Set = ["SUCCESS", "NEUTRAL", "SKIPPED"]
             checks = Array(
-                (checks.filter { !passing.contains($0.state) } + checks.filter { passing.contains($0.state) })
+                (checks.filter { $0.outcome.mayNeedAttention } + checks.filter { !$0.outcome.mayNeedAttention })
                     .prefix(Self.maxDetailItems))
             complete = false
         }
@@ -495,7 +494,7 @@ public actor GHClient: GitHubClient {
                 guard let ref = refsByID[id] else { continue }
                 var snapshot = oldByID[id] ?? PullRequestSnapshot(reference: ref, title: ref.displayName)
                 snapshot.isUnavailable = true
-                snapshot.isStale = true
+                snapshot.markStale()
                 snapshot.readinessIsComplete = false
                 snapshot.fetchedAt = now
                 snapshots.append(snapshot)
@@ -544,7 +543,7 @@ public actor GHClient: GitHubClient {
         if !complete {
             let present = Set(snapshots.map(\.id))
             for var old in previous where !present.contains(old.id) {
-                old.isStale = true
+                old.markStale()
                 old.readinessIsComplete = false
                 snapshots.append(old)
             }
@@ -590,7 +589,7 @@ public actor GHClient: GitHubClient {
             && ["BEHIND", "BLOCKED", "CLEAN", "DIRTY", "DRAFT", "HAS_HOOKS", "UNSTABLE"].contains(mergeState ?? "")
             && node.object.keys.contains("reviewDecision")
             && (node["reviewDecision"].isNull
-                || ["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"].contains(review ?? ""))
+                || review.flatMap(ReviewDecision.init(githubValue:)) != nil)
             && checksKnown
             && (checks == nil || ["SUCCESS", "FAILURE", "ERROR", "PENDING", "EXPECTED"].contains(checks!))
         let readyComplete = complete && fieldsKnown && requestTypesKnown

@@ -38,7 +38,7 @@ public final class StateLock: @unchecked Sendable {
 
     /// `makePrivate` sets the lock file's mode and returns 0 or -1 with `errno`; tests replace it.
     static func acquire(named filename: String, in directory: URL, makePrivate: (Int32) -> Int32) -> Outcome {
-        do { try LiveNoteIO.ensureDirectory(directory) } catch { return .unavailable }
+        do { try PrivateFile.ensureFolder(directory) } catch { return .unavailable }
         let path = directory.appendingPathComponent(filename).path
         // Never follow a planted link, never wait on a FIFO, and never let a launched child inherit the lock.
         let descriptor = path.withCString {

@@ -21,18 +21,18 @@ struct SettingsView: View {
                     Text("GitHub").font(theme.font(size: 14, weight: .semibold))
                     SettingsToggle(
                         "Show pull requests",
-                        isOn: Binding(get: { store.state.githubEnabled }, set: { store.setGitHubEnabled($0) }))
+                        isOn: Binding(get: { store.base.githubEnabled }, set: { store.setGitHubEnabled($0) }))
                     Text("Uses your existing gh login. Notes work independently.").font(theme.font(size: 11))
                         .foregroundStyle(
                             .secondary)
                     HStack {
-                        Text(store.state.ghExecutablePath ?? "Find gh automatically").font(theme.font(size: 11)).lineLimit(1)
+                        Text(store.base.ghExecutablePath ?? "Find gh automatically").font(theme.font(size: 11)).lineLimit(1)
                             .truncationMode(.middle)
                         Spacer()
                         Button("Choose gh…") { chooseGH() }
-                        if store.state.ghExecutablePath != nil { Button("Reset") { store.setExecutablePath(nil) } }
+                        if store.base.ghExecutablePath != nil { Button("Reset") { store.setExecutablePath(nil) } }
                     }
-                    if let viewer = store.state.viewerLogin {
+                    if let viewer = store.base.viewerLogin {
                         Text("Last connected as \(viewer)").font(theme.font(size: 11)).foregroundStyle(.secondary)
                     }
                 }
@@ -44,7 +44,7 @@ struct SettingsView: View {
                         isOn: Binding(get: { store.sampleEnabled() }, set: { _ in store.toggleSample() }))
                     Text("A small bundled example. Once it’s on, each note’s ⋯ menu can add it to that note.")
                         .font(theme.font(size: 11)).foregroundStyle(.secondary)
-                    ForEach(store.state.extensionInstances.filter { $0.moduleID != store.sampleID }) { instance in
+                    ForEach(store.base.extensionInstances.filter { $0.moduleID != store.sampleID }) { instance in
                         HStack {
                             Text(instance.moduleID).font(theme.font(size: 11))
                             Spacer()
@@ -55,12 +55,12 @@ struct SettingsView: View {
                 Divider()
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Dismissed pull requests").font(theme.font(size: 14, weight: .semibold))
-                    if store.state.dismissedIDs.isEmpty {
+                    if store.base.dismissedIDs.isEmpty {
                         Text("Nothing dismissed.").font(theme.font(size: 11)).foregroundStyle(.secondary)
                     }
-                    ForEach(store.state.dismissedIDs, id: \.self) { id in
+                    ForEach(store.base.dismissedIDs, id: \.self) { id in
                         HStack {
-                            Text(store.state.pullRequests.first(where: { $0.id == id })?.title ?? id).font(
+                            Text(store.base.pullRequests.first(where: { $0.id == id })?.title ?? id).font(
                                 theme.font(size: 11)
                             )
                             .lineLimit(2)
@@ -100,12 +100,10 @@ struct SettingsView: View {
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         guard GHClient.isUsableExecutable(atPath: url.path, excluding: store.dataFolder) else {
-            let alert = NSAlert()
-            alert.messageText = "Stow can't use that file"
-            alert.informativeText =
-                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh, not setuid or setgid, not writable by its group or other users, and outside Stow's data folder."
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
+            StowAlert.run(
+                "Stow can't use that file",
+                "Choose the gh executable from a GitHub CLI installation, such as /opt/homebrew/bin/gh. It must be named gh, not setuid or setgid, not writable by its group or other users, and outside Stow's data folder.",
+                buttons: ["OK"])
             return
         }
         store.setExecutablePath(url.path)
@@ -118,7 +116,7 @@ private struct BoardSettingsView: View {
     @Bindable var store: AppStore
     let profile: ProfileHandle
     @Environment(\.stowTheme) private var theme
-    private var layout: BoardLayout { store.state.boardLayout }
+    private var layout: BoardLayout { store.base.boardLayout }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -192,7 +190,7 @@ private struct BoardSettingsView: View {
             SettingsToggle(
                 "Keep only selected owners on disk", identifier: "board.keepsOnlySelectedOwners",
                 isOn: Binding(
-                    get: { store.state.keepsOnlySelectedOwners }, set: { store.setKeepsOnlySelectedOwners($0) }))
+                    get: { store.base.keepsOnlySelectedOwners }, set: { store.setKeepsOnlySelectedOwners($0) }))
             Text("Leaves other owners’ pull requests out of this profile’s files and backups. Pins are kept.")
                 .font(theme.font(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -201,7 +199,7 @@ private struct BoardSettingsView: View {
                 Picker(
                     "Keep merged and closed",
                     selection: Binding(
-                        get: { store.state.terminalCardKeepTime }, set: { store.setTerminalCardKeepTime($0) })
+                        get: { store.base.terminalCardKeepTime }, set: { store.setTerminalCardKeepTime($0) })
                 ) {
                     Text("Don’t keep").tag(TerminalCardKeepTime.dontKeep)
                     Text("An hour").tag(TerminalCardKeepTime.hour)
@@ -218,7 +216,7 @@ private struct BoardSettingsView: View {
                 SettingsToggle(
                     "Keep always-on-top notes visible when hiding", identifier: "board.hideKeepsAlwaysOnTopNotes",
                     isOn: Binding(
-                        get: { store.state.hideKeepsAlwaysOnTopNotes }, set: { store.setHideKeepsAlwaysOnTopNotes($0) }
+                        get: { store.base.hideKeepsAlwaysOnTopNotes }, set: { store.setHideKeepsAlwaysOnTopNotes($0) }
                     ))
             }
         }

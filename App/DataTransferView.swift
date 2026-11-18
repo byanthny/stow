@@ -1,5 +1,4 @@
 import AppKit
-import Darwin
 import Foundation
 import StowCore
 import SwiftUI
@@ -22,7 +21,7 @@ struct DataTransferView: View {
             HStack {
                 Button("Import Markdown…") { importMarkdown() }.accessibilityIdentifier("data.importMarkdown")
                 Button("Export all notes…") { exportMarkdown() }.accessibilityIdentifier("data.exportMarkdown")
-                    .disabled(store.state.notes.isEmpty)
+                    .disabled(store.notes.isEmpty)
             }
             Text("Import adds notes. Export creates Markdown copies in a new folder, leaving your live files in place.")
                 .font(theme.font(size: 10)).foregroundStyle(.stowMuted)
@@ -142,14 +141,11 @@ struct DataTransferView: View {
                 "The backup could not be opened. Choose a valid Stow backup up to 64 MiB. Your current data has been kept."
             return
         }
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "Replace current notes and settings?"
-        alert.informativeText =
-            "“\(url.lastPathComponent)” contains \(restored.notes.count) notes and \(restored.pullRequests.count) cached pull requests. Restoring replaces current notes and settings. This Mac's GitHub settings stay as they are, and accessories come back turned off. Your current data and old notes folder are kept as backups. Reopen the new notes folder in external editors afterward; the old folder will no longer be watched."
-        alert.addButton(withTitle: "Cancel")
-        alert.addButton(withTitle: "Replace and restore")
-        guard alert.runModal() == .alertSecondButtonReturn else { return }
+        let choice = StowAlert.run(
+            "Replace current notes and settings?",
+            "“\(url.lastPathComponent)” contains \(restored.notes.count) notes and \(restored.pullRequests.count) cached pull requests. Restoring replaces current notes and settings. This Mac's GitHub settings stay as they are, and accessories come back turned off. Your current data and old notes folder are kept as backups. Reopen the new notes folder in external editors afterward; the old folder will no longer be watched.",
+            buttons: ["Cancel", "Replace and restore"])
+        guard choice == 1 else { return }
         isRestoring = true
         Task { @MainActor in
             let success = await store.restoreBackup(restored)
@@ -221,11 +217,7 @@ enum DataTransferActions {
     }
 
     private static func showError(_ message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Stow could not complete the transfer"
-        alert.informativeText = message
-        alert.addButton(withTitle: "OK")
-        alert.runModal()
+        StowAlert.run("Stow could not complete the transfer", message, buttons: ["OK"])
     }
 }
 
@@ -242,16 +234,11 @@ enum DataTransferFiles {
     }
 
     static func read(_ url: URL, maximumBytes: Int) throws -> Data {
-        guard maximumBytes >= 0, maximumBytes < Int.max else { throw DataTransferFileError.tooLarge }
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
-        var data = Data()
-        while data.count <= maximumBytes {
-            let next = try handle.read(upToCount: min(65_536, maximumBytes + 1 - data.count)) ?? Data()
-            if next.isEmpty { return data }
-            data.append(next)
+        do { return try PrivateFile.read(handle, maximumBytes: maximumBytes) } catch PrivateFileError.tooLarge {
+            throw DataTransferFileError.tooLarge
         }
-        throw DataTransferFileError.tooLarge
     }
 
     static func exportMarkdown(_ files: [MarkdownFile], into parent: URL) throws -> URL {
@@ -271,48 +258,28 @@ enum DataTransferFiles {
     }
 
     static func writePrivateAtomically(_ data: Data, to destination: URL) throws {
-        let temporary = destination.deletingLastPathComponent().appendingPathComponent(
-            ".stow-transfer-\(UUID().uuidString).tmp")
-        try writeNewPrivateFile(data, to: temporary)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        let result = temporary.path.withCString { source in
-            destination.path.withCString { target in Darwin.rename(source, target) }
-        }
-        guard result == 0 else { throw DataTransferFileError.cannotWrite }
+        do {
+            try PrivateFile.writeAtomically(data, to: destination, temporaryPrefix: ".stow-transfer-")
+        } catch is PrivateFileError { throw DataTransferFileError.cannotWrite }
     }
 
     private static func newExportDirectory(in parent: URL) throws -> URL {
         for _ in 0..<5 {
             let directory = parent.appendingPathComponent(
                 "Stow-notes-\(dateStamp())-\(UUID().uuidString)", isDirectory: true)
-            let result = directory.path.withCString { Darwin.mkdir($0, mode_t(0o700)) }
-            if result == 0 {
-                guard directory.path.withCString({ Darwin.chmod($0, mode_t(0o700)) }) == 0 else {
-                    try? FileManager.default.removeItem(at: directory)
-                    throw DataTransferFileError.cannotCreateFolder
-                }
+            do {
+                try PrivateFile.createFolder(directory)
                 return directory
-            }
-            if errno != EEXIST { throw DataTransferFileError.cannotCreateFolder }
+            } catch PrivateFileError.exists {
+                continue
+            } catch { throw DataTransferFileError.cannotCreateFolder }
         }
         throw DataTransferFileError.cannotCreateFolder
     }
 
     private static func writeNewPrivateFile(_ data: Data, to url: URL) throws {
-        let descriptor = url.path.withCString {
-            Darwin.open($0, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, mode_t(0o600))
-        }
-        guard descriptor >= 0 else { throw DataTransferFileError.cannotWrite }
-        let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
-        var completed = false
-        defer {
-            try? handle.close()
-            if !completed { try? FileManager.default.removeItem(at: url) }
-        }
-        guard Darwin.fchmod(descriptor, mode_t(0o600)) == 0 else { throw DataTransferFileError.cannotWrite }
-        try handle.write(contentsOf: data)
-        try handle.synchronize()
-        try handle.close()
-        completed = true
+        do {
+            try PrivateFile.create(data, at: url)
+        } catch is PrivateFileError { throw DataTransferFileError.cannotWrite }
     }
 }

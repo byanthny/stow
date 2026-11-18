@@ -40,7 +40,7 @@ final class AppIntegrationTests: XCTestCase {
         XCTAssertNil(app.store.note(id))
         XCTAssertNil(app.noteWindows[id])
         XCTAssertFalse(reopened.isVisible)
-        XCTAssertFalse(app.store.state.extensionInstances.contains { $0.noteID == id })
+        XCTAssertFalse(app.store.base.extensionInstances.contains { $0.noteID == id })
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
         let persisted = try await StateRepository(url: stateURL(directory)).load()
@@ -110,10 +110,10 @@ final class AppIntegrationTests: XCTestCase {
         await app.store.refreshAccessories()
         XCTAssertTrue(app.store.sampleEnabled())
         XCTAssertTrue(app.store.sampleEnabled(noteID: id))
-        let instanceIndex = try XCTUnwrap(app.store.state.extensionInstances.firstIndex { $0.noteID == id })
-        let instanceID = app.store.state.extensionInstances[instanceIndex].id
-        app.store.state.extensionInstances[instanceIndex].configurationVersion = 7
-        app.store.state.extensionInstances[instanceIndex].configuration = .object(["synthetic-setting": .string("kept")]
+        let instanceIndex = try XCTUnwrap(app.store.base.extensionInstances.firstIndex { $0.noteID == id })
+        let instanceID = app.store.base.extensionInstances[instanceIndex].id
+        app.store.base.extensionInstances[instanceIndex].configurationVersion = 7
+        app.store.base.extensionInstances[instanceIndex].configuration = .object(["synthetic-setting": .string("kept")]
         )
         app.store.toggleSample(noteID: id)
         XCTAssertFalse(app.store.sampleEnabled(noteID: id))
@@ -126,7 +126,7 @@ final class AppIntegrationTests: XCTestCase {
         defer { dispose(restored) }
         XCTAssertTrue(restored.store.sampleEnabled())
         XCTAssertFalse(restored.store.sampleEnabled(noteID: id))
-        let instance = try XCTUnwrap(restored.store.state.extensionInstances.first { $0.id == instanceID })
+        let instance = try XCTUnwrap(restored.store.base.extensionInstances.first { $0.id == instanceID })
         XCTAssertEqual(instance.configurationVersion, 7)
         XCTAssertEqual(instance.configuration, .object(["synthetic-setting": .string("kept")]))
     }
@@ -186,15 +186,15 @@ final class AppIntegrationTests: XCTestCase {
         let ordinaryText = "https://github.com/example/synthetic/pull/42\nPersonal Markdown **stays text**"
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setString(ordinaryText, forType: .string))
-        let previousPins = app.store.state.pins
-        let previousNoteCount = app.store.state.notes.count
+        let previousPins = app.store.base.pins
+        let previousNoteCount = app.store.snapshot().notes.count
         XCTAssertTrue(editor.readSelection(from: pasteboard, type: .string))
         // readSelection is an AppKit editor API, not a simulated Command-V event.
         editor.didChangeText()
         XCTAssertEqual(editor.string, ordinaryText)
         XCTAssertEqual(app.store.note(id)?.markdown, ordinaryText)
-        XCTAssertEqual(app.store.state.pins, previousPins)
-        XCTAssertEqual(app.store.state.notes.count, previousNoteCount)
+        XCTAssertEqual(app.store.base.pins, previousPins)
+        XCTAssertEqual(app.store.snapshot().notes.count, previousNoteCount)
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
         let persisted = try await StateRepository(url: stateURL(directory)).load()

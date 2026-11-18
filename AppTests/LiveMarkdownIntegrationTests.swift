@@ -13,7 +13,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let id = try XCTUnwrap(app.store.state.notes.first?.id)
+        let id = try XCTUnwrap(app.store.snapshot().notes.first?.id)
         let external = "# External edit immediately before export\r\n\r\nFresh backup source.\r\n"
         try Data(external.utf8).write(to: noteFile(id, store: app.store), options: .atomic)
         // No delay or presenter callback: the snapshot itself must reconcile the managed files.
@@ -35,7 +35,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         XCTAssertTrue(first)
         final class Flag: @unchecked Sendable { var raised = false }
         let changed = Flag()
-        withObservationTracking { _ = app.store.state } onChange: { changed.raised = true }
+        withObservationTracking { _ = app.store.snapshot() } onChange: { changed.raised = true }
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
         XCTAssertFalse(changed.raised, "A save that found nothing new still rewrote the notes, redrawing the board")
@@ -47,7 +47,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let before = try XCTUnwrap(app.store.state.notes.first)
+        let before = try XCTUnwrap(app.store.snapshot().notes.first)
         let external = "# External text while restore is active\n"
         app.store.isRestoringBackup = true
         // The session has stopped by the time this runs, and a stopped profile is no longer the active one.
@@ -75,7 +75,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let before = try XCTUnwrap(app.store.state.notes.first)
+        let before = try XCTUnwrap(app.store.snapshot().notes.first)
         let file = noteFile(before.id, store: app.store)
         let external = "# Edited outside Stow\r\n\r\n**Same note**, café.\r\n"
         try Data(external.utf8).write(to: file)
@@ -86,14 +86,14 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         XCTAssertEqual(edited.createdAt, before.createdAt)
         XCTAssertEqual(edited.pullRequest, before.pullRequest)
         XCTAssertEqual(edited.isDetached, before.isDetached)
-        XCTAssertEqual(app.store.state.notes.count, 1)
+        XCTAssertEqual(app.store.snapshot().notes.count, 1)
         XCTAssertEqual(try Data(contentsOf: file), Data(external.utf8))
         await shutdown(app)
 
         let restarted = try await prepare(directory)
         defer { dispose(restarted) }
         XCTAssertEqual(restarted.store.note(before.id)?.markdown, external)
-        XCTAssertEqual(restarted.store.state.notes.count, 1)
+        XCTAssertEqual(restarted.store.snapshot().notes.count, 1)
         await shutdown(restarted)
     }
 
@@ -102,29 +102,29 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let id = try XCTUnwrap(app.store.state.notes.first?.id)
+        let id = try XCTUnwrap(app.store.snapshot().notes.first?.id)
         let local = "# Unsaved app variant\n\nKeep this exact source."
         let external = "# External variant\r\n\r\nKeep this one too.\r\n"
         app.store.editNote(id, markdown: local)
         try Data(external.utf8).write(to: noteFile(id, store: app.store), options: .atomic)
         let saved = await app.store.flush()
         XCTAssertTrue(saved)
-        XCTAssertEqual(Set(app.store.state.notes.map(\.markdown)), Set([local, external]))
-        XCTAssertEqual(app.store.state.notes.count, 2)
+        XCTAssertEqual(Set(app.store.snapshot().notes.map(\.markdown)), Set([local, external]))
+        XCTAssertEqual(app.store.snapshot().notes.count, 2)
         XCTAssertNotNil(app.store.note(id))
         XCTAssertFalse(app.store.conflictNoteIDs.isEmpty)
         XCTAssertNotNil(app.store.noteFileMessage)
-        let savedIDs = Set(app.store.state.notes.map(\.id))
-        for note in app.store.state.notes {
+        let savedIDs = Set(app.store.snapshot().notes.map(\.id))
+        for note in app.store.snapshot().notes {
             XCTAssertEqual(try Data(contentsOf: noteFile(note.id, store: app.store)), Data(note.markdown.utf8))
         }
         await shutdown(app)
 
         let restarted = try await prepare(directory)
         defer { dispose(restarted) }
-        XCTAssertEqual(Set(restarted.store.state.notes.map(\.markdown)), Set([local, external]))
-        XCTAssertEqual(Set(restarted.store.state.notes.map(\.id)), savedIDs)
-        XCTAssertEqual(restarted.store.state.notes.count, 2)
+        XCTAssertEqual(Set(restarted.store.snapshot().notes.map(\.markdown)), Set([local, external]))
+        XCTAssertEqual(Set(restarted.store.snapshot().notes.map(\.id)), savedIDs)
+        XCTAssertEqual(restarted.store.snapshot().notes.count, 2)
         await shutdown(restarted)
     }
 
@@ -133,7 +133,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let oldNote = try XCTUnwrap(app.store.state.notes.first)
+        let oldNote = try XCTUnwrap(app.store.snapshot().notes.first)
         app.store.detachNote(oldNote.id)
         let oldWindow = try XCTUnwrap(app.noteWindows[oldNote.id])
         let oldDirectory = app.store.notesDirectory
@@ -153,17 +153,17 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         replacement.notes = [restoredNote]
         var portable = try StowBackup.decode(StowBackup.encode(replacement))
         // A crafted backup must not choose this Mac's GitHub CLI or turn GitHub access on.
-        app.store.state.ghExecutablePath = "/synthetic/local/gh"
+        app.store.base.ghExecutablePath = "/synthetic/local/gh"
         portable.ghExecutablePath = "/bin/sh"
         portable.githubEnabled = true
         let restored = await app.store.restoreBackup(portable)
         XCTAssertTrue(restored)
-        XCTAssertEqual(app.store.state.ghExecutablePath, "/synthetic/local/gh")
-        XCTAssertFalse(app.store.state.githubEnabled)
+        XCTAssertEqual(app.store.base.ghExecutablePath, "/synthetic/local/gh")
+        XCTAssertFalse(app.store.base.githubEnabled)
         XCTAssertNotEqual(app.store.notesDirectory, oldDirectory)
         XCTAssertEqual(try Data(contentsOf: oldFile), oldBytes)
         XCTAssertTrue(FileManager.default.fileExists(atPath: oldDirectory.path))
-        XCTAssertEqual(app.store.state.pins, [reference])
+        XCTAssertEqual(app.store.base.pins, [reference])
         XCTAssertEqual(app.store.note(restoredNote.id)?.markdown, restoredNote.markdown)
         XCTAssertEqual(app.store.note(restoredNote.id)?.frame, frame)
         XCTAssertEqual(app.store.note(restoredNote.id)?.isDetached, true)
@@ -190,7 +190,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         let restarted = try await prepare(directory)
         defer { dispose(restarted) }
         XCTAssertEqual(restarted.store.notesDirectory, restoredDirectory)
-        XCTAssertEqual(restarted.store.state.pins, [reference])
+        XCTAssertEqual(restarted.store.base.pins, [reference])
         XCTAssertEqual(restarted.store.note(restoredNote.id)?.markdown, restoredNote.markdown)
         XCTAssertEqual(restarted.noteWindows[restoredNote.id]?.level, .normal)
         XCTAssertEqual(restarted.board.level, .normal)
@@ -203,10 +203,10 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let oldIDs = Set(app.store.state.notes.map(\.id))
+        let oldIDs = Set(app.store.snapshot().notes.map(\.id))
         let sources = ["# Imported\r\n\r\n**Exact CRLF**\r\n", "\u{FEFF}# café\nline\n", ""]
         app.store.importMarkdown(sources)
-        let imported = app.store.state.notes.filter { !oldIDs.contains($0.id) }
+        let imported = app.store.snapshot().notes.filter { !oldIDs.contains($0.id) }
         XCTAssertEqual(imported.map(\.markdown), sources)
         XCTAssertEqual(Set(imported.map(\.id)).count, sources.count)
         let saved = await app.store.flush()
@@ -219,7 +219,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         let restarted = try await prepare(directory)
         defer { dispose(restarted) }
         for note in imported { XCTAssertEqual(restarted.store.note(note.id)?.markdown, note.markdown) }
-        XCTAssertEqual(restarted.store.state.notes.count, oldIDs.count + sources.count)
+        XCTAssertEqual(restarted.store.snapshot().notes.count, oldIDs.count + sources.count)
         await shutdown(restarted)
     }
 
@@ -228,7 +228,7 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let id = try XCTUnwrap(app.store.state.notes.first?.id)
+        let id = try XCTUnwrap(app.store.snapshot().notes.first?.id)
         let file = noteFile(id, store: app.store)
         let inPlace = "# Uncoordinated in-place write\n"
         try Data(inPlace.utf8).write(to: file)
@@ -241,12 +241,63 @@ final class LiveMarkdownIntegrationTests: XCTestCase {
         await shutdown(app)
     }
 
+    func testStowsOwnWritesStartNoMergeButOutsideChangesDo() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        let store = try XCTUnwrap(app.store)
+        let id = try XCTUnwrap(store.snapshot().notes.first?.id)
+        store.editNote(id, markdown: "# Synthetic original\n\nEdited in Stow.")
+        store.addNote("# Added in Stow")
+        let saved = await store.flush()
+        XCTAssertTrue(saved)
+        let revision = store.changeRevision
+        try await Task.sleep(for: .seconds(1.5))
+        XCTAssertEqual(store.changeRevision, revision, "Stow's own writes started a merge")
+
+        let file = noteFile(id, store: store)
+        let edited = "# Edited outside\n"
+        try Data(edited.utf8).write(to: file)
+        let merged = await waitUntil { store.note(id)?.markdown == edited }
+        XCTAssertTrue(merged, "An outside edit starts a merge")
+        let added = UUID()
+        let addedFile = store.notesDirectory.appendingPathComponent("\(added.uuidString).md")
+        try Data("# New outside\n".utf8).write(to: addedFile)
+        let appeared = await waitUntil { store.note(added) != nil }
+        XCTAssertTrue(appeared, "A new file starts a merge")
+        try FileManager.default.removeItem(at: file)
+        let removed = await waitUntil { store.note(id) == nil }
+        XCTAssertTrue(removed, "A deleted file starts a merge")
+        await shutdown(app)
+    }
+
+    func testAnOutsideEditTheFinalSaveReadReachesTheBoardAfterACancelledQuit() async throws {
+        let directory = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let app = try await prepare(directory)
+        defer { dispose(app) }
+        let store = try XCTUnwrap(app.store)
+        let id = try XCTUnwrap(store.snapshot().notes.first?.id)
+        let edited = "# Edited outside during a quit\n"
+        // The watcher's notice of the edit arrives while quitting and is set aside.
+        store.isTerminating = true
+        try Data(edited.utf8).write(to: noteFile(id, store: store))
+        try await Task.sleep(for: .milliseconds(500))
+        let saved = await store.terminationSave().value
+        XCTAssertTrue(saved)
+        store.cancelTermination()
+        let merged = await waitUntil { store.note(id)?.markdown == edited }
+        XCTAssertTrue(merged, "An outside edit the final save read never reached the board")
+        await shutdown(app)
+    }
+
     func testRemovingThePullRequestLinkKeepsTheNoteAndItsFile() async throws {
         let directory = try makeDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
         let app = try await prepare(directory)
         defer { dispose(app) }
-        let note = try XCTUnwrap(app.store.state.notes.first)
+        let note = try XCTUnwrap(app.store.snapshot().notes.first)
         XCTAssertNotNil(note.pullRequest)
         let file = noteFile(note.id, store: app.store)
         let source = try Data(contentsOf: file)

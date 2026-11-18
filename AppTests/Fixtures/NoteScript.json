@@ -1,0 +1,317 @@
+{
+  "notes" : {
+    "id 2.md" : "# Typed note\n\nHello there.",
+    "id 3.md" : "Note for the card, last edit before quit",
+    "id 4.md" : "Second note, edited here",
+    "id 5.md" : "# Seed note\n\nEdited outside Stow.\n",
+    "id 6.md" : "Second note, edited elsewhere\n"
+  },
+  "snapshot" : {
+    "appearance" : {
+      "backgroundOpacity" : 1,
+      "colors" : {
+        "amber" : "#D9A659",
+        "background" : "#0E0F11",
+        "green" : "#7DB38F",
+        "muted" : "#91969E",
+        "note" : "#1F2022",
+        "red" : "#E0736E",
+        "surface" : "#1B1C1F",
+        "text" : "#E8E8E6"
+      },
+      "colorScheme" : "dark",
+      "editorFontSize" : 13,
+      "editorLineHeight" : 1.3,
+      "interfaceFontSize" : 13,
+      "name" : "Stow",
+      "schemaVersion" : 1
+    },
+    "boardAlwaysOnTop" : true,
+    "boardFrame" : {
+      "height" : 710,
+      "width" : 390,
+      "x" : 500,
+      "y" : 80
+    },
+    "boardLayout" : {
+      "alwaysShowOwnerControl" : false,
+      "groupByOwner" : false,
+      "hidesNotesForHiddenOwners" : false,
+      "notesStartCollapsed" : true,
+      "order" : [
+        "needsYou",
+        "notes",
+        "waiting"
+      ],
+      "ownerOrder" : "alphabetical",
+      "showsTitle" : true,
+      "visiblePullRequests" : 3
+    },
+    "collapsedSections" : [
+
+    ],
+    "dismissedIDs" : [
+
+    ],
+    "extensionInstances" : [
+      {
+        "configuration" : {
+
+        },
+        "configurationVersion" : 1,
+        "id" : "id 1",
+        "isEnabled" : true,
+        "moduleID" : "org.stow.sample",
+        "noteID" : "id 2",
+        "slot" : "noteAccessory"
+      }
+    ],
+    "githubEnabled" : false,
+    "hideKeepsAlwaysOnTopNotes" : false,
+    "hidesWhenSwitchingAway" : true,
+    "keepsOnlySelectedOwners" : false,
+    "notes" : [
+      {
+        "createdAt" : "step 3",
+        "id" : "id 3",
+        "isAlwaysOnTop" : true,
+        "isDetached" : false,
+        "markdown" : "Note for the card, last edit before quit",
+        "pullRequest" : {
+          "host" : "github.com",
+          "number" : 7,
+          "owner" : "example",
+          "repository" : "synthetic"
+        },
+        "updatedAt" : "step 10"
+      },
+      {
+        "createdAt" : "step 2",
+        "id" : "id 4",
+        "isAlwaysOnTop" : true,
+        "isDetached" : false,
+        "markdown" : "Second note, edited here",
+        "updatedAt" : "step 7"
+      },
+      {
+        "createdAt" : "step 1",
+        "frame" : {
+          "height" : 320,
+          "width" : 300,
+          "x" : 40,
+          "y" : 60
+        },
+        "id" : "id 2",
+        "isAlwaysOnTop" : false,
+        "isDetached" : true,
+        "markdown" : "# Typed note\n\nHello there.",
+        "updatedAt" : "step 1"
+      },
+      {
+        "createdAt" : "step 0",
+        "id" : "id 5",
+        "isAlwaysOnTop" : true,
+        "isDetached" : false,
+        "markdown" : "# Seed note\n\nEdited outside Stow.\n",
+        "updatedAt" : "step 6"
+      },
+      {
+        "createdAt" : "step 7",
+        "id" : "id 6",
+        "isAlwaysOnTop" : true,
+        "isDetached" : false,
+        "markdown" : "Second note, edited elsewhere\n",
+        "updatedAt" : "step 7"
+      }
+    ],
+    "ownerSelection" : {
+      "owners" : [
+
+      ]
+    },
+    "pins" : [
+      {
+        "host" : "github.com",
+        "number" : 7,
+        "owner" : "example",
+        "repository" : "synthetic"
+      }
+    ],
+    "pullRequests" : [
+      {
+        "checksKnown" : false,
+        "fetchedAt" : "step 3",
+        "isStale" : true,
+        "isUnavailable" : false,
+        "observedStateSince" : "step 3",
+        "readinessIsComplete" : false,
+        "reference" : {
+          "host" : "github.com",
+          "number" : 7,
+          "owner" : "example",
+          "repository" : "synthetic"
+        },
+        "state" : "OPEN",
+        "title" : "example/synthetic #7"
+      }
+    ],
+    "schemaVersion" : 1,
+    "terminalCardKeepTime" : "day"
+  },
+  "state.json" : {
+    "metadata" : {
+      "appearance" : {
+        "backgroundOpacity" : 1,
+        "colors" : {
+          "amber" : "#D9A659",
+          "background" : "#0E0F11",
+          "green" : "#7DB38F",
+          "muted" : "#91969E",
+          "note" : "#1F2022",
+          "red" : "#E0736E",
+          "surface" : "#1B1C1F",
+          "text" : "#E8E8E6"
+        },
+        "colorScheme" : "dark",
+        "editorFontSize" : 13,
+        "editorLineHeight" : 1.3,
+        "interfaceFontSize" : 13,
+        "name" : "Stow",
+        "schemaVersion" : 1
+      },
+      "boardAlwaysOnTop" : true,
+      "boardFrame" : {
+        "height" : 710,
+        "width" : 390,
+        "x" : 500,
+        "y" : 80
+      },
+      "boardLayout" : {
+        "alwaysShowOwnerControl" : false,
+        "groupByOwner" : false,
+        "hidesNotesForHiddenOwners" : false,
+        "notesStartCollapsed" : true,
+        "order" : [
+          "needsYou",
+          "notes",
+          "waiting"
+        ],
+        "ownerOrder" : "alphabetical",
+        "showsTitle" : true,
+        "visiblePullRequests" : 3
+      },
+      "collapsedSections" : [
+
+      ],
+      "dismissedIDs" : [
+
+      ],
+      "extensionInstances" : [
+        {
+          "configuration" : {
+
+          },
+          "configurationVersion" : 1,
+          "id" : "id 1",
+          "isEnabled" : true,
+          "moduleID" : "org.stow.sample",
+          "noteID" : "id 2",
+          "slot" : "noteAccessory"
+        }
+      ],
+      "githubEnabled" : false,
+      "hideKeepsAlwaysOnTopNotes" : false,
+      "hidesWhenSwitchingAway" : true,
+      "keepsOnlySelectedOwners" : false,
+      "notes" : [
+        {
+          "createdAt" : "date",
+          "id" : "id 3",
+          "isAlwaysOnTop" : true,
+          "isDetached" : false,
+          "markdown" : "",
+          "pullRequest" : {
+            "host" : "github.com",
+            "number" : 7,
+            "owner" : "example",
+            "repository" : "synthetic"
+          },
+          "updatedAt" : "date"
+        },
+        {
+          "createdAt" : "date",
+          "id" : "id 4",
+          "isAlwaysOnTop" : true,
+          "isDetached" : false,
+          "markdown" : "",
+          "updatedAt" : "date"
+        },
+        {
+          "createdAt" : "date",
+          "frame" : {
+            "height" : 320,
+            "width" : 300,
+            "x" : 40,
+            "y" : 60
+          },
+          "id" : "id 2",
+          "isAlwaysOnTop" : false,
+          "isDetached" : true,
+          "markdown" : "",
+          "updatedAt" : "date"
+        },
+        {
+          "createdAt" : "date",
+          "id" : "id 5",
+          "isAlwaysOnTop" : true,
+          "isDetached" : false,
+          "markdown" : "",
+          "updatedAt" : "date"
+        },
+        {
+          "createdAt" : "date",
+          "id" : "id 6",
+          "isAlwaysOnTop" : true,
+          "isDetached" : false,
+          "markdown" : "",
+          "updatedAt" : "date"
+        }
+      ],
+      "ownerSelection" : {
+        "owners" : [
+
+        ]
+      },
+      "pins" : [
+        {
+          "host" : "github.com",
+          "number" : 7,
+          "owner" : "example",
+          "repository" : "synthetic"
+        }
+      ],
+      "pullRequests" : [
+        {
+          "checksKnown" : false,
+          "fetchedAt" : "date",
+          "isStale" : true,
+          "isUnavailable" : false,
+          "observedStateSince" : "date",
+          "readinessIsComplete" : false,
+          "reference" : {
+            "host" : "github.com",
+            "number" : 7,
+            "owner" : "example",
+            "repository" : "synthetic"
+          },
+          "state" : "OPEN",
+          "title" : "example/synthetic #7"
+        }
+      ],
+      "schemaVersion" : 1,
+      "terminalCardKeepTime" : "day"
+    },
+    "notesDirectoryName" : "notes",
+    "schemaVersion" : 2
+  }
+}
