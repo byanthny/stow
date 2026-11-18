@@ -33,7 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The Debug configuration keeps the testing launch arguments and testability and builds file by file; -O optimizes it.
+# Builds Debug, which keeps the testing launch arguments, optimized with -O.
 xcodebuild \
     -project Stow.xcodeproj \
     -scheme Stow \
@@ -49,8 +49,7 @@ xcodebuild \
     SWIFT_OPTIMIZATION_LEVEL=-O \
     build >"$output/build.log" 2>&1 || { tail -20 "$output/build.log" >&2; exit 1; }
 
-# Demo mode keeps GitHub refreshes off, so no gh process runs while measuring.
-# open starts the app in front with its windows visible, like a launch from the Dock.
+# Opens the app in front in demo mode, with GitHub refreshes off.
 app="$output/DerivedData/Debug/Build/Products/Debug/Stow.app"
 open -n -a "$app" --args --stow-testing-state "$folder" --stow-demo-load 30,20
 for _ in $(seq 1 20); do
@@ -63,9 +62,7 @@ printf 'launched pid %s with 30 cards and 20 notes; idle for 60 seconds\n' "$pid
 sleep 60
 kill -0 "$pid"
 
-# Samples three minutes, which hold three of the once-a-minute age updates.
-# top -l prints the first sample without an interval, so its CPU is dropped. IDLEW is a running total for the
-# process, so the rate is its growth from the first sample to the last over the eighteen 10-second intervals.
+# Samples three minutes, dropping top's first sample and taking IDLEW's growth over the 18 intervals.
 swift scripts/usage.swift "$pid" 180 >"$output/usage.txt" &
 usage_job=$!
 samples=$(top -l 19 -s 10 -pid "$pid" -stats cpu,idlew,mem | awk '$1 ~ /^[0-9.]+$/ && NF == 3')
@@ -87,8 +84,7 @@ printf '%s\n' "$samples" | awk -v footprint="$footprint_line" '
 cat "$output/usage.txt"
 
 if [ "$skip_tests" -eq 0 ]; then
-    # Without the debug stub an optimized hosted app is hardened, and library validation rejects the ad-hoc test bundle.
-    # xcodebuild passes TEST_RUNNER_-prefixed variables to the test runner without the prefix.
+    # Runs the typing tests unhardened, with STOW_MEASURE set for the test runner.
     TEST_RUNNER_STOW_MEASURE=1 xcodebuild \
         -project Stow.xcodeproj \
         -scheme Stow \

@@ -353,7 +353,7 @@ final class NoteModelTests: XCTestCase {
         await store.start()
         defer { store.stop() }
         let steps = StepClock()
-        // Each step starts once earlier saves are done, so its dates come after its mark.
+        // Waits for earlier saves before each step.
         func step() async throws {
             try await Task.sleep(for: .milliseconds(30))
             _ = await store.flush()

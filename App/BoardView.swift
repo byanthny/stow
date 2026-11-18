@@ -17,7 +17,7 @@ struct BoardView: View {
     var body: some View {
         let header = BoardHeader(profile: profile, layout: store.base.boardLayout)
         let iconStyle = header.tint.map { AnyShapeStyle(Color(stowHex: $0)) } ?? AnyShapeStyle(.stowMuted)
-        // The body itself reads what the lists below show, never a note's text, so it redraws when they change.
+        // Reads what the lists below show, never a note's text.
         let notes = store.visibleNotes
         let focusRequestID = store.focusRequestID
         let _ = (store.expandedNoteIDs, store.draftNoteID, store.expandedPRs, store.loadingDetails)
