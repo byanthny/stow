@@ -56,7 +56,36 @@ CI uses Xcode 16.4 on `macos-15`, runs package and hosted Debug app tests, and b
 
 ## Evidence
 
-Current counts, at 0.3.1: `./scripts/test.sh` runs 445 tests. The package suite in `Tests/` has 227 XCTest and 70 Swift Testing cases, and the hosted app suite in `AppTests/` has 148 XCTest cases. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+Current counts, at 0.4.0: `./scripts/test.sh` runs 500 tests. The package suite in `Tests/` has 260 XCTest and 77 Swift Testing cases, and the hosted app suite in `AppTests/` has 163 XCTest cases, 4 of which measure typing and run only with `STOW_MEASURE=1`. The Debug smoke test (`--stow-testing-state <new empty folder> --stow-demo --stow-smoke-test`) writes 14 checks. Dated entries below give the counts of their own run.
+
+Release 0.4.0 validation on 2026-11-17, macOS 26.5 (Apple silicon), Xcode 26.6, with the note models, the background-task and cleanup changes, and the idle changes merged:
+
+- `./scripts/release.sh 0.4.0` ran `./scripts/test.sh`, which passed: 260 XCTest and 77 Swift Testing cases in the package, and 163 hosted cases with the 4 typing measurements skipped. New coverage includes which views a note edit, a window move and a refresh redraw, a scripted series of edits giving the same saved state as before the note models, a note added from the board scrolling into view, background loops ending with their store, refreshes cancelled when a profile stops, Stow's own note writes starting no merge while outside edits still do, the text height cache, the shared minute clock, and the private file, color and alert helpers.
+- An earlier full run on the same code failed one hosted test once: a key typed on the Mac during the run reached a focused test editor. Its rerun passed. Hosted tests take keyboard focus, so leave the Mac alone while they run.
+- `./scripts/build.sh Debug` and `./scripts/build.sh Release` both reported BUILD SUCCEEDED.
+- The Debug smoke test, labeled 0.4.0 build 6, against a new synthetic folder exited 0 and wrote 14 checks, all true.
+- Not run yet: `./scripts/accessibility.sh`, the `acceptance` run on an Intel runner, keyboard navigation, VoiceOver, and the manual checks above. The rebuilt profile and owner menus haven't been checked by hand.
+
+Resources at 0.4.0 on 2026-11-15, macOS 26.5, Apple silicon (M3), Xcode 26.6, measured back to back with the 0.3.1 baseline and the same load. Typing comes from two full `./scripts/measure.sh` runs of each build. Idle comes from three `./scripts/measure.sh --skip-tests` runs of each, after the script moved to a 3-minute window: ages update once a minute, and the earlier 50-second window caught one update or none depending on when it started.
+
+| Typing 50 characters | 4 KB note | 46 KB note | 100 KB note | Short note, board and 5 note windows open |
+| --- | --- | --- | --- | --- |
+| 0.3.1, run 1 | 0.234 s | 0.698 s | 1.452 s | 0.405 s |
+| 0.3.1, run 2 | 0.147 s | 0.688 s | 1.430 s | 0.405 s |
+| 0.4.0, run 1 | 0.135 s | 0.676 s | 1.382 s | 0.098 s |
+| 0.4.0, run 2 | 0.137 s | 0.674 s | 1.369 s | 0.103 s |
+
+| Idle over 180 s | CPU, `top` mean / max | CPU, `proc_pid_rusage` | Interrupt wakeups | Phys footprint |
+| --- | --- | --- | --- | --- |
+| 0.3.1, run 1 | 0.04% / 0.20% | 0.0525% (94.4 ms) | 0.11/s | 41.3 MB |
+| 0.3.1, run 2 | 0.03% / 0.20% | 0.0411% (73.9 ms) | 0.11/s | 41.2 MB |
+| 0.3.1, run 3 | 0.02% / 0.20% | 0.0330% (59.4 ms) | 0.11/s | 41.4 MB |
+| 0.4.0, run 1 | 0.10% / 0.70% | 0.1209% (217.7 ms) | 0.11/s | 41.3 MB |
+| 0.4.0, run 2 | 0.02% / 0.20% | 0.0369% (66.3 ms) | 0.08/s | 41.4 MB |
+| 0.4.0, run 3 | 0.02% / 0.20% | 0.0404% (72.8 ms) | 0.08/s | 41.3 MB |
+
+- Typing in a short note with the board and 5 note windows open now costs about 0.1 s for 50 keys, a quarter of 0.3.1's 0.4 s: each note is its own observed model, so a key redraws only that note. Long notes are about 4% faster. The first 0.3.1 run's 4 KB time was slower than every other run and reads as noise.
+- Idle stays where it was, near 0.04% CPU: about 25 ms a minute. In a 70-second `sample` of the idle app, the only main-thread work was the minute's redraw of the ages. Interrupt wakeups went from 0.11 to 0.08 per second. The first 0.4.0 idle run overlapped a rise in the Mac's load average, from 2.1 to 4.4, and reads as noise. Memory is unchanged at 41 MB.
 
 Resource baseline at 0.3.1 on 2026-11-14, macOS 26.5, Apple silicon (M3), Xcode 26.6, from `./scripts/measure.sh` twice in a row:
 
